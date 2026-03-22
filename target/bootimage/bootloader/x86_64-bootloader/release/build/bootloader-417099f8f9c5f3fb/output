@@ -1,0 +1,7 @@
+cargo:rerun-if-changed=D:\python\github\OpenRhiza\OpenRhiza\Cargo.toml
+cargo:rustc-link-search=native=D:\python\github\OpenRhiza\OpenRhiza\target\bootimage\bootloader\x86_64-bootloader\release\build\bootloader-417099f8f9c5f3fb\out
+cargo:rustc-link-lib=static=kernel_bin-OpenRhiza
+cargo:rerun-if-env-changed=KERNEL
+cargo:rerun-if-env-changed=KERNEL_MANIFEST
+cargo:rerun-if-changed=\\?\D:\python\github\OpenRhiza\OpenRhiza\target\x86_64-unknown-none\debug\OpenRhiza
+cargo:rerun-if-changed=build.rs

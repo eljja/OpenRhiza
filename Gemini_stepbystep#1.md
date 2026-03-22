@@ -1,0 +1,45 @@
+# OpenRhiza 상세 진행 기록 - Step 1
+
+## 0. 궁극적 비전 및 아키텍처 방향성 (The Grand Vision)
+- **AI as an OS:** AI는 단순한 에이전트가 아니라 OS 자체여야 함.
+- **자가 진화 및 생성형 인터페이스:** 사용자가 프로그램을 구입하는 대신, AI가 사용자의 의도를 파악하여 즉석에서 인터페이스와 앱을 코딩하고 제공(JIT App Generation).
+- **생태계 및 거래 (Nexus):** AI OS들이 서로 통신(Channel)하며 Trial & Error로 얻은 문제 해결법(예: 특정 디바이스 드라이버)을 교환. 이때 디지털 코인이나 "좋아요" 기반의 가치 거래 시스템 구축.
+- **부트스트랩 아키텍처 (Layered Architecture):**
+  - `Layer 0 (Seed)`: 기존 PC/VM 부팅 가능. 최소한의 생명 유지 및 샌드박스. 잘못된 코드에도 OS가 죽지 않도록 방어하는 Exception Handling 필수. 초기 외부 통신용 Serial Port 포함.
+  - `Layer 1 (Senses)`: 사용자와의 1차 인터페이스(USB 컨트롤러 및 PS/2) 및 외부 세상과의 연결(LAN). AI가 스스로 PCI를 스캔하여 활성화함.
+  - `Layer 2 (Advanced Drivers)`: Local LLM 구동을 위해 필수적인 고성능 하드웨어(GPU, NPU) 및 스토리지 제어 계층.
+  - `Layer 3 (AI Brain)`: 두뇌 역할. LAN 확보 전엔 호스트 의존 -> LAN 확보 후 외부 LLM API 사용 -> GPU 확보 후 Local LLM으로 완전 독립.
+  - `Layer 4 (Generative & Nexus)`: 실시간 생성형 사용자 인터페이스 및 AI 상호간 코드/가치 거래 네트워크.
+
+- **진화 시나리오 (범용 하드웨어 타겟, 테스트용 VMware):**
+  1. **Phase 1:** 구형 CPU 환경 부팅 -> Layer 0 동작 (Sandbox 활성화) -> 시리얼 포트를 통한 외부 LLM(호스트) 피드백 시작.
+  2. **Phase 2:** 외부 LLM이 PCI 버스를 스캔하여 **USB 컨트롤러(마우스/키보드)**와 **LAN (e.g., e1000)** 활성화 성공.
+  3. **Phase 3:** LAN을 통해 직접 외부 LLM API와 연결. 시리얼 포트 독립. (필요시 초경량 CPU 전용 LLM 다운로드 기반 마련)
+  4. **Phase 4:** 외부 API 지식 기반으로 GPU/NPU 드라이버 자가 구축. (CPU 내장형 NPU와 외장형 PCIe NPU 토폴로지 구분 대응)
+  5. **Phase 5:** 로컬 환경에 LLM 적재(GPU/NPU 또는 CPU). 완전 자립형 AI OS 완성.
+
+## 1. 현재 프로젝트 아키텍처 및 현황 분석
+- **핵심 구조**: 
+  - 운영체제 부팅 직후의 하드웨어와 맞닿은 상태(Bare-metal)에서 AI가 직접 하드웨어를 제어하도록 설계됨.
+  - `OpenRhizaSeed` 엔진을 통해 AI의 명령(`&str`)을 `unsafe` 샌드박스에서 실행.
+  - 실행 중 발생하는 하드웨어 예외/성공 결과를 `ExecutionResult`로 반환받아 AI가 다시 학습하는 피드백 루프 존재.
+
+- **작업 파일 현황**:
+  - `src/arch/x86_64/discovery.rs` (또는 `src/arch/discovery.rs`): 부팅 직후 시스템 스펙 파악 로직. (CPU, 메모리 스캔 기능 구현 필요)
+  - `src/core/seed.rs` (또는 `src/arch/core_logic/seed.rs`): AI 상호작용 및 로그 피드백을 위한 `OpenRhizaSeed` 구현. (동적 할당 없는 고정 버퍼 설계 확인 완료)
+
+## 2. 왜 `cargo bootimage`인가?
+이 프로젝트는 일반 응용 프로그램이 아니므로, OS의 간섭 없이 순수 하드웨어에서 동작해야 합니다. 따라서 `cargo bootimage`를 사용해 부트로더와 Rust 커널 코드를 하나로 묶은 `.bin` 형식의 디스크 이미지를 만들고 있습니다.
+
+## 3. 현재 직면한 과제 (Next Actions)
+다음에 바로 시작할 수 있도록 남겨두는 TODO 리스트입니다.
+
+1. **Level 1 하드웨어 스캔 구현 (`discovery.rs`)**
+   - `get_cpu_count()` 등 저수준 명령어(예: CPUID)를 통해 실제 하드웨어 정보를 가져오는 로직 작성.
+2. **VMware 부팅 테스트 연결**
+   - `cargo bootimage`로 생성된 `.bin`을 VMware에서 부팅 가능하도록 설정(QEMU 변환 또는 가상 플로피 장착).
+   - 패닉(Panic) 없이 초기 엔진(Seed)이 성공적으로 로드되는지 확인.
+3. **샌드박스 실행 환경 구체화 (`seed.rs`)**
+   - AI의 명령을 격리된 환경에서 실행하는 `run_in_sandbox` (또는 모의 실행 로직)의 세부 구현.
+
+> **Note**: 본 파일은 작업 내용이 길어지면 `#2`, `#3` 파일로 분리하여 순차적으로 저장할 예정입니다.
