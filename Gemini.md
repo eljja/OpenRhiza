@@ -33,6 +33,11 @@
   - **[최근 완료]** PIC 설정 및 키보드 인터럽트(IRQ 1) 수신, 큐(Queue) 구조 구현.
   - **[최근 완료]** Dual-Brain 통신(UART 탯줄): QEMU 시리얼 통신을 통한 파이썬 호스트 스크립트(`host_brain.py`) 연동.
   - **[최근 완료]** 동적 드라이버 적재: Gemini API를 통해 전체 키보드 배열을 추론하고 OS 런타임에 128바이트 바이너리 데이터로 주입하여 키보드 활성화 완료.
+  - **[최근 완료]** AI 환각(Hallucination) 방지를 위한 RAG(매뉴얼 주입) 및 Key-Value 파싱 도입. (파이썬 스크립트 모델 선택 기능 추가)
+  - **[최근 완료]** VGA 텍스트 버퍼 고도화: 2차원 좌표계(X, Y) 도입, 특수 키(Enter, Backspace, Space) 처리 및 화면 스크롤(Scroll) 기능 구현.
+  - **[최근 완료]** 키보드 상태 머신(State Machine) 확장: Shift, Ctrl, Alt, E0 확장키 처리 및 256바이트(Normal/Shifted) 매핑 구조 도입.
+  - **[최근 완료]** 동적 캘리브레이션(Generative Calibration): "Hi.OpenRhiza!" 문자열 타이핑 패턴을 AI가 분석하여, 사용자 키보드 배열(QWERTY, Dvorak 등)을 자동 추론 및 적용하는 시스템 완성.
+  - **[최근 완료]** Layer 0 샌드박스 진화: 베어메탈 커널 내 WebAssembly(Wasm) 런타임(`wasmi`) 통합 및 동작 성공. (AI 코드를 격리 실행할 궁극의 안전망 확보)
 
 ## 목표 및 환경
 - **타겟 플랫폼**: 범용 Bare-metal CPU (x86_64, ARM, RISC-V) / 초기 개발 및 테스트용으로 VMware 사용

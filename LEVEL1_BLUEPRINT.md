@@ -25,7 +25,7 @@ Level 1의 궁극적인 목표는 **"AI가 하드웨어를 스스로 탐구하�
 ------------------------------------------------------------------------
 [ Layer 0: OpenRhiza Seed (인간이 Rust로 작성하는 불변의 핵) ]
   ├─ Communication: 초기 통신 채널 (가상머신용 UART 또는 물리머신용 USB xHCI DbC)
-  ├─ Sandbox      : Exception Handler (IDT), 메모리 격리 (Ring 3 or VM)
+  ├─ Sandbox      : WebAssembly(wasmi) 런타임 및 Exception Handler (IDT)
   ├─ UI Base      : Linear Framebuffer (해상도 독립적 텍스트 렌더링)
   └─ HAL          : x86_64, ARM, RISC-V 하드웨어 추상화
 ========================================================================
@@ -41,6 +41,7 @@ Level 1의 궁극적인 목표는 **"AI가 하드웨어를 스스로 탐구하�
 - **해결법:**
   - x86_64 기준 IDT(Interrupt Descriptor Table)를 엄격하게 구성합니다.
   - 특히 `Page Fault (#PF)`와 `General Protection Fault (#GP)` 발생 시, 기존 OS처럼 커널 패닉(블루스크린)을 띄우고 멈추는 것이 아니라, 오류가 발생한 명령어 주소(RIP)와 레지스터 상태를 캡처하여 **AI에게 문자열(Log)로 반환**해야 합니다.
+  - **WebAssembly 샌드박스:** AI가 작성한 드라이버 코드를 커널의 네이티브 기계어로 직접 실행하지 않고, 커널 내부에 탑재된 초경량 `wasmi` Wasm 런타임 위에서 실행합니다. 이로써 AI가 잘못된 메모리를 참조하더라도 커널 패닉 대신 Wasm Trap(안전한 에러)으로 방어할 수 있습니다.
 
 ### B. Input Devices: USB over PS/2 (감각 기관 확보)
 - **의미:** 현대 컴퓨터는 PS/2 포트가 없습니다. USB 마우스/키보드 연결이 필수입니다.

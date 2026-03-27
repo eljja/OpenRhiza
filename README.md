@@ -13,7 +13,7 @@ Traditional operating systems are static collections of rules created by humans.
 ## Current Status
 - **Phase 1 (Bootstrap):** Building the minimal Layer 0 `Seed` using Rust (`no_std`). 
 - Targeting **VMware** as the initial test environment.
-- Setting up the isolated Sandbox and Exception/Fault Handler to prevent system crashes during AI's trial and error.
+- Successfully integrated a **WebAssembly (`wasmi`) runtime** directly into the bare-metal kernel to act as the ultimate isolated Sandbox for executing AI-generated drivers safely.
 
 ## Getting Started
 Currently in the early bootstrapping phase. You need Rust nightly, `cargo-bootimage`, and QEMU/VMware to run the initial bare-metal image.

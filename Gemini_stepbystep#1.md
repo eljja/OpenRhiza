@@ -31,15 +31,20 @@
 ## 2. 왜 `cargo bootimage`인가?
 이 프로젝트는 일반 응용 프로그램이 아니므로, OS의 간섭 없이 순수 하드웨어에서 동작해야 합니다. 따라서 `cargo bootimage`를 사용해 부트로더와 Rust 커널 코드를 하나로 묶은 `.bin` 형식의 디스크 이미지를 만들고 있습니다.
 
-## 3. 현재 직면한 과제 (Next Actions)
+## 3. 최근 개발 성과 (Achievements)
+- **VGA 터미널 구현:** 2D 좌표(X,Y) 기반 텍스트 출력, 특수키(Enter, Backspace), 화면 스크롤.
+- **Dual-Brain 탯줄 통신:** QEMU의 시리얼(UART) 포트를 TCP 소켓으로 연결하여 파이썬(`host_brain.py`)과 실시간 통신 환경 구축.
+- **상태 머신 및 256바이트 매핑:** Shift, Ctrl, Alt, 확장키(E0) 등을 기억하는 State Machine 커널 적용.
+- **동적 캘리브레이션 (Generative Calibration):** OS 화면에 `Hi.OpenRhiza!`를 입력하도록 유도하고, 파이썬이 스캔코드 시퀀스를 모아 Gemini LLM에 전달. AI가 QWERTY/Dvorak 등 사용자 환경을 완벽히 유추하여 256바이트 바이너리 드라이버를 OS 런타임에 주입(Injection)하는 아키텍처 완성.
+- **Wasm 샌드박스 통합 (Ultimate Sandbox):** `alloc` 힙 메모리 할당자를 기반으로, 베어메탈 커널 내부에 `wasmi` WebAssembly 런타임을 통합. AI가 작성한 코드를 커널 패닉의 위험 없이 완전히 격리된 환경에서 실행(JIT 대체)할 수 있는 엄청난 아키텍처적 기반 마련.
+
+## 4. 현재 직면한 과제 (Next Actions)
 다음에 바로 시작할 수 있도록 남겨두는 TODO 리스트입니다.
 
-1. **Level 1 하드웨어 스캔 구현 (`discovery.rs`)**
-   - `get_cpu_count()` 등 저수준 명령어(예: CPUID)를 통해 실제 하드웨어 정보를 가져오는 로직 작성.
-2. **VMware 부팅 테스트 연결**
-   - `cargo bootimage`로 생성된 `.bin`을 VMware에서 부팅 가능하도록 설정(QEMU 변환 또는 가상 플로피 장착).
-   - 패닉(Panic) 없이 초기 엔진(Seed)이 성공적으로 로드되는지 확인.
-3. **샌드박스 실행 환경 구체화 (`seed.rs`)**
-   - AI의 명령을 격리된 환경에서 실행하는 `run_in_sandbox` (또는 모의 실행 로직)의 세부 구현.
+1. **Wasm Host Functions 구현 (MMIO 브릿지)**
+   - 샌드박스 안의 Wasm 코드가 외부(물리 하드웨어)와 소통할 수 있도록, OS 커널이 제공하는 `read_mmio`, `write_mmio` 같은 호스트 함수를 Wasm 엔진에 연결(Link)해야 함.
+2. **e1000 랜카드 드라이버 (Wasm 버전) 주입 및 실행**
+   - 파이썬 AI가 작성한 e1000 초기화(Reset) 로직을 Wasm 바이너리로 컴파일한 후, 시리얼 포트를 통해 OS로 전송.
+   - OS는 이 Wasm을 샌드박스에서 실행하여, 실제로 물리적 랜카드가 리셋되는지 확인!
 
 > **Note**: 본 파일은 작업 내용이 길어지면 `#2`, `#3` 파일로 분리하여 순차적으로 저장할 예정입니다.

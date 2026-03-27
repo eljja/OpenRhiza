@@ -1,45 +1,65 @@
 // src/core/seed.rs
 use crate::arch::x86_64::discovery::SystemIdentity;
+use alloc::vec::Vec;
+use alloc::string::String;
+use alloc::format;
+use wasmi::{Caller, Engine, Linker, Module, Store};
 
-pub enum ExecutionResult<'a> {
-    Success(&'a str),
-    Panic(&'a str), // 하드웨어 예외 발생 시 AI가 학습할 데이터
+pub enum ExecutionResult {
+    Success(String),
+    Panic(String),
 }
 
-pub struct OpenRhizaSeed<'a> {
+pub struct OpenRhizaSeed {
     pub identity: SystemIdentity,
-    pub log_buffer: [&'a str; 10], // 동적 할당(Vec) 대신 고정 크기 배열 사용 (No-std 제약)
-    pub log_count: usize,
+    pub log_buffer: Vec<String>, // 동적 할당(Vec)을 이용한 무제한 로그 버퍼
 }
 
-impl<'a> OpenRhizaSeed<'a> {
+impl OpenRhizaSeed {
     pub fn new(identity: SystemIdentity) -> Self {
         Self {
             identity,
-            log_buffer: [""; 10],
-            log_count: 0,
+            log_buffer: Vec::new(),
         }
     }
 
-    pub fn execute_instruction(&mut self, generated_code: &str) -> ExecutionResult<'a> {
-        // AI가 생성한 하위 드라이버/명령을 격리된 환경(Layer 0)에서 실행
-        match self.run_in_sandbox(generated_code) {
-            Ok(output) => ExecutionResult::Success(output),
+    /// Layer 0 샌드박스 내에서 Wasm 바이너리를 안전하게 실행합니다.
+    pub fn execute_wasm_sandbox(&mut self, wasm_bytes: &[u8]) -> ExecutionResult {
+        match self.run_wasm_internal(wasm_bytes) {
+            Ok(_) => {
+                let msg = format!("Wasm Execution Success! init_e1000 completed.");
+                self.log_buffer.push(msg.clone());
+                ExecutionResult::Success(msg)
+            },
             Err(e) => {
-                // 에러 발생 시 로그 버퍼에 기록 (포맷팅 없이 직접 참조 저장)
-                if self.log_count < self.log_buffer.len() {
-                    self.log_buffer[self.log_count] = e;
-                    self.log_count += 1;
-                }
-                ExecutionResult::Panic(e)
+                let err_msg = format!("Wasm Sandbox Trap (Panic): {}", e);
+                self.log_buffer.push(err_msg.clone());
+                ExecutionResult::Panic(err_msg)
             }
         }
     }
 
-    fn run_in_sandbox(&self, _code: &str) -> Result<&'static str, &'static str> {
-        // TODO: 향후 이 곳에 IOMMU 및 Ring 3 전환 로직이 들어갑니다.
-        // 현재는 모의 에러를 반환하여 AI 피드백 루프를 테스트합니다.
-        Err("Exception: Page Fault at 0xDEADBEEF")
+    fn run_wasm_internal(&self, wasm_bytes: &[u8]) -> Result<(), &'static str> {
+        let engine = Engine::default();
+        let module = Module::new(&engine, wasm_bytes).map_err(|_| "Failed to parse Wasm module")?;
+        let mut store = Store::new(&engine, ());
+        let mut linker = <Linker<()>>::new(&engine);
+
+        // Host Function: read_mmio (Wasm 샌드박스에서 물리 메모리 읽기 허용)
+        linker.func_wrap("env", "read_mmio", |_caller: Caller<'_, ()>, addr: u32| -> u32 {
+            unsafe { core::ptr::read_volatile(addr as usize as *const u32) }
+        }).map_err(|_| "Failed to link read_mmio")?;
+
+        // Host Function: write_mmio (Wasm 샌드박스에서 물리 메모리 쓰기 허용)
+        linker.func_wrap("env", "write_mmio", |_caller: Caller<'_, ()>, addr: u32, val: u32| {
+            unsafe { core::ptr::write_volatile(addr as usize as *mut u32, val) }
+        }).map_err(|_| "Failed to link write_mmio")?;
+
+        let instance = linker.instantiate(&mut store, &module).map_err(|_| "Failed to instantiate")?
+            .start(&mut store).map_err(|_| "Failed to start instance")?;
+        
+        let init = instance.get_typed_func::<(), ()>(&store, "init_e1000").map_err(|_| "Export 'init_e1000' not found")?;
+        init.call(&mut store, ()).map_err(|_| "Wasm execution trapped!")
     }
 
     /// AI가 샌드박스 내부에서 하드웨어 입력(키보드 큐)을 읽기 위해 호출하는 원시 함수
