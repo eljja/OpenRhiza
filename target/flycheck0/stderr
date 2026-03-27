@@ -1,5 +1,5 @@
-   0.027980500s  INFO prepare_target{force=false package_id=OpenRhiza v0.1.0 (D:\python\github\OpenRhiza\OpenRhiza) target="OpenRhiza"}: cargo::core::compiler::fingerprint: fingerprint error for OpenRhiza v0.1.0 (D:\python\github\OpenRhiza\OpenRhiza)/Check { test: true }/TargetInner { name: "OpenRhiza", doc: true, ..: with_path("D:\\python\\github\\OpenRhiza\\OpenRhiza\\src\\main.rs", Edition2021) }
-   0.028015100s  INFO prepare_target{force=false package_id=OpenRhiza v0.1.0 (D:\python\github\OpenRhiza\OpenRhiza) target="OpenRhiza"}: cargo::core::compiler::fingerprint:     err: failed to read `D:\python\github\OpenRhiza\OpenRhiza\target\x86_64-unknown-none\debug\.fingerprint\OpenRhiza-272d4b8525eb5772\test-bin-OpenRhiza`
+   0.047680900s  INFO prepare_target{force=false package_id=OpenRhiza v0.1.0 (D:\python\github\OpenRhiza\OpenRhiza) target="OpenRhiza"}: cargo::core::compiler::fingerprint: fingerprint error for OpenRhiza v0.1.0 (D:\python\github\OpenRhiza\OpenRhiza)/Check { test: true }/TargetInner { name: "OpenRhiza", doc: true, ..: with_path("D:\\python\\github\\OpenRhiza\\OpenRhiza\\src\\main.rs", Edition2021) }
+   0.048209800s  INFO prepare_target{force=false package_id=OpenRhiza v0.1.0 (D:\python\github\OpenRhiza\OpenRhiza) target="OpenRhiza"}: cargo::core::compiler::fingerprint:     err: failed to read `D:\python\github\OpenRhiza\OpenRhiza\target\x86_64-unknown-none\debug\.fingerprint\OpenRhiza-272d4b8525eb5772\test-bin-OpenRhiza`
 
 Caused by:
     지정된 파일을 찾을 수 없습니다. (os error 2)
@@ -26,10 +26,5 @@ Stack backtrace:
   18: git_midx_writer_dump
   19: BaseThreadInitThunk
   20: RtlUserThreadStart
-   0.040328900s  INFO prepare_target{force=false package_id=OpenRhiza v0.1.0 (D:\python\github\OpenRhiza\OpenRhiza) target="OpenRhiza"}: cargo::core::compiler::fingerprint: stale: changed "D:\\python\\github\\OpenRhiza\\OpenRhiza\\src\\main.rs"
-   0.040344200s  INFO prepare_target{force=false package_id=OpenRhiza v0.1.0 (D:\python\github\OpenRhiza\OpenRhiza) target="OpenRhiza"}: cargo::core::compiler::fingerprint:           (vs) "D:\\python\\github\\OpenRhiza\\OpenRhiza\\target\\x86_64-unknown-none\\debug\\.fingerprint\\OpenRhiza-10c78e0cd82af2ea\\dep-bin-OpenRhiza"
-   0.040348100s  INFO prepare_target{force=false package_id=OpenRhiza v0.1.0 (D:\python\github\OpenRhiza\OpenRhiza) target="OpenRhiza"}: cargo::core::compiler::fingerprint:                FileTime { seconds: 13418927159, nanos: 212333500 } < FileTime { seconds: 13418927443, nanos: 144307300 }
-   0.040464200s  INFO prepare_target{force=false package_id=OpenRhiza v0.1.0 (D:\python\github\OpenRhiza\OpenRhiza) target="OpenRhiza"}: cargo::core::compiler::fingerprint: fingerprint dirty for OpenRhiza v0.1.0 (D:\python\github\OpenRhiza\OpenRhiza)/Check { test: false }/TargetInner { name: "OpenRhiza", doc: true, ..: with_path("D:\\python\\github\\OpenRhiza\\OpenRhiza\\src\\main.rs", Edition2021) }
-   0.040476100s  INFO prepare_target{force=false package_id=OpenRhiza v0.1.0 (D:\python\github\OpenRhiza\OpenRhiza) target="OpenRhiza"}: cargo::core::compiler::fingerprint:     dirty: FsStatusOutdated(StaleItem(ChangedFile { reference: "D:\\python\\github\\OpenRhiza\\OpenRhiza\\target\\x86_64-unknown-none\\debug\\.fingerprint\\OpenRhiza-10c78e0cd82af2ea\\dep-bin-OpenRhiza", reference_mtime: FileTime { seconds: 13418927159, nanos: 212333500 }, stale: "D:\\python\\github\\OpenRhiza\\OpenRhiza\\src\\main.rs", stale_mtime: FileTime { seconds: 13418927443, nanos: 144307300 } }))
     Checking OpenRhiza v0.1.0 (D:\python\github\OpenRhiza\OpenRhiza)
 error: could not compile `OpenRhiza` (bin "OpenRhiza" test) due to 1 previous error
