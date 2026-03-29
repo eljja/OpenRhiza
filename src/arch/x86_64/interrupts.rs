@@ -76,17 +76,11 @@ pub fn init_idt() {
 }
 
 extern "x86-interrupt" fn breakpoint_handler(_stack_frame: InterruptStackFrame) {
-    // 에러를 안전하게 가로챘다는 증거로 "Hello OpenRhiza!" 뒤에 빨간색 '[B]'를 출력합니다.
-    let vga_buffer = 0xb8000 as *mut u8;
-    unsafe {
-        *vga_buffer.offset(32) = b'['; *vga_buffer.offset(33) = 0x0C; // Light Red
-        *vga_buffer.offset(34) = b'B'; *vga_buffer.offset(35) = 0x0C;
-        *vga_buffer.offset(36) = b']'; *vga_buffer.offset(37) = 0x0C;
-    }
+    crate::println!("[B] Breakpoint Hit!");
 }
 
-extern "x86-interrupt" fn page_fault_handler(_stack_frame: InterruptStackFrame, _error_code: PageFaultErrorCode) {
-    // 나중에는 시스템을 멈추지 않고 AI에게 로그만 뱉게 수정할 예정입니다.
+extern "x86-interrupt" fn page_fault_handler(_stack_frame: InterruptStackFrame, error_code: PageFaultErrorCode) {
+    crate::arch::x86_64::serial::_print(core::format_args!("CRITICAL: PAGE FAULT! Code: {:?}\n", error_code));
     loop {} 
 }
 

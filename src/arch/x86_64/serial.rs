@@ -31,6 +31,11 @@ macro_rules! serial_println {
     ($fmt:expr, $($arg:tt)*) => ($crate::serial_print!(concat!($fmt, "\n"), $($arg)*));
 }
 
+/// AI에게 원시 바이너리 전송 (에러 데이터 파이프라인)
+pub fn send_byte(data: u8) {
+    SERIAL1.lock().send(data);
+}
+
 /// AI 샌드박스가 외부(호스트)로부터 데이터를 비동기적으로 읽어오기 위한 원시 함수
 pub fn poll_receive() -> Option<u8> {
     let mut line_status = x86_64::instructions::port::Port::<u8>::new(0x3FD); // COM1 상태 레지스터

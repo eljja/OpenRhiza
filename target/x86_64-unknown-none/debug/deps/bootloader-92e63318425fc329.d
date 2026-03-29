@@ -1,7 +1,0 @@
-D:\python\github\OpenRhiza\OpenRhiza\target\x86_64-unknown-none\debug\deps\bootloader-92e63318425fc329.d: C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bootloader-0.9.34\src\lib.rs C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bootloader-0.9.34\src\bootinfo\mod.rs C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bootloader-0.9.34\src\bootinfo\memory_map.rs
-
-D:\python\github\OpenRhiza\OpenRhiza\target\x86_64-unknown-none\debug\deps\libbootloader-92e63318425fc329.rmeta: C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bootloader-0.9.34\src\lib.rs C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bootloader-0.9.34\src\bootinfo\mod.rs C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bootloader-0.9.34\src\bootinfo\memory_map.rs
-
-C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bootloader-0.9.34\src\lib.rs:
-C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bootloader-0.9.34\src\bootinfo\mod.rs:
-C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\bootloader-0.9.34\src\bootinfo\memory_map.rs:

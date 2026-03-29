@@ -1,7 +1,7 @@
-// src/arch/x86_64/discovery.rs
 use core::arch::x86_64::__cpuid;
 use alloc::vec::Vec;
 use x86_64::instructions::port::Port;
+use bootloader::bootinfo::{BootInfo, MemoryRegionType};
 
 #[derive(Debug)]
 pub struct PciDevice {
@@ -19,13 +19,32 @@ pub struct SystemIdentity {
     pub pci_devices: Vec<PciDevice>,
 }
 
+pub static mut DMA_BASE: u32 = 0;
+pub static mut DMA_OFFSET: u32 = 0;
+pub static mut PHYS_MEM_OFFSET: u64 = 0;
+
 impl SystemIdentity {
-    pub fn scan() -> Self {
+    pub fn scan(boot_info: &'static BootInfo) -> Self {
         // 1. CPUID 스캔 (실제 코어 수 확인)
         let cores = Self::get_cpu_count();
         
         // 2. 초기 메모리와 PCI 버스 스캔
-        let mem = 0; 
+        let mut mem: usize = 0;
+        for region in boot_info.memory_map.iter() {
+            if region.region_type == MemoryRegionType::Usable {
+                let start = region.range.start_addr();
+                let end = region.range.end_addr();
+                mem += (end - start) as usize;
+                
+                unsafe {
+                    // Find a contiguous block of at least 4MB above the 4MB physical mark
+                    if DMA_BASE == 0 && (end - start) >= 0x400000 && start >= 0x400000 {
+                        DMA_BASE = start as u32;
+                    }
+                }
+            }
+        }
+        
         let storage = false;
         let pci_devices = Self::enumerate_pci();
         
@@ -55,6 +74,16 @@ impl SystemIdentity {
                 if vendor_id != 0xFFFF {
                     let device_id = Self::pci_read_word(bus, device, 0, 2);
                     let bar0 = Self::pci_read_dword(bus, device, 0, 0x10); // BAR0는 오프셋 0x10에 위치함
+                    
+                    let class_info = Self::pci_read_dword(bus, device, 0, 0x08);
+                    let prog_if = ((class_info >> 8) & 0xFF) as u8;
+                    let subclass = ((class_info >> 16) & 0xFF) as u8;
+                    let class_code = ((class_info >> 24) & 0xFF) as u8;
+                    
+                    if class_code == 0x0C && subclass == 0x03 && prog_if == 0x30 {
+                        crate::serial_println!("xHCI BAR: {:#010X}", bar0);
+                    }
+                    
                     devices.push(PciDevice { bus, device, vendor_id, device_id, bar0 });
                 }
             }

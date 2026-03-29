@@ -3,5 +3,5 @@ cargo:rustc-link-search=native=D:\python\github\OpenRhiza\OpenRhiza\target\booti
 cargo:rustc-link-lib=static=kernel_bin-OpenRhiza
 cargo:rerun-if-env-changed=KERNEL
 cargo:rerun-if-env-changed=KERNEL_MANIFEST
-cargo:rerun-if-changed=\\?\D:\python\github\OpenRhiza\OpenRhiza\target\x86_64-unknown-none\debug\OpenRhiza
+cargo:rerun-if-changed=\\?\D:\python\github\OpenRhiza\OpenRhiza\target\x86_64-unknown-none\release\OpenRhiza
 cargo:rerun-if-changed=build.rs

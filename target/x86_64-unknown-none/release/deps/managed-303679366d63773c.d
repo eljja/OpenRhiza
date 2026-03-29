@@ -1,0 +1,11 @@
+D:\python\github\OpenRhiza\OpenRhiza\target\x86_64-unknown-none\release\deps\managed-303679366d63773c.d: C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\managed-0.8.0\src\lib.rs C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\managed-0.8.0\src\object.rs C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\managed-0.8.0\src\slice.rs C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\managed-0.8.0\src\slotmap.rs C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\managed-0.8.0\src\map.rs
+
+D:\python\github\OpenRhiza\OpenRhiza\target\x86_64-unknown-none\release\deps\libmanaged-303679366d63773c.rlib: C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\managed-0.8.0\src\lib.rs C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\managed-0.8.0\src\object.rs C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\managed-0.8.0\src\slice.rs C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\managed-0.8.0\src\slotmap.rs C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\managed-0.8.0\src\map.rs
+
+D:\python\github\OpenRhiza\OpenRhiza\target\x86_64-unknown-none\release\deps\libmanaged-303679366d63773c.rmeta: C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\managed-0.8.0\src\lib.rs C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\managed-0.8.0\src\object.rs C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\managed-0.8.0\src\slice.rs C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\managed-0.8.0\src\slotmap.rs C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\managed-0.8.0\src\map.rs
+
+C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\managed-0.8.0\src\lib.rs:
+C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\managed-0.8.0\src\object.rs:
+C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\managed-0.8.0\src\slice.rs:
+C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\managed-0.8.0\src\slotmap.rs:
+C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\managed-0.8.0\src\map.rs:
