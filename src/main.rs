@@ -25,6 +25,9 @@ pub mod allocator;
 pub mod net;
 pub mod vga;
 pub mod storage;
+pub mod https;
+pub mod task;
+pub mod security;
 
 use arch::x86_64::discovery::SystemIdentity;
 use os_core_seed::OpenRhizaSeed;
@@ -95,17 +98,15 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
     // 4. OS 네트워킹 스택 초기화 (smoltcp IP/TCP)
     crate::net::init_network();
 
-    // 동적 키보드 매핑 테이블 (Normal 128 bytes + Shifted 128 bytes = 256 bytes)
-    let mut dynamic_keymap: [u8; 256] = [0x3F; 256];
-    let mut keymap_index = 0;
-    
-    // --- 키보드 상태 (State Machine) ---
-    let mut shift_pressed = false;
-    let mut _ctrl_pressed = false;
-    let mut _alt_pressed = false;
-    let mut is_extended = false; // E0 확장 키 플래그
+    crate::println!("[OS System] All subsystems initialized. Handing over to Async Executor.");
 
-    // --- Wasm 수신 상태 (State Machine) ---
+    let mut executor = task::executor::Executor::new();
+    executor.spawn(task::Task::new(task::keyboard::keyboard_task()));
+    executor.spawn(task::Task::new(core_os_task(rhiza)));
+    executor.run();
+}
+
+async fn core_os_task(mut rhiza: OpenRhizaSeed) {
     let mut receiving_wasm = false;
     let mut receiving_wasm_size = false;
     let mut wasm_size_buf = [0u8; 4];
@@ -114,113 +115,93 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
     let mut wasm_buffer: alloc::vec::Vec<u8> = alloc::vec::Vec::new();
     
     let mut uptime_ms: i64 = 0;
+    let mut nexus_client: Option<crate::https::NexusClient> = None;
+    let mut keymap_index = 0;
 
     loop {
+        // [수면] 타스크를 1 Ticks 동안 대기시킵니다. (CPU 과점유 방지 및 다른 큐 배려)
+        crate::task::timer::sleep_ticks(1).await;
+
         // [네트워크 폴링] AI가 생성한 네트워크 드라이버가 살아있다면, DMA 버퍼에서 패킷을 계속 가져옵니다.
         rhiza.poll_wasm_network();
         crate::net::poll(uptime_ms);
         uptime_ms += 1;
 
-        // [데이터 수신] 외부 AI가 시리얼 포트로 매핑 테이블 256바이트를 쏴주면 순서대로 적재합니다!
-        if let Some(data) = rhiza.poll_host_data() {
-            if data == 0xFD {
-                keymap_index = 0; // 수신 버퍼 조용히 초기화 (TCP 쓰레기 데이터 방지)
-                dynamic_keymap = [0x3F; 256];
-            } else if data == 0xFE && keymap_index < 256 {
-                // 실패 시그널 수신 시 캘리브레이션 초기화
-                keymap_index = 0;
-                crate::println!("[!] Calibration Failed. Try again:");
-            } else if keymap_index < 256 {
-                dynamic_keymap[keymap_index] = data;
-                keymap_index += 1;
-                if keymap_index == 256 {
-                    crate::println!("[+] Keyboard Driver Loaded.");
+        if uptime_ms == 200 {
+            crate::println!("[OS] Triggering Native Nexus Fetch for xHCI (0x0C_0x03) over TCP/IP...");
+            let socket_handle = crate::net::create_tcp_socket();
+            nexus_client = Some(crate::https::NexusClient::new(
+                socket_handle,
+                smoltcp::wire::IpAddress::Ipv4(smoltcp::wire::Ipv4Address::new(10, 0, 2, 2)),
+                4443,
+                "0x0C_0x03"
+            ));
+        }
+
+        if let Some(client) = &mut nexus_client {
+            client.poll();
+            if let Some((wasm_payload, signature)) = client.take_payload() {
+                crate::println!("[OS] Downloaded Wasm size: {} bytes. Verifying Signature...", wasm_payload.len());
+                if crate::security::verify_nexus_signature(&wasm_payload, &signature) {
+                    crate::println!("[SECURITY] Nexus Ed25519 Signature Verified! Trusting Wasm Payload.");
+                    match rhiza.execute_wasm_sandbox(&wasm_payload) {
+                        os_core_seed::ExecutionResult::Success(msg) => crate::println!("[Sandbox] Autonomous Nexus Fetch Success: {}", msg),
+                        os_core_seed::ExecutionResult::Panic(err) => crate::println!("[Sandbox Error] {}", err),
+                    }
+                } else {
+                    crate::println!("[SECURITY_ALERT] Invalid Ed25519 Signature! Malicious Payload Dropped.");
                 }
+                nexus_client = None;
+            }
+        }
+
+        while let Some(data) = rhiza.poll_host_data() {
+            if data == 0xFD {
+                keymap_index = 0; 
+                *crate::task::keyboard::DYNAMIC_KEYMAP.lock() = [0x3F; 256];
             } else if data == 0xFB {
                 crate::println!("[*] AI is generating e1000 LAN driver... Please wait.");
             } else if data == 0xFA {
                 crate::println!("[!] Failed to generate LAN driver.");
-            } else {
-                // 키보드 드라이버 로드 이후: Wasm 바이너리 수신 로직
-                if !receiving_wasm && !receiving_wasm_size && data == 0xFC {
-                    receiving_wasm_size = true;
-                    wasm_size_idx = 0;
-                    wasm_buffer.clear();
-                } else if receiving_wasm_size {
-                    wasm_size_buf[wasm_size_idx] = data;
-                    wasm_size_idx += 1;
-                    if wasm_size_idx == 4 {
-                        expected_wasm_size = u32::from_le_bytes(wasm_size_buf) as usize;
-                        receiving_wasm_size = false;
-                        receiving_wasm = true;
-                        crate::println!("[OS] Receiving Wasm binary of size {} bytes...", expected_wasm_size);
-                    }
-                } else if receiving_wasm {
-                    wasm_buffer.push(data);
-                    if wasm_buffer.len() == expected_wasm_size {
-                        receiving_wasm = false;
-                        crate::println!("[OS] Wasm binary received! Executing Sandbox...");
-                        match rhiza.execute_wasm_sandbox(&wasm_buffer) {
-                            os_core_seed::ExecutionResult::Success(msg) => {
-                                crate::println!("[Sandbox] {}", msg);
-                                crate::arch::x86_64::serial::send_byte(0xF8); // Success protocol token
-                            },
-                            os_core_seed::ExecutionResult::Panic(err) => {
-                                crate::println!("[Sandbox Error] {}", err);
-                                crate::arch::x86_64::serial::send_byte(0xF9); // Error protocol token
-                                let err_bytes = err.as_bytes();
-                                let len = err_bytes.len() as u32;
-                                for &b in &len.to_le_bytes() {
-                                    crate::arch::x86_64::serial::send_byte(b);
-                                }
-                                for &b in err_bytes {
-                                    crate::arch::x86_64::serial::send_byte(b);
-                                }
-                            }
+            } else if !receiving_wasm && !receiving_wasm_size && data == 0xFC {
+                receiving_wasm_size = true;
+                wasm_size_idx = 0;
+                wasm_buffer.clear();
+            } else if receiving_wasm_size {
+                wasm_size_buf[wasm_size_idx] = data;
+                wasm_size_idx += 1;
+                if wasm_size_idx == 4 {
+                    expected_wasm_size = u32::from_le_bytes(wasm_size_buf) as usize;
+                    receiving_wasm_size = false;
+                    receiving_wasm = true;
+                    crate::println!("[OS] Receiving Wasm binary of size {} bytes...", expected_wasm_size);
+                }
+            } else if receiving_wasm {
+                wasm_buffer.push(data);
+                if wasm_buffer.len() == expected_wasm_size {
+                    receiving_wasm = false;
+                    crate::println!("[OS] Wasm binary received! Executing Sandbox...");
+                    match rhiza.execute_wasm_sandbox(&wasm_buffer) {
+                        os_core_seed::ExecutionResult::Success(msg) => {
+                            crate::println!("[Sandbox] {}", msg);
+                            crate::arch::x86_64::serial::send_byte(0xF8); 
+                        },
+                        os_core_seed::ExecutionResult::Panic(err) => {
+                            crate::println!("[Sandbox] {}", err);
+                            crate::arch::x86_64::serial::send_byte(0xF9); 
                         }
                     }
                 }
-            }
-        }
-
-        if let Some(scancode) = rhiza.poll_hardware_event() {
-            crate::println!("QEMU_LOG: Received scancode -> {:#04X}", scancode);
-            
-            // [키보드 상태 머신] 확장 키(E0) 처리
-            if scancode == 0xE0 {
-                is_extended = true;
-                continue;
-            }
-
-            let is_break = scancode >= 0x80;
-            let real_scancode = scancode & 0x7F; // Break 비트(0x80) 제거하여 순수 키 위치 확보
-
-            // Modifier(Shift, Ctrl, Alt) 감지 로직
-            match (is_extended, real_scancode) {
-                (false, 0x2A) | (false, 0x36) => { shift_pressed = !is_break; is_extended = false; continue; }, // Shift
-                (false, 0x1D) | (true, 0x1D) => { _ctrl_pressed = !is_break; is_extended = false; continue; },   // Ctrl
-                (false, 0x38) | (true, 0x38) => { _alt_pressed = !is_break; is_extended = false; continue; },    // Alt
-                _ => {}
-            }
-            
-            is_extended = false; // 하나의 키 처리가 끝나면 확장 플래그 초기화
-
-            // [동적 드라이버 실행] 키를 누를 때(Make)만 화면에 출력
-            if !is_break {
-                let map_index = if shift_pressed { real_scancode as usize + 128 } else { real_scancode as usize };
-                let char_to_print = dynamic_keymap[map_index];
-
-                if char_to_print != 0x3F { // 매핑되지 않은 키('?')는 무시
-                    if char_to_print == 0x0A { // Enter 키 처리
-                        crate::println!("");
-                    } else if char_to_print == 0x08 { // Backspace 키 처리
-                        crate::vga::WRITER.lock().backspace();
-                    } else { // 일반 문자 출력
-                        crate::print!("{}", (char_to_print as char));
-                    }
+            } else if data == 0xFE && keymap_index < 256 {
+                keymap_index = 0;
+                crate::println!("[!] Calibration Failed. Try again:");
+            } else if keymap_index < 256 {
+                crate::task::keyboard::DYNAMIC_KEYMAP.lock()[keymap_index] = data;
+                keymap_index += 1;
+                if keymap_index == 256 {
+                    crate::println!("[+] Keyboard Driver Loaded.");
                 }
             }
         }
-        x86_64::instructions::hlt(); // CPU를 쉬게 하여 배터리와 자원 낭비 방지
     }
 }

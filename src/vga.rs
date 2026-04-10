@@ -127,8 +127,7 @@ macro_rules! println {
 
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
-    // Temporarily skipping VGA writing to debug Triple Faults!
-    // use core::fmt::Write;
-    // WRITER.lock().write_fmt(args).unwrap();
+    use core::fmt::Write;
+    WRITER.lock().write_fmt(args).unwrap();
     crate::arch::x86_64::serial::_print(args);
 }

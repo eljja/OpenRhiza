@@ -6,7 +6,7 @@ use lazy_static::lazy_static;
 use smoltcp::phy::{Device, DeviceCapabilities, RxToken, TxToken, Medium};
 use smoltcp::time::Instant;
 use smoltcp::wire::{EthernetAddress, HardwareAddress, IpAddress, IpCidr, Ipv4Address};
-use smoltcp::iface::{Config, Interface, SocketSet};
+use smoltcp::iface::{Config, Interface, SocketSet, SocketHandle};
 
 lazy_static! {
     pub static ref RX_QUEUE: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
@@ -18,6 +18,7 @@ pub fn queue_rx_packet(ptr: u32, len: u32) {
         let slice = core::slice::from_raw_parts(ptr as *const u8, len as usize);
         let mut packet = Vec::with_capacity(len as usize);
         packet.extend_from_slice(slice);
+        crate::serial_println!("[OS Net] RX: Ingress Packet received from NIC (Wasm Sandbox), {} bytes", len);
         RX_QUEUE.lock().push(packet);
     }
 }
@@ -72,14 +73,15 @@ impl TxToken for WasmTxToken {
     {
         let mut buffer = vec![0; len];
         let result = f(&mut buffer);
+        crate::serial_println!("[OS Net] TX: Transmission dispatched via SMOLTCP, {} bytes", len);
         TX_QUEUE.lock().push(buffer);
         result
     }
 }
 
 pub struct NetStack {
-    iface: Interface,
-    sockets: SocketSet<'static>,
+    pub iface: Interface,
+    pub sockets: SocketSet<'static>,
 }
 
 lazy_static! {
@@ -110,6 +112,19 @@ pub fn init_network() {
 
     *NET_STACK.lock() = Some(NetStack { iface, sockets });
     crate::serial_println!("[OS Net] smoltcp ICMP/TCP/IP Layer initialized over Dummy MAC on 10.0.2.15");
+}
+
+pub fn create_tcp_socket() -> SocketHandle {
+    let tcp_rx_buffer = smoltcp::socket::tcp::SocketBuffer::new(vec![0; 4096]);
+    let tcp_tx_buffer = smoltcp::socket::tcp::SocketBuffer::new(vec![0; 4096]);
+    let tcp_socket = smoltcp::socket::tcp::Socket::new(tcp_rx_buffer, tcp_tx_buffer);
+    
+    let mut stack_lock = NET_STACK.lock();
+    if let Some(stack) = stack_lock.as_mut() {
+        stack.sockets.add(tcp_socket)
+    } else {
+        panic!("Network stack not initialized!");
+    }
 }
 
 pub fn poll(timestamp_ms: i64) {

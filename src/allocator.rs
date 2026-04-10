@@ -4,7 +4,7 @@ use linked_list_allocator::LockedHeap;
 #[global_allocator]
 static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
-pub const HEAP_SIZE: usize = 100 * 1024; // 100 KiB 힙 메모리 확보
+pub const HEAP_SIZE: usize = 32 * 1024 * 1024; // 32 MiB 힙 메모리 확보
 
 static mut HEAP_MEM: [u8; HEAP_SIZE] = [0; HEAP_SIZE];
 

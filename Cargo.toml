@@ -13,6 +13,9 @@ uart_16550 = "0.2.0" # 시리얼 포트(COM1) 통신을 위한 크레이트
 linked_list_allocator = "0.10.5" # 단순 힙 메모리 할당자
 wasmi = { version = "0.31.0", default-features = false } # 베어메탈용 WebAssembly 샌드박스 런타임
 smoltcp = { version = "0.11", default-features = false, features = ["alloc", "medium-ethernet", "proto-ipv4", "socket-icmp", "socket-tcp"] }
+embedded-io = "0.7.1"
+crossbeam-queue = { version = "0.3.11", default-features = false, features = ["alloc"] }
+ed25519-compact = { version = "2.2.0", default-features = false }
 
 # OS 개발을 위한 베어메탈(no_std) 환경 설정입니다.
 [profile.dev]
@@ -24,3 +27,5 @@ panic = "abort"
 # bootimage 도구가 QEMU를 실행할 때 사용할 명령어와 경로를 지정합니다.
 [package.metadata.bootimage]
 run-command = ["C:\\Program Files\\qemu\\qemu-system-x86_64.exe", "-drive", "format=raw,file={}", "-drive", "file=fat:rw:rhiza_drivers,format=raw,index=2", "-serial", "tcp:127.0.0.1:4444,server", "-netdev", "user,id=n1", "-device", "e1000,netdev=n1"]
+[patch.crates-io]
+bootloader = { path = "bootloader-patched" }

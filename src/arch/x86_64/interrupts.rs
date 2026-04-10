@@ -85,7 +85,7 @@ extern "x86-interrupt" fn page_fault_handler(_stack_frame: InterruptStackFrame, 
 }
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    // 타이머 인터럽트는 지금 당장 처리할 일이 없으므로, PIC에게 "잘 받았다"고 신호(EOI)만 보냅니다.
+    crate::task::timer::timer_tick();
     unsafe {
         PICS.lock().notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
     }
@@ -95,8 +95,8 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
     // 1. 키보드 포트(0x60)에서 스캔코드를 읽어옵니다. (이전에 만든 port.rs 활용)
     let scancode = crate::arch::x86_64::port::read_port_u8(0x60);
     
-    // 2. 화면에 바로 찍지 않고, AI가 읽어갈 수 있도록 큐에 밀어 넣습니다.
-    KEYBOARD_QUEUE.lock().push(scancode);
+    // 2. 화면에 바로 찍지 않고, 비동기 Async 큐에 밀어 넣어서 Waker를 깨웁니다.
+    crate::task::keyboard::add_scancode(scancode);
 
     // 3. PIC에게 다음 키보드 입력을 받아도 된다고 신호(EOI)를 보냅니다.
     unsafe {
