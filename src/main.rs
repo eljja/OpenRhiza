@@ -16,6 +16,8 @@ pub mod arch {
         pub mod interrupts; // 블루스크린 방어막 및 우체통 (IDT)
         pub mod port;       // I/O 포트 (키보드/마우스 제어 기초)
         pub mod serial;     // 호스트 PC와 통신할 탯줄 (COM1 UART)
+        pub mod apic;       // 고급 병렬 인터럽트 컨트롤러 (IOAPIC/LAPIC)
+        pub mod usb;        // 네이티브 USB (xHCI 구조체 매핑)
     }
 }
 
@@ -44,15 +46,19 @@ fn panic(info: &PanicInfo) -> ! {
 pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
     // 1. 방어막 분리 (IDT 및 하드웨어 예외 처리) - 가장 먼저 실행!
     arch::x86_64::interrupts::init_idt();
-    unsafe {
-        arch::x86_64::interrupts::PICS.lock().initialize();
-    }
-    x86_64::instructions::interrupts::enable(); // CPU가 외부 하드웨어 신호를 듣도록 허용
 
     let offset = boot_info.physical_memory_offset;
     unsafe {
         crate::arch::x86_64::discovery::PHYS_MEM_OFFSET = offset;
     }
+
+    // 2. 레거시 8259 PIC를 완전히 죽이고, 최신 초고속 APIC 컨트롤러 통제권을 장악합니다. (Phase 6.B)
+    unsafe {
+        arch::x86_64::interrupts::PICS.lock().disable();
+    }
+    arch::x86_64::apic::init_apic(offset);
+
+    x86_64::instructions::interrupts::enable(); // CPU가 외부 하드웨어 신호를 듣도록 허용
 
     // 시리얼 포트 통신 시작 알림 (호스트 PC로 전송)
     crate::println!("OpenRhiza Seed (Layer 0) Booting... Serial Connected!");
@@ -68,6 +74,11 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
     crate::println!("Found {} PCI devices:", identity.pci_devices.len());
     for dev in &identity.pci_devices {
         crate::println!("  Bus {} Device {}: Vendor {:#06X}, Device {:#06X}, BAR0: {:#010X}", dev.bus, dev.device, dev.vendor_id, dev.device_id, dev.bar0);
+        
+        // Bootstrapping USB xHCI dynamically from hardcoded Layer 0
+        if dev.class_code == 0x0C && dev.subclass == 0x03 && dev.prog_if == 0x30 && dev.bar0 != 0 {
+            crate::arch::x86_64::usb::init_xhci(dev.bar0, offset, dev.bus, dev.device);
+        }
     }
     
     crate::println!("Verify Keyboard: Type 'hi!' and Enter");
@@ -125,6 +136,10 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
         // [네트워크 폴링] AI가 생성한 네트워크 드라이버가 살아있다면, DMA 버퍼에서 패킷을 계속 가져옵니다.
         rhiza.poll_wasm_network();
         crate::net::poll(uptime_ms);
+        
+        // [USB HID 폴링] xHCI 이벤트 링에서 USB 키보드 입력을 가져와 스캔코드로 변환합니다.
+        crate::arch::x86_64::usb::poll_usb_keyboard();
+        
         uptime_ms += 1;
 
         if uptime_ms == 200 {

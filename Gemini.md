@@ -38,7 +38,8 @@
   - **[최근 완료]** 키보드 상태 머신(State Machine) 확장: Shift, Ctrl, Alt, E0 확장키 처리 및 256바이트(Normal/Shifted) 매핑 구조 도입.
   - **[최근 완료]** 동적 캘리브레이션(Generative Calibration): "Hi.OpenRhiza!" 문자열 타이핑 패턴을 AI가 분석하여, 사용자 키보드 배열(QWERTY, Dvorak 등)을 자동 추론 및 적용하는 시스템 완성.
   - **[최근 완료]** Layer 0 샌드박스 진화: 베어메탈 커널 내 WebAssembly(Wasm) 런타임(`wasmi`) 통합 및 동작 성공. (AI 코드를 격리 실행할 궁극의 안전망 확보)
-
+  - **[최근 완료]** 부트로더 메모리 안정화: 스택 오버플로우로 인한 E820 메모리 맵(BIOS) 손상 문제 및 `stage_3.s`의 Identity Mapping(페이징) 누락으로 인한 트리플 폴트(Triple Fault) 현상 완벽 해결. 커널 안착 성공.
+  - **[최근 완료]** 자율 드라이버 생성 및 동적 WebAssembly 인젝션: 커널 힙 메모리를 32MB로 확장하여 `wasmi` 런타임 메모리 부족 현상(커널 패닉)을 해결. UART 통신 동기화 및 드레이닝(draining) 최적화를 통해 Intel e1000 네트워크 드라이버를 AI가 실시간으로 코딩, Wasm 바이너리로 컴파일하여 베어메탈 커널 내부에 주입하고 구동하는 전체 파이프라인 완벽 달성.
 ## 목표 및 환경
 - **타겟 플랫폼**: 범용 Bare-metal CPU (x86_64, ARM, RISC-V) / 초기 개발 및 테스트용으로 VMware 사용
 - **결과물 형태**: `cargo bootimage`로 빌드된 `.bin` / `.vmdk` 디스크 이미지

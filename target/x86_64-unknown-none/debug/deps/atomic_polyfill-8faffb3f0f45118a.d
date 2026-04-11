@@ -1,0 +1,8 @@
+D:\python\github\OpenRhiza\OpenRhiza\target\x86_64-unknown-none\debug\deps\atomic_polyfill-8faffb3f0f45118a.d: C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\atomic-polyfill-1.0.3\src\lib.rs C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\atomic-polyfill-1.0.3\src\../README.md
+
+D:\python\github\OpenRhiza\OpenRhiza\target\x86_64-unknown-none\debug\deps\libatomic_polyfill-8faffb3f0f45118a.rlib: C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\atomic-polyfill-1.0.3\src\lib.rs C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\atomic-polyfill-1.0.3\src\../README.md
+
+D:\python\github\OpenRhiza\OpenRhiza\target\x86_64-unknown-none\debug\deps\libatomic_polyfill-8faffb3f0f45118a.rmeta: C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\atomic-polyfill-1.0.3\src\lib.rs C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\atomic-polyfill-1.0.3\src\../README.md
+
+C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\atomic-polyfill-1.0.3\src\lib.rs:
+C:\Users\eljja\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\atomic-polyfill-1.0.3\src\../README.md:

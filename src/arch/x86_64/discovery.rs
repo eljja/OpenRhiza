@@ -10,6 +10,9 @@ pub struct PciDevice {
     pub vendor_id: u16,
     pub device_id: u16,
     pub bar0: u32,
+    pub class_code: u8,
+    pub subclass: u8,
+    pub prog_if: u8,
 }
 
 pub struct SystemIdentity {
@@ -84,7 +87,7 @@ impl SystemIdentity {
                         crate::serial_println!("xHCI BAR: {:#010X}", bar0);
                     }
                     
-                    devices.push(PciDevice { bus, device, vendor_id, device_id, bar0 });
+                    devices.push(PciDevice { bus, device, vendor_id, device_id, bar0, class_code, subclass, prog_if });
                 }
             }
         }

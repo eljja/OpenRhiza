@@ -1,0 +1,13 @@
+Bootloader main started...Bootloader Phase 1... Phase 2... Phase 3... JUMPING TO KERNEL!OpenRhiza Seed (Layer 0) Booting... Serial Connected!
+Heap Allocator initialized!
+Total Usable Memory: 122695680 Bytes
+Hardware Discovery Complete.
+Found 4 PCI devices:
+  Bus 0 Device 0: Vendor 0x8086, Device 0x1237, BAR0: 0x00000000
+  Bus 0 Device 1: Vendor 0x8086, Device 0x7000, BAR0: 0x00000000
+  Bus 0 Device 2: Vendor 0x1234, Device 0x1111, BAR0: 0xFD000008
+  Bus 0 Device 3: Vendor 0x8086, Device 0x100E, BAR0: 0xFEBC0000
+Verify Keyboard: Type 'hi!' and Enter
+[Storage] Probing Secondary IDE Drive for Wasm Cache...
+[Storage] No valid Wasm Cache drive found. Wait for external Link.
+[OS Net] smoltcp ICMP/TCP/IP Layer initialized over Dummy MAC on 10.0.2.15

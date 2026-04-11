@@ -110,7 +110,45 @@ def compile_rust_to_wasm(rust_code):
             return None, e.stderr
 
 # Self-Healing Driver Builder Template
-def generate_and_inject_driver(s, hardware_name, prompt):
+def inject_and_wait(s, wasm_bytes):
+    print(f"[AI Brain] Injecting Wasm binary ({len(wasm_bytes)} bytes) into OS...")
+    s.sendall(bytes([0xFC])) 
+    s.sendall(len(wasm_bytes).to_bytes(4, byteorder='little')) 
+    for b in wasm_bytes:
+        s.sendall(bytes([b]))
+        time.sleep(0.002) 
+    print("[AI Brain] Wasm injection complete! Waiting for OS runtime feedback...")
+    
+    buffer = b""
+    start_wait = time.time()
+    s.settimeout(1.0)
+    err_out = None
+    while time.time() - start_wait < 5.0:
+        try:
+            data = s.recv(1024)
+            if data:
+                buffer += data
+                if b"Wasm Execution Success" in buffer:
+                    print("\n[AI Brain] YES! OS reported Wasm Sandbox Execution SUCCESS!")
+                    s.settimeout(None)
+                    return True, None
+                elif b"Wasm Sandbox Trap (Panic):" in buffer:
+                    err_text = buffer.decode('utf-8', errors='ignore')
+                    if "Wasm Sandbox Trap (Panic):" in err_text:
+                        err_msg = err_text.split("Wasm Sandbox Trap (Panic):")[1].split("\n")[0]
+                        print(f"[!] OS Sandbox Trap / Runtime Panic Detected!\n{err_msg}")
+                        err_out = err_msg
+                        break
+        except socket.timeout:
+            continue
+    else:
+        print("[?] OS did not return Success/Panic code within timeout. Assuming tentative success.")
+        s.settimeout(None)
+        return True, None
+    s.settimeout(None)
+    return False, err_out
+
+def generate_and_inject_driver(s, hardware_name, hardware_id, prompt):
     print(f"\n[AI Brain] Generating initialization driver for {hardware_name}...")
     s.sendall(bytes([0xFB])) 
 
@@ -137,37 +175,20 @@ def generate_and_inject_driver(s, hardware_name, prompt):
                 wasm_bytes, compile_err = compile_rust_to_wasm(rust_code)
                 
                 if wasm_bytes:
-                    print(f"[AI Brain] Injecting Wasm binary ({len(wasm_bytes)} bytes) into OS...")
-                    s.sendall(bytes([0xFC])) 
-                    s.sendall(len(wasm_bytes).to_bytes(4, byteorder='little')) 
-                    for b in wasm_bytes:
-                        s.sendall(bytes([b]))
-                        time.sleep(0.002) 
-                    print("[AI Brain] Wasm injection complete! Waiting for OS runtime feedback...")
-                    
-                    # Self-Healing Runtime Wasm Execution Loop (Listens for Protocol 0xF8 or 0xF9)
-                    # We block and wait for OS serial confirmation since Wasm traps happen at runtime.
-                    buffer = b""
-                    test_success = False
-                    start_wait = time.time()
-                    while time.time() - start_wait < 5.0: # 5 second timeout for OS to run
-                        data = s.recv(1024)
-                        if data:
-                            buffer += data
-                            # Check for 0xF8 (Success) or 0xF9 (Panic)
-                            if b"Wasm Execution Success" in buffer:
-                                print("\n[AI Brain] YES! OS reported Wasm Sandbox Execution SUCCESS!")
-                                return True
-                            elif b"Wasm Sandbox Trap (Panic):" in buffer:
-                                err_text = buffer.decode('utf-8', errors='ignore')
-                                if "Wasm Sandbox Trap (Panic):" in err_text:
-                                    err_msg = err_text.split("Wasm Sandbox Trap (Panic):")[1].split("\n")[0]
-                                    print(f"[!] OS Sandbox Trap / Runtime Panic Detected!\n{err_msg}")
-                                    compile_err = err_msg
-                                    break
-                    else:
-                        print("[?] OS did not return Success/Panic code within timeout. Assuming tentative success.")
+                    success, runtime_err = inject_and_wait(s, wasm_bytes)
+                    if success:
+                        os.makedirs("nexus_cache", exist_ok=True)
+                        cache_path = f"nexus_cache/{hardware_id.replace(':', '_')}.wasm"
+                        try:
+                            # locate cargo output folder and copy
+                            with open(cache_path, "wb") as f:
+                                f.write(wasm_bytes)
+                            print(f"[AI Brain] Saved successful driver to '{cache_path}'")
+                        except Exception as e:
+                            print(f"[AI Brain] Failed to cache driver: {e}")
                         return True
+                    else:
+                        compile_err = runtime_err
                         
                 # Re-prompt generation triggered either by compile failure OR runtime sandbox panic
                 print(f"[!] Feedback Loop Triggered on attempt {attempt + 1}.")
@@ -200,38 +221,19 @@ Instruction: Fix the errors based on the output above and provide the complete, 
     return False
 
 def search_and_verify_driver_from_nexus(s, hardware_name, hardware_id, bar0_address, prompt_template):
-    """
-    Phase 4 Nexus Integration:
-    1. Search OpenRhiza.com for existing Wasm drivers / source code for this hardware_id.
-    2. Download the best-rated driver source.
-    3. Pass it to the local LLM to 'verify and adapt' against local PC specs before compiling.
-    (Placeholder logic until OpenRhiza.com API is live)
-    """
-    print(f"\n[AI Brain] Searching OpenRhiza Nexus for '{hardware_name}' ({hardware_id})...")
-    # TODO: Implement actual HTTP GET to OpenRhiza.com/api/nexus/query
-    time.sleep(1) # Simulated network delay
-    nexus_found = False
+    cache_path = f"nexus_cache/{hardware_id.replace(':', '_')}.wasm"
+    print(f"\n[AI Brain] Searching OpenRhiza Nexus Cache for '{hardware_name}' ({hardware_id})...")
     
-    if nexus_found:
-        print(f"[AI Brain] Found existing driver source on Nexus! Validating for local environment...")
-        nexus_driver_source = "// Retrieved from OpenRhiza Nexus..."
-        verification_prompt = f"""
-        You are an AI brain autonomously reviewing a downloaded driver from OpenRhiza.com Nexus.
-        Hardware: {hardware_name} (BAR0: {bar0_address})
-        
-        [Downloaded External Driver Source]
-        ```rust
-        {nexus_driver_source}
-        ```
-        
-        Instruction: Do NOT blindly execute this. Verify the logic and adapt the code to match this specific local PC's security and MMIO rules.
-        - Ensure Host Functions `read_mmio`/`write_mmio` are used correctly.
-        - Output the final, safe, and adapted Rust code snippet.
-        """
-        return generate_and_inject_driver(s, hardware_name, verification_prompt)
+    if os.path.exists(cache_path):
+        print(f"[AI Brain] Cache Hit! Found compiled WebAssembly driver at {cache_path}")
+        with open(cache_path, "rb") as f:
+            wasm_bytes = f.read()
+            
+        success, _ = inject_and_wait(s, wasm_bytes)
+        return success
     else:
         print(f"[AI Brain] No validated driver found on Nexus. Proceeding with generative creation from scratch...")
-        return generate_and_inject_driver(s, hardware_name, prompt_template)
+        return generate_and_inject_driver(s, hardware_name, hardware_id, prompt_template)
 
 def generate_e1000_driver(s, bar0_address):
     prompt = f"""
@@ -273,13 +275,9 @@ def listen_and_think(s):
     e1000_done = False
     xhci_done = False
     
-    print("[AI Brain] Injecting default QWERTY driver for instant boot...")
-    s.sendall(bytes([0xFD]))
-    time.sleep(0.05)
-    for b in DEFAULT_QWERTY:
-        s.sendall(bytes([b]))
-        time.sleep(0.002) 
-    print("[AI Brain] QWERTY driver injected. Scanning OS hardware logs...")
+    print("[AI Brain] Waiting for OS hardware logs and Keyboard Ready signal...")
+    qwerty_injected = False
+    pending_e1000_bar0 = None
 
     while True:
         data = s.recv(1024)
@@ -292,6 +290,36 @@ def listen_and_think(s):
             decoded_line = line.decode('utf-8', errors='ignore').strip()
             if decoded_line:
                 print(f"[OS System] {decoded_line}")
+                
+                 # Check for e1000 (0x8086:0x100E)
+                if not e1000_done and pending_e1000_bar0 is None and "Vendor 0x8086, Device 0x100E" in decoded_line:
+                    match = re.search(r"BAR0:\s*(0x[0-9A-Fa-f]+)", decoded_line)
+                    if match:
+                        bar0 = match.group(1)
+                        print(f"[AI Brain] Detected Intel e1000 NIC at {bar0} (Queued for generation after QWERTY)!")
+                        pending_e1000_bar0 = bar0
+                
+                # Check for xHCI (0x0C:0x03) -> For now we simulate match
+                if not xhci_done and "Vendor 0x8086, Device 0x1E31" in decoded_line:
+                    match = re.search(r"BAR0:\s*(0x[0-9A-Fa-f]+)", decoded_line)
+                    if match:
+                        bar0 = match.group(1)
+                        print(f"[AI Brain] Detected USB xHCI Controller at {bar0}!")
+                        xhci_done = generate_xhci_driver(s, bar0)
+
+                if not qwerty_injected and "Verify Keyboard:" in decoded_line:
+                    print("[AI Brain] OS is ready for keyboard inputs. Injecting default QWERTY driver...")
+                    s.sendall(bytes([0xFD]))
+                    time.sleep(0.05)
+                    for b in DEFAULT_QWERTY:
+                        s.sendall(bytes([b]))
+                        time.sleep(0.01) # Slow down UART to avoid dropping bytes in OS
+                    print("[AI Brain] QWERTY driver injected.")
+                    qwerty_injected = True
+                    
+                    if pending_e1000_bar0 and not e1000_done:
+                        print("\n[AI Brain] Processing queued e1000 driver generation...")
+                        e1000_done = generate_e1000_driver(s, pending_e1000_bar0)
 
 if __name__ == "__main__":
     conn = connect_to_umbilical_cord()

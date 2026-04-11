@@ -86,9 +86,7 @@ extern "x86-interrupt" fn page_fault_handler(_stack_frame: InterruptStackFrame, 
 
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
     crate::task::timer::timer_tick();
-    unsafe {
-        PICS.lock().notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
-    }
+    crate::arch::x86_64::apic::end_of_interrupt();
 }
 
 extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
@@ -98,8 +96,6 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
     // 2. 화면에 바로 찍지 않고, 비동기 Async 큐에 밀어 넣어서 Waker를 깨웁니다.
     crate::task::keyboard::add_scancode(scancode);
 
-    // 3. PIC에게 다음 키보드 입력을 받아도 된다고 신호(EOI)를 보냅니다.
-    unsafe {
-        PICS.lock().notify_end_of_interrupt(InterruptIndex::Keyboard.as_u8());
-    }
+    // 3. APIC에게 다음 키보드 입력을 받아도 된다고 신호(EOI)를 보냅니다.
+    crate::arch::x86_64::apic::end_of_interrupt();
 }
