@@ -1,40 +1,37 @@
 // src/storage.rs
+use alloc::vec::Vec;
 use crate::arch::x86_64::port::{read_port_u8, read_port_u16, write_port_u8};
-use core::cmp::min;
 
 // Simple polling ATA PIO mode driver for Secondary Master (Port 0x170)
 pub fn read_sector_ata_secondary(lba: u32, buffer: &mut [u8; 512]) {
-    unsafe {
-        let port_base = 0x170; // Secondary IDE Bus
-        
-        // Select drive and LBA mode
-        write_port_u8(port_base + 6, 0xE0 | ((lba >> 24) & 0x0F) as u8);
-        write_port_u8(port_base + 2, 1); // Sector Count: 1
-        write_port_u8(port_base + 3, (lba & 0xFF) as u8); // LBA Low
-        write_port_u8(port_base + 4, ((lba >> 8) & 0xFF) as u8); // LBA Mid
-        write_port_u8(port_base + 5, ((lba >> 16) & 0xFF) as u8); // LBA High
-        write_port_u8(port_base + 7, 0x20); // Command: Read Sector with Retry
+    let port_base = 0x170; // Secondary IDE Bus
+    
+    // Select drive and LBA mode
+    write_port_u8(port_base + 6, 0xE0 | ((lba >> 24) & 0x0F) as u8);
+    write_port_u8(port_base + 2, 1); // Sector Count: 1
+    write_port_u8(port_base + 3, (lba & 0xFF) as u8); // LBA Low
+    write_port_u8(port_base + 4, ((lba >> 8) & 0xFF) as u8); // LBA Mid
+    write_port_u8(port_base + 5, ((lba >> 16) & 0xFF) as u8); // LBA High
+    write_port_u8(port_base + 7, 0x20); // Command: Read Sector with Retry
 
-        // Poll for ready (BSY cleared and DRQ set)
-        for _ in 0..10_000 {
-            let status = read_port_u8(port_base + 7);
-            if (status & 0x80) == 0 && (status & 0x08) != 0 {
-                break;
-            }
-        }
-
-        // Read 256 words = 512 bytes
-        for i in 0..256 {
-            let word = read_port_u16(port_base + 0);
-            buffer[i * 2] = (word & 0xFF) as u8;
-            buffer[i * 2 + 1] = (word >> 8) as u8;
+    // Poll for ready (BSY cleared and DRQ set)
+    for _ in 0..10_000 {
+        let status = read_port_u8(port_base + 7);
+        if (status & 0x80) == 0 && (status & 0x08) != 0 {
+            break;
         }
     }
 
+    // Read 256 words = 512 bytes
+    for i in 0..256 {
+        let word = read_port_u16(port_base + 0);
+        buffer[i * 2] = (word & 0xFF) as u8;
+        buffer[i * 2 + 1] = (word >> 8) as u8;
+    }
 }
 
 // Native FAT16 Payload Extractor (Zero External Dependencies)
-pub fn extract_payload() -> Option<[u8; 1024]> {
+pub fn extract_payload() -> Option<Vec<u8>> {
     let mut boot = [0u8; 512];
     read_sector_ata_secondary(0, &mut boot);
     
@@ -84,21 +81,28 @@ pub fn extract_payload() -> Option<[u8; 1024]> {
         
         if name == b"E1000   BIN" || name == b"E1000   WAS" {
             let starting_cluster = u16::from_le_bytes([entry[26], entry[27]]);
-            let _file_size = u32::from_le_bytes([entry[28], entry[29], entry[30], entry[31]]);
+            let file_size = u32::from_le_bytes([entry[28], entry[29], entry[30], entry[31]]) as usize;
+            if file_size == 0 {
+                return None;
+            }
             
             let root_dir_sectors = (max_root_entries * 32 + 511) / 512;
             let data_region_lba = root_dir_lba + (root_dir_sectors as u32);
             
             let file_lba = data_region_lba + ((starting_cluster as u32 - 2) * (sectors_per_cluster as u32));
-            
-            let mut file_data = [0u8; 1024];
-            let mut sec1 = [0u8; 512];
-            let mut sec2 = [0u8; 512];
-            read_sector_ata_secondary(file_lba as u32, &mut sec1);
-            read_sector_ata_secondary(file_lba as u32 + 1, &mut sec2);
-            file_data[0..512].copy_from_slice(&sec1);
-            file_data[512..1024].copy_from_slice(&sec2);
-            
+
+            let sector_count = file_size.div_ceil(512);
+            let mut file_data = Vec::with_capacity(file_size);
+            for sector_offset in 0..sector_count {
+                let mut sector = [0u8; 512];
+                read_sector_ata_secondary(file_lba + sector_offset as u32, &mut sector);
+
+                let copied = sector_offset * 512;
+                let remaining = file_size.saturating_sub(copied);
+                let bytes_to_copy = remaining.min(512);
+                file_data.extend_from_slice(&sector[..bytes_to_copy]);
+            }
+
             return Some(file_data);
         }
     }

@@ -1,15 +1,15 @@
 // src/e1000.rs
-// 네이티브 e1000 NIC 드라이버 (Layer 0 — 인간이 하드코딩하는 "물리 법칙")
-// Intel 82540EM (QEMU 기본 NIC) 전용
-// OSDev Wiki + Intel 8254x Software Developer's Manual 참조
+// Native e1000 NIC driver (Layer 0 hardcoded "laws of physics")
+// Targets the Intel 82540EM used by QEMU.
+// Based on OSDev Wiki notes and the Intel 8254x Software Developer's Manual.
 //
-// DMA 버퍼는 discovery.rs의 DMA_BASE 물리 영역에서 할당합니다.
-// PHYS_MEM_OFFSET+물리주소 로 가상 주소 접근합니다.
+// DMA buffers are allocated from the physical DMA region exposed by discovery.rs.
+// Virtual access uses PHYS_MEM_OFFSET + physical_address.
 
 use core::ptr::{read_volatile, write_volatile};
 
 // ========================================================================
-// e1000 레지스터 오프셋
+// e1000 register offsets
 // ========================================================================
 const REG_CTRL:   u32 = 0x0000;
 const REG_STATUS: u32 = 0x0008;
@@ -53,7 +53,7 @@ const NUM_TX_DESC: usize = 8;
 const RX_BUF_SIZE: usize = 2048;
 
 // ========================================================================
-// Descriptor 구조체 (16바이트)
+// Descriptor structures (16 bytes each)
 // ========================================================================
 #[repr(C, align(16))]
 #[derive(Clone, Copy)]
@@ -79,7 +79,7 @@ pub struct TxDescriptor {
 }
 
 // ========================================================================
-// DMA 메모리 레이아웃 (물리 주소 기준)
+// DMA memory layout (physical addresses)
 // DMA_BASE + 0x0000: RX descriptors  (32 * 16 = 512 bytes)
 // DMA_BASE + 0x0200: TX descriptors  (8  * 16 = 128 bytes)
 // DMA_BASE + 0x1000: RX buffers      (32 * 2048 = 64KB)
@@ -90,11 +90,34 @@ const DMA_RX_RING_OFF:  u32 = 0x0000;
 const DMA_TX_RING_OFF:  u32 = 0x0200;
 const DMA_RX_BUFS_OFF:  u32 = 0x1000;
 const DMA_TX_BUFS_OFF:  u32 = 0x11000;
+const DMA_REGION_SIZE: u32 = 0x15000;
+
+fn allocate_dma_region(phys_mem_offset: u64) -> Option<u32> {
+    unsafe {
+        let base = crate::arch::x86_64::discovery::DMA_BASE;
+        if base == 0 {
+            return None;
+        }
+
+        let offset_ptr = core::ptr::addr_of_mut!(crate::arch::x86_64::discovery::DMA_OFFSET);
+        let current_offset = core::ptr::read(offset_ptr) as u64;
+        let current = base as u64 + current_offset;
+        let aligned = (current + 0x0FFF) & !0x0FFF;
+        let next_offset = (aligned - base as u64) + DMA_REGION_SIZE as u64;
+
+        core::ptr::write(offset_ptr, next_offset as u32);
+
+        let phys = aligned as u32;
+        let virt = (phys_mem_offset + aligned) as *mut u8;
+        core::ptr::write_bytes(virt, 0, DMA_REGION_SIZE as usize);
+        Some(phys)
+    }
+}
 
 pub struct E1000 {
     mmio_base: u64,
     phys_mem_offset: u64,
-    dma_phys_base: u32,      // DMA 영역의 물리 주소
+    dma_phys_base: u32,      // Physical base address of the DMA region
     pub mac: [u8; 6],
     rx_next: usize,
 }
@@ -110,31 +133,31 @@ impl E1000 {
         unsafe { write_volatile((self.mmio_base + reg as u64) as *mut u32, val) }
     }
 
-    /// DMA 물리 주소를 가상 주소로 변환합니다.
+    /// Translate a DMA physical address into a virtual address.
     #[inline(always)]
     fn dma_vaddr(&self, phys: u32) -> u64 {
         self.phys_mem_offset + phys as u64
     }
 
-    /// RX Descriptor 링의 가상 주소 포인터를 반환합니다.
+    /// Return a pointer to the RX descriptor ring entry.
     unsafe fn rx_desc(&self, idx: usize) -> *mut RxDescriptor {
         let phys = self.dma_phys_base + DMA_RX_RING_OFF + (idx as u32 * 16);
         self.dma_vaddr(phys) as *mut RxDescriptor
     }
 
-    /// TX Descriptor 링의 가상 주소 포인터를 반환합니다.
+    /// Return a pointer to the TX descriptor ring entry.
     unsafe fn tx_desc(&self, idx: usize) -> *mut TxDescriptor {
         let phys = self.dma_phys_base + DMA_TX_RING_OFF + (idx as u32 * 16);
         self.dma_vaddr(phys) as *mut TxDescriptor
     }
 
-    /// RX 버퍼의 가상 주소 슬라이스를 반환합니다.
+    /// Return a pointer to the RX buffer.
     unsafe fn rx_buf(&self, idx: usize) -> *mut u8 {
         let phys = self.dma_phys_base + DMA_RX_BUFS_OFF + (idx as u32 * RX_BUF_SIZE as u32);
         self.dma_vaddr(phys) as *mut u8
     }
 
-    /// TX 버퍼의 가상 주소 포인터를 반환합니다.
+    /// Return a pointer to the TX buffer.
     unsafe fn tx_buf(&self, idx: usize) -> *mut u8 {
         let phys = self.dma_phys_base + DMA_TX_BUFS_OFF + (idx as u32 * RX_BUF_SIZE as u32);
         self.dma_vaddr(phys) as *mut u8
@@ -144,11 +167,10 @@ impl E1000 {
         let mmio_phys = (bar0 & 0xFFFF_FFF0) as u64;
         let mmio_base = phys_mem_offset + mmio_phys;
 
-        let dma_phys_base = unsafe { crate::arch::x86_64::discovery::DMA_BASE };
-        if dma_phys_base == 0 {
+        let Some(dma_phys_base) = allocate_dma_region(phys_mem_offset) else {
             crate::println!("[e1000] ERROR: No DMA memory available!");
             return None;
-        }
+        };
 
         let mut nic = E1000 {
             mmio_base,
@@ -158,7 +180,7 @@ impl E1000 {
             rx_next: 0,
         };
 
-        // NIC 리셋
+        // Reset the NIC.
         let ctrl = nic.read_reg(REG_CTRL);
         nic.write_reg(REG_CTRL, ctrl | CTRL_RST);
         let mut timeout = 100_000;
@@ -167,32 +189,25 @@ impl E1000 {
         }
         for _ in 0..10_000 { core::hint::spin_loop(); }
 
-        // 링크 설정
+        // Bring the link up and enable auto speed detection.
         let ctrl = nic.read_reg(REG_CTRL);
         nic.write_reg(REG_CTRL, ctrl | CTRL_SLU | CTRL_ASDE);
 
-        // MAC 주소 읽기
+        // Read the MAC address.
         if !nic.read_mac_from_eeprom() {
             nic.read_mac_from_ral();
         }
 
-        // MTA 초기화
+        // Clear the multicast table array.
         for i in 0u32..128 {
             nic.write_reg(REG_MTA + (i * 4), 0);
         }
-
-        // DMA 영역 제로 초기화
-        unsafe {
-            let dma_vaddr = nic.dma_vaddr(dma_phys_base) as *mut u8;
-            core::ptr::write_bytes(dma_vaddr, 0, 0x15000); // ~84KB
-        }
-
-        // RX 링 설정
+        // Set up the RX ring.
         unsafe { nic.setup_rx_ring(); }
-        // TX 링 설정
+        // Set up the TX ring.
         unsafe { nic.setup_tx_ring(); }
 
-        // 인터럽트
+        // Enable RX timer interrupts.
         nic.write_reg(REG_IMS, IMS_RXT0);
 
         let status = nic.read_reg(REG_STATUS);

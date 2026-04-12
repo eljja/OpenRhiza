@@ -77,7 +77,7 @@ impl OpenRhizaSeed {
             }
         }).map_err(|_| String::from("Failed to link alloc_dma_page"))?;
 
-        linker.func_wrap("env", "os_rx_packet", |mut caller: Caller<'_, ()>, ptr: u32, len: u32| {
+        linker.func_wrap("env", "os_rx_packet", |caller: Caller<'_, ()>, ptr: u32, len: u32| {
             if let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) {
                 let mut packet = alloc::vec![0u8; len as usize];
                 if memory.read(&caller, ptr as usize, &mut packet).is_ok() {

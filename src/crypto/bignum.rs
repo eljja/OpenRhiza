@@ -1,8 +1,8 @@
 // src/crypto/bignum.rs
-// 256비트 정수 연산 (P256 ECDH에 필요)
-// 순수 소프트웨어, SIMD 없음
+// 256-bit integer arithmetic for P-256 ECDH
+// Pure software implementation with no SIMD requirements.
 
-/// 256비트 부호 없는 정수 (리틀엔디언 u64 x4)
+/// 256-bit unsigned integer stored as little-endian `u64 x4`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct U256(pub [u64; 4]); // [0]=low, [3]=high
 
@@ -10,7 +10,7 @@ impl U256 {
     pub const ZERO: U256 = U256([0, 0, 0, 0]);
     pub const ONE: U256 = U256([1, 0, 0, 0]);
 
-    /// 빅엔디언 32바이트 배열에서 생성
+    /// Construct from a big-endian 32-byte array.
     pub fn from_be_bytes(bytes: &[u8; 32]) -> Self {
         let mut limbs = [0u64; 4];
         for i in 0..4 {
@@ -23,7 +23,7 @@ impl U256 {
         U256(limbs)
     }
 
-    /// 빅엔디언 32바이트 배열로 변환
+    /// Convert into a big-endian 32-byte array.
     pub fn to_be_bytes(&self) -> [u8; 32] {
         let mut out = [0u8; 32];
         for i in 0..4 {
@@ -33,7 +33,7 @@ impl U256 {
         out
     }
 
-    /// self가 0인지 확인
+    /// Return true if the value is zero.
     pub fn is_zero(&self) -> bool {
         self.0[0] | self.0[1] | self.0[2] | self.0[3] == 0
     }
@@ -47,7 +47,7 @@ impl U256 {
         true // equal
     }
 
-    /// self + other, carry 반환
+    /// Add `other`, returning the sum and carry flag.
     pub fn add(&self, other: &Self) -> (Self, bool) {
         let mut result = [0u64; 4];
         let mut carry = 0u64;
@@ -60,7 +60,7 @@ impl U256 {
         (U256(result), carry > 0)
     }
 
-    /// self - other, borrow 반환
+    /// Subtract `other`, returning the difference and borrow flag.
     pub fn sub(&self, other: &Self) -> (Self, bool) {
         let mut result = [0u64; 4];
         let mut borrow = 0u64;
@@ -73,7 +73,7 @@ impl U256 {
         (U256(result), borrow > 0)
     }
 
-    /// 비트 i 가져오기 (0 = LSB)
+    /// Return bit `i` (`0` = LSB).
     pub fn bit(&self, i: usize) -> u64 {
         let limb = i / 64;
         let bit = i % 64;
@@ -81,7 +81,7 @@ impl U256 {
         (self.0[limb] >> bit) & 1
     }
 
-    /// 1비트 왼쪽 시프트
+    /// Shift left by one bit.
     pub fn shl1(&self) -> Self {
         let mut result = [0u64; 4];
         result[0] = self.0[0] << 1;
@@ -91,7 +91,7 @@ impl U256 {
         U256(result)
     }
 
-    /// 1비트 오른쪽 시프트
+    /// Shift right by one bit.
     pub fn shr1(&self) -> Self {
         let mut result = [0u64; 4];
         result[3] = self.0[3] >> 1;
@@ -103,11 +103,11 @@ impl U256 {
 }
 
 // ========================================================================
-// P-256 소수체(Prime Field) 연산
+// P-256 prime-field arithmetic
 // p = 2^256 - 2^224 + 2^192 + 2^96 - 1
 // ========================================================================
 
-/// P-256 소수
+/// P-256 prime
 pub const P256_P: U256 = U256([
     0xFFFFFFFF_FFFFFFFF, // limb 0
     0x00000000_FFFFFFFF, // limb 1
@@ -115,7 +115,7 @@ pub const P256_P: U256 = U256([
     0xFFFFFFFF_00000001, // limb 3
 ]);
 
-/// P-256 곡선 차수 n
+/// P-256 curve order `n`
 pub const P256_N: U256 = U256([
     0xF3B9CAC2_FC632551,
     0xBCE6FAAD_A7179E84,
@@ -123,7 +123,7 @@ pub const P256_N: U256 = U256([
     0xFFFFFFFF_00000000,
 ]);
 
-/// 모듈러 덧셈: (a + b) mod p
+/// Modular addition: `(a + b) mod p`
 pub fn mod_add(a: &U256, b: &U256, p: &U256) -> U256 {
     let (sum, carry) = a.add(b);
     if carry || sum.gte(p) {
@@ -134,7 +134,7 @@ pub fn mod_add(a: &U256, b: &U256, p: &U256) -> U256 {
     }
 }
 
-/// 모듈러 뺄셈: (a - b) mod p
+/// Modular subtraction: `(a - b) mod p`
 pub fn mod_sub(a: &U256, b: &U256, p: &U256) -> U256 {
     let (diff, borrow) = a.sub(b);
     if borrow {
@@ -145,15 +145,15 @@ pub fn mod_sub(a: &U256, b: &U256, p: &U256) -> U256 {
     }
 }
 
-/// 모듈러 곱셈: (a * b) mod p (schoolbook + Barrett reduction 대신 단순 방법)
+/// Modular multiplication: `(a * b) mod p`
 #[inline(never)]
 pub fn mod_mul(a: &U256, b: &U256, p: &U256) -> U256 {
-    // 512비트 곱셈 후 모듈러 환원
+    // Multiply to 512 bits, then reduce modulo `p`.
     let product = mul_wide(a, b);
     mod_reduce_512(&product, p)
 }
 
-/// 256x256 → 512비트 곱셈
+/// 256x256 -> 512-bit multiplication.
 #[inline(never)]
 fn mul_wide(a: &U256, b: &U256) -> [u64; 8] {
     let mut result = [0u64; 8];
@@ -170,13 +170,13 @@ fn mul_wide(a: &U256, b: &U256) -> [u64; 8] {
     result
 }
 
-/// 512비트 → 256비트 모듈러 환원 (반복 뺄셈, P-256 특화 가능하지만 범용으로 구현)
+/// 512-bit -> 256-bit modular reduction.
 fn mod_reduce_512(product: &[u64; 8], _p: &U256) -> U256 {
     p256_reduce(product)
 }
 
-/// P-256 전용 빠른 환원 (NIST 방법)
-/// 512비트 정수를 P-256 소수로 환원
+/// Fast P-256-specific reduction using the NIST prime structure.
+/// Reduces a 512-bit integer modulo the P-256 prime.
 #[inline(never)]
 fn p256_reduce(c: &[u64; 8]) -> U256 {
     let low = U256([c[0], c[1], c[2], c[3]]);
@@ -193,7 +193,7 @@ fn p256_reduce(c: &[u64; 8]) -> U256 {
     ]);
 
     // result = low + high * r_mod_p (mod p)
-    // 이 곱셈도 512비트로 오버플로우할 수 있으므로 조심
+    // This multiplication can still exceed 256 bits, so keep the wide result.
     let hr = mul_wide(&high, &r_mod_p);
     // hr + low
     let mut sum = [0u64; 8];
@@ -209,12 +209,12 @@ fn p256_reduce(c: &[u64; 8]) -> U256 {
         carry = s >> 64;
     }
 
-    // 아직 512비트일 수 있으므로 다시 한번 환원 (재귀 대신 최대 2~3회 뺄셈)
+    // The intermediate result can still be wide, so reduce one more time if needed.
     let mut result = U256([sum[0], sum[1], sum[2], sum[3]]);
     let high2 = U256([sum[4], sum[5], sum[6], sum[7]]);
 
     if !high2.is_zero() {
-        // 한 번 더 환원
+        // Reduce once more.
         let hr2 = mul_wide(&high2, &r_mod_p);
         let mut carry2 = 0u128;
         for i in 0..4 {
@@ -224,7 +224,7 @@ fn p256_reduce(c: &[u64; 8]) -> U256 {
         }
     }
 
-    // 최종 조건 뺄셈: result >= p이면 result -= p
+    // Final conditional subtraction: if result >= p, subtract p.
     while result.gte(&P256_P) {
         let (r, _) = result.sub(&P256_P);
         result = r;
@@ -233,13 +233,13 @@ fn p256_reduce(c: &[u64; 8]) -> U256 {
     result
 }
 
-/// 모듈러 역원: a^(-1) mod p (페르마 소정리: a^(p-2) mod p)
+/// Modular inverse: `a^(-1) mod p` using Fermat's little theorem.
 pub fn mod_inv(a: &U256, p: &U256) -> U256 {
     let (exp, _) = p.sub(&U256([2, 0, 0, 0])); // p - 2
     mod_pow(a, &exp, p)
 }
 
-/// 모듈러 거듭제곱: base^exp mod p (제곱-곱셈 방법)
+/// Modular exponentiation: `base^exp mod p` using square-and-multiply.
 pub fn mod_pow(base: &U256, exp: &U256, p: &U256) -> U256 {
     let mut result = U256::ONE;
     let mut b = *base;

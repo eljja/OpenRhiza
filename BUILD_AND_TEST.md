@@ -1,142 +1,233 @@
-# OpenRhiza Build & Test Guide
-# 빌드, 실행, 테스트, 검증 방법
+# OpenRhiza Build, Run, and Verification Guide
 
----
+This document describes the current build and test flow for the `main` branch as of April 2026.
+It reflects the code that is actually present in the repository, including the native xHCI path,
+the async executor, the VGA CLI, the native `e1000` path, and the Nexus signature-verification flow.
 
-## 전제 조건 (Prerequisites)
+## Prerequisites
 
-### 필수 도구
-| 도구 | 설치 확인 | 설치 방법 |
-|------|-----------|-----------|
-| Rust (nightly) | `rustup show` | `rustup default nightly` |
-| x86_64-unknown-none 타겟 | `rustup target list --installed` | `rustup target add x86_64-unknown-none` |
-| wasm32-unknown-unknown 타겟 | (host_brain.py용) | `rustup target add wasm32-unknown-unknown` |
-| cargo-bootimage | `cargo bootimage --help` | `cargo install bootimage` |
-| QEMU x86_64 | `qemu-system-x86_64 --version` | [공식 사이트](https://www.qemu.org) |
-| Python 3.10+ | `python --version` | (host_brain.py용) |
-| google-genai | `pip show google-genai` | `pip install google-genai` |
+| Tool | Check | Notes |
+|------|-------|-------|
+| Rust nightly | `rustup show` | The project expects nightly on Windows |
+| `x86_64-unknown-none` target | `rustup target list --installed` | Add with `rustup target add x86_64-unknown-none` |
+| `wasm32-unknown-unknown` target | `rustup target list --installed` | Needed by `host_brain.py` when compiling Wasm drivers |
+| `cargo-bootimage` | `cargo bootimage --help` | Install with `cargo install bootimage` |
+| QEMU x86_64 | `qemu-system-x86_64 --version` | The path is currently hardcoded in `Cargo.toml` |
+| Python 3.10+ | `python --version` | Needed for `host_brain.py`, `mock_nexus_server.py`, and `mock_signer.py` |
+| `google-genai` | `pip show google-genai` | Needed only for the host-side AI workflow |
 
-### 환경 변수
+## Environment
+
+The host AI path uses:
+
 ```bash
-# .env 파일 또는 시스템 환경 변수
 GEMINI_API_KEY=your_api_key_here
 ```
 
----
+The script will also try to load the key from a local `.env` file if `python-dotenv` is installed.
 
-## 빌드 (Build)
+## Build
 
-### 커널만 빌드 (가장 빠름, 수정 후 항상 실행)
+Fast kernel build:
+
 ```bash
 cargo build
 ```
-- 타겟: `x86_64-unknown-none` (.cargo/config.toml에 지정)
-- 결과물: `target/x86_64-unknown-none/debug/OpenRhiza`
 
-### 부트 이미지 생성
+Boot image build:
+
 ```bash
 cargo bootimage
 ```
-- 결과물: `target/x86_64-unknown-none/debug/bootimage-OpenRhiza.bin`
 
-### 릴리즈 빌드
+Release build:
+
 ```bash
 cargo build --release
 cargo bootimage --release
 ```
 
----
+Artifacts:
 
-## 실행 (Run)
+- Kernel binary: `target/x86_64-unknown-none/debug/OpenRhiza`
+- Boot image: `target/x86_64-unknown-none/debug/bootimage-OpenRhiza.bin`
 
-### 방법 1: cargo run (권장)
+## Run
+
+Recommended:
+
 ```bash
 cargo run
 ```
-- 자동으로 bootimage를 빌드하고 QEMU를 실행합니다.
-- QEMU 옵션은 `Cargo.toml`의 `[package.metadata.bootimage] run-command`에 정의됨.
 
-### 현재 QEMU 실행 명령 (자동 생성됨)
-```
-qemu-system-x86_64.exe \
-  -drive format=raw,file={bootimage} \
-  -drive file=fat:rw:rhiza_drivers,format=raw,index=2 \
-  -serial tcp:127.0.0.1:4444,server \
-  -netdev user,id=n1 \
+`cargo run` uses the `bootimage` runner configured in `.cargo/config.toml` and the QEMU command
+declared in `Cargo.toml`.
+
+On Windows, `cargo run` currently launches QEMU through `run_qemu.ps1` so the GUI window stays attached
+to the desktop session more reliably than the older direct runner setup.
+
+### Current QEMU device layout
+
+The current repository is configured to boot with:
+
+```text
+qemu-system-x86_64.exe
+  -drive format=raw,file={bootimage}
+  -drive file=fat:rw:rhiza_drivers,format=raw,index=2
+  -serial tcp:127.0.0.1:4444,server,nowait
+  -netdev user,id=n1
   -device e1000,netdev=n1
+  -device qemu-xhci,id=xhci
+  -device usb-kbd,bus=xhci.0
 ```
 
-**QEMU 옵션 해설:**
-| 옵션 | 의미 |
-|------|------|
-| `-drive format=raw,file={}` | 커널 부트 이미지 |
-| `-drive file=fat:rw:rhiza_drivers,...` | `rhiza_drivers/` 폴더를 FAT16 가상 디스크로 마운트 (Secondary IDE) |
-| `-serial tcp:127.0.0.1:4444,server` | 시리얼 포트를 TCP 서버로 노출 (host_brain.py 연결용) |
-| `-netdev user,id=n1` | 사용자 모드 네트워킹 (NAT, 게이트웨이 10.0.2.2) |
-| `-device e1000,netdev=n1` | Intel e1000 가상 NIC 장착 |
+Meaning:
 
-### 방법 2: 호스트 AI 뇌 연결 (별도 터미널)
+- Primary boot image: OpenRhiza bootable disk image
+- Secondary FAT disk: `rhiza_drivers/` mounted as a writable test disk
+- Serial bridge: host tooling can connect to `127.0.0.1:4444`
+- NIC: Intel `e1000`
+- USB controller: QEMU xHCI
+- USB keyboard: attached directly to the xHCI controller
+
+### Current interactive UI behavior
+
+After boot completes:
+
+- the log area remains in the upper VGA rows
+- the bottom row acts as a simple CLI input line
+- `help`, `status`, and `clear` are currently implemented
+
+Important current caveat:
+
+- left Shift is working in the current QEMU path
+- right Shift is still inconsistent under the present Windows plus QEMU USB keyboard setup and remains under investigation
+
+## Optional Host AI Loop
+
+If you want the legacy host-assisted flow:
+
 ```bash
 python host_brain.py
 python host_brain.py --model gemini-2.5-flash
 python host_brain.py --model gemini-2.5-pro
 ```
 
----
+This path is still useful for Wasm driver generation and protocol validation, but it is not the
+only runtime path anymore.
 
-## 검증 (Verification)
+## What To Expect At Boot
 
-### 단계 1: 빌드 성공 확인
-```bash
-cargo build 2>&1
-# 경고는 허용, 에러는 불허
-# 허용되는 경고: unused import, static_mut_refs (Rust 2024 호환성)
-```
+A healthy boot should show most of the following:
 
-### 단계 2: 부팅 확인
-QEMU 실행 후 다음 시리얼 출력이 나와야 정상:
-```
+```text
 OpenRhiza Seed (Layer 0) Booting... Serial Connected!
 Heap Allocator initialized!
-Total Usable Memory: XXXXXXXX Bytes
+Total Usable Memory: ...
 Hardware Discovery Complete.
 Found N PCI devices:
-  Bus 0 Device X: Vendor 0x8086, Device 0x100E, BAR0: 0xFEBXXXXX
+...
+[USB] Initializing xHCI Host Controller at BAR0: ...
+[xHCI] Controller Running! Scanning ports...
+[OS System] All subsystems initialized. Handing over to Async Executor.
+[OS Core] Autonomous Nexus Fetch Success
 ```
 
-### 단계 3: 호스트 연결 확인
-host_brain.py 실행 후:
-```
-[+] Successfully connected to OpenRhiza Umbilical Cord (Serial)!
-[AI Brain] Injecting default QWERTY driver for instant boot...
-[AI Brain] QWERTY driver injected. Scanning OS hardware logs...
+You may also see:
+
+- Storage probing logs for the FAT bootstrap disk
+- xHCI port and HID keyboard logs
+- Nexus fetch logs after the executor has been running for a short period
+- `Engine running` on the VGA side once the executor is active
+- a bottom-row `cli>` prompt
+
+## Verification Checklist
+
+### 1. Build
+
+Run:
+
+```bash
+cargo build
 ```
 
-### 단계 4: e1000 드라이버 자동 생성 확인
-PCI 스캔에서 e1000 감지 시:
+Current status:
+
+- The build succeeds on the current tree
+- The current tree builds cleanly without Rust warnings
+
+### 2. Boot
+
+Run:
+
+```bash
+cargo run
 ```
-[AI Brain] === Intel e1000 NIC Detected! BAR0: 0xFEBXXXXX ===
-[AI Brain] Generating initialization driver for Intel e1000 (Network Stack Bridge)...
-```
 
----
+Confirm:
 
-## 문제 해결 (Troubleshooting)
+- Serial output appears
+- Heap initialization completes
+- PCI enumeration lists devices
+- xHCI initialization starts when the controller is present
+- The executor starts
+- The VGA bottom row shows the CLI prompt
+- Enter submits a CLI command and redraws the prompt
 
-### "error: linker `rust-lld` not found"
+### 3. Optional serial protocol validation
+
+If you launch `host_brain.py`, confirm that it:
+
+- Connects to `127.0.0.1:4444`
+- Injects the default QWERTY keymap when prompted
+- Optionally sends Wasm drivers over the serial protocol
+
+### 4. Nexus verification path
+
+The current core loop attempts a Nexus fetch after startup and verifies the returned Wasm payload
+with the embedded Ed25519 public key before execution.
+
+Important note:
+
+- `src/net.rs` now routes traffic through the native `e1000` path when available
+- `src/https.rs` currently implements the active TCP/HTTP fetch path
+- `src/tls.rs` contains an in-repo TLS 1.3 client implementation, but it is not yet wired into the live Nexus path
+- the repository has already been tested end-to-end against the local mock Nexus flow through payload extraction and Ed25519 verification
+
+## Known Current Gaps
+
+- `src/https.rs` still uses raw TCP/HTTP rather than the in-repo TLS client
+- DHCP and DNS are still missing
+- ATA write support is still missing
+- Only one Wasm driver instance can be active at a time
+- right Shift is not yet distinct in the current Windows QEMU USB keyboard path
+
+## Troubleshooting
+
+### `rust-lld` not found
+
 ```bash
 rustup component add llvm-tools-preview
 ```
 
-### QEMU Triple Fault (무한 재부팅)
-1. VGA 출력 대신 시리얼만으로 디버깅: `vga.rs`의 `_print()`에서 VGA 부분 주석 처리
-2. QEMU에 `-d int -no-reboot` 추가하여 인터럽트 로그 확인
+### QEMU path is wrong
 
-### "Kernel Panic: out of memory"
-`allocator.rs`의 `HEAP_SIZE`를 늘리세요. 현재: 1 MiB.
+Update `run_qemu.ps1` and the `run-command` entry in `Cargo.toml` to match your local QEMU installation path.
 
-### cargo run 시 QEMU 경로 오류
-`Cargo.toml`의 `run-command`에서 QEMU 경로를 시스템에 맞게 수정.
+### Serial host cannot connect
 
-### host_brain.py "ConnectionRefusedError"
-QEMU가 먼저 실행되어야 합니다. `cargo run` 후 시리얼 TCP 포트(4444)가 열릴 때까지 기다립니다.
+Make sure QEMU is already running and listening on `127.0.0.1:4444`.
+
+### Infinite reboot or triple fault
+
+Use QEMU debug flags such as:
+
+```text
+-d int -no-reboot
+```
+
+and focus on serial-only logging while diagnosing early boot faults.
+
+### Out of memory
+
+Increase `HEAP_SIZE` in `src/allocator.rs` if a new feature genuinely requires more memory.

@@ -4,6 +4,6 @@ rustflags = [
     "-C", "relocation-model=static"
 ]
 
-# cargo run 명령어 실행 시 bootimage runner를 사용하도록 설정합니다.
+# Use the bootimage runner when executing `cargo run`.
 [target.x86_64-unknown-none]
 runner = "bootimage runner"

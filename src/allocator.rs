@@ -4,13 +4,13 @@ use linked_list_allocator::LockedHeap;
 #[global_allocator]
 static ALLOCATOR: LockedHeap = LockedHeap::empty();
 
-pub const HEAP_SIZE: usize = 32 * 1024 * 1024; // 32 MiB 힙 메모리 확보
+pub const HEAP_SIZE: usize = 32 * 1024 * 1024; // Reserve a 32 MiB heap
 
 static mut HEAP_MEM: [u8; HEAP_SIZE] = [0; HEAP_SIZE];
 
 pub fn init_heap() {
     unsafe {
-        // 확보한 정적 배열의 시작 주소와 크기를 할당자에게 넘겨주어 초기화합니다.
-        ALLOCATOR.lock().init(HEAP_MEM.as_mut_ptr(), HEAP_SIZE);
+        // Initialize the allocator with the backing static heap buffer.
+        ALLOCATOR.lock().init(core::ptr::addr_of_mut!(HEAP_MEM).cast::<u8>(), HEAP_SIZE);
     }
 }

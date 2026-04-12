@@ -15,10 +15,10 @@ except ImportError:
 HOST = '127.0.0.1'
 PORT = 4444
 
-# --- Gemini API 설정 ---
+# --- Gemini API configuration ---
 api_key = os.environ.get("GEMINI_API_KEY")
 if not api_key:
-    # 혹시 .env 에 있다면 파이썬 자체적으로 읽어옵니다.
+    # If the key is stored in a local `.env`, load it directly from Python.
     try:
         from dotenv import load_dotenv
         load_dotenv()

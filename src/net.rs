@@ -11,6 +11,11 @@ use smoltcp::iface::{Config, Interface, SocketSet, SocketHandle};
 lazy_static! {
     pub static ref RX_QUEUE: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
     pub static ref TX_QUEUE: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
+    pub static ref ACTIVE_E1000: Mutex<Option<crate::e1000::E1000>> = Mutex::new(None);
+}
+
+pub fn attach_native_e1000(nic: crate::e1000::E1000) {
+    *ACTIVE_E1000.lock() = Some(nic);
 }
 
 pub fn queue_rx_packet(ptr: u32, len: u32) {
@@ -74,7 +79,13 @@ impl TxToken for WasmTxToken {
         let mut buffer = vec![0; len];
         let result = f(&mut buffer);
         crate::serial_println!("[OS Net] TX: Transmission dispatched via SMOLTCP, {} bytes", len);
-        TX_QUEUE.lock().push(buffer);
+        if let Some(nic) = ACTIVE_E1000.lock().as_ref() {
+            if !nic.send_packet(&buffer) {
+                crate::serial_println!("[OS Net] Native e1000 TX ring busy; packet dropped");
+            }
+        } else {
+            TX_QUEUE.lock().push(buffer);
+        }
         result
     }
 }
@@ -90,7 +101,11 @@ lazy_static! {
 
 pub fn init_network() {
     let mut device = WasmEthernetDevice;
-    let hardware_addr = HardwareAddress::Ethernet(EthernetAddress([0x52, 0x54, 0x00, 0x12, 0x34, 0x56]));
+    let hardware_addr = if let Some(mac) = ACTIVE_E1000.lock().as_ref().map(|nic| nic.mac) {
+        HardwareAddress::Ethernet(EthernetAddress(mac))
+    } else {
+        HardwareAddress::Ethernet(EthernetAddress([0x52, 0x54, 0x00, 0x12, 0x34, 0x56]))
+    };
     
     let mut config = Config::new(hardware_addr);
     config.random_seed = 0x123456789ABCDEF0;
@@ -128,6 +143,13 @@ pub fn create_tcp_socket() -> SocketHandle {
 }
 
 pub fn poll(timestamp_ms: i64) {
+    if let Some(nic) = ACTIVE_E1000.lock().as_mut() {
+        nic.poll_rx(|packet| {
+            crate::serial_println!("[OS Net] RX: Native e1000 ingress packet, {} bytes", packet.len());
+            RX_QUEUE.lock().push(packet.to_vec());
+        });
+    }
+
     if let Some(stack) = &mut *NET_STACK.lock() {
         let mut device = WasmEthernetDevice;
         stack.iface.poll(Instant::from_millis(timestamp_ms), &mut device, &mut stack.sockets);

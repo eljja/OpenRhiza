@@ -1,7 +1,7 @@
 // src/crypto/random.rs
-// 난수 생성기 (RDRAND + TSC 폴백)
+// Random generator using RDRAND with a TSC fallback.
 
-/// RDRAND 명령어로 64비트 난수 생성 (하드웨어 RNG)
+/// Generate a 64-bit random value with the RDRAND instruction.
 fn rdrand64() -> Option<u64> {
     let val: u64;
     let success: u8;
@@ -16,7 +16,7 @@ fn rdrand64() -> Option<u64> {
     if success != 0 { Some(val) } else { None }
 }
 
-/// TSC (Time Stamp Counter) 기반 폴백 엔트로피
+/// Fallback entropy source based on the TSC (Time Stamp Counter).
 fn tsc() -> u64 {
     let (lo, hi): (u32, u32);
     unsafe {
@@ -25,7 +25,7 @@ fn tsc() -> u64 {
     ((hi as u64) << 32) | (lo as u64)
 }
 
-/// 간단한 xorshift64 PRNG 상태
+/// Simple xorshift64 PRNG state.
 static mut PRNG_STATE: u64 = 0;
 
 fn xorshift64(state: &mut u64) -> u64 {
@@ -38,7 +38,7 @@ fn xorshift64(state: &mut u64) -> u64 {
     x
 }
 
-/// 32바이트 난수 채우기 (TLS에서 client_random 등에 사용)
+/// Fill a buffer with random bytes, used by TLS for values such as `client_random`.
 pub fn fill_random(buf: &mut [u8]) {
     let mut offset = 0;
     while offset < buf.len() {
@@ -54,7 +54,7 @@ pub fn fill_random(buf: &mut [u8]) {
     }
 }
 
-/// 32바이트 난수 배열 생성
+/// Generate a 32-byte random array.
 pub fn random_bytes_32() -> [u8; 32] {
     let mut buf = [0u8; 32];
     fill_random(&mut buf);

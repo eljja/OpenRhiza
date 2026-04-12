@@ -1,6 +1,6 @@
 // src/crypto/sha256.rs
-// SHA-256 순수 소프트웨어 구현 (FIPS 180-4)
-// SIMD/SHA-NI 없이 스칼라 연산만 사용합니다.
+// Pure software SHA-256 implementation (FIPS 180-4)
+// Uses scalar operations only, without SIMD or SHA-NI.
 
 const K: [u32; 64] = [
     0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5,
@@ -66,7 +66,7 @@ impl Sha256 {
         self.total_len += data.len() as u64;
         let mut offset = 0;
 
-        // 기존 버퍼에 데이터 채우기
+        // Fill the existing partial block first.
         if self.buffer_len > 0 {
             let space = 64 - self.buffer_len;
             let to_copy = core::cmp::min(space, data.len());
@@ -82,7 +82,7 @@ impl Sha256 {
             }
         }
 
-        // 64바이트 블록 단위로 처리
+        // Process full 64-byte blocks.
         while offset + 64 <= data.len() {
             let mut block = [0u8; 64];
             block.copy_from_slice(&data[offset..offset + 64]);
@@ -90,7 +90,7 @@ impl Sha256 {
             offset += 64;
         }
 
-        // 남은 데이터 버퍼에 저장
+        // Store any trailing bytes in the buffer.
         if offset < data.len() {
             let remaining = data.len() - offset;
             self.buffer[..remaining].copy_from_slice(&data[offset..]);
@@ -101,12 +101,12 @@ impl Sha256 {
     pub fn finalize(mut self) -> [u8; 32] {
         let bit_len = self.total_len * 8;
 
-        // 패딩: 1비트 + 0 패딩 + 64비트 길이
+        // Padding: 1 bit + zero padding + 64-bit length field.
         self.buffer[self.buffer_len] = 0x80;
         self.buffer_len += 1;
 
         if self.buffer_len > 56 {
-            // 현재 블록에 길이 필드가 안 들어가면 추가 블록 필요
+            // If the current block cannot fit the length field, flush it and use another block.
             for i in self.buffer_len..64 {
                 self.buffer[i] = 0;
             }
@@ -123,7 +123,7 @@ impl Sha256 {
         let block = self.buffer;
         self.compress(&block);
 
-        // 최종 해시 출력
+        // Emit the final digest.
         let mut output = [0u8; 32];
         for i in 0..8 {
             output[i * 4..(i + 1) * 4].copy_from_slice(&self.state[i].to_be_bytes());
@@ -132,7 +132,7 @@ impl Sha256 {
     }
 
     fn compress(&mut self, block: &[u8; 64]) {
-        // 메시지 스케줄 W[0..63]
+        // Message schedule W[0..63]
         let mut w = [0u32; 64];
         for i in 0..16 {
             w[i] = u32::from_be_bytes([
@@ -174,7 +174,7 @@ impl Sha256 {
     }
 }
 
-/// 한 번에 SHA-256 해시를 계산합니다.
+/// Compute SHA-256 in one call.
 pub fn sha256(data: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
     hasher.update(data);

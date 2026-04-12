@@ -1,6 +1,6 @@
 // src/arch/discovery.rs
 
-/// OpenRhiza가 인식한 하드웨어의 기본 정보
+/// Basic hardware information discovered by OpenRhiza.
 #[derive(Debug, Clone, Copy)]
 #[allow(dead_code)]
 pub struct SystemIdentity {
@@ -10,7 +10,7 @@ pub struct SystemIdentity {
 }
 
 impl SystemIdentity {
-    /// 시스템 하드웨어를 스캔하여 기초 정보를 수집합니다.
+    /// Scan the system and collect basic hardware information.
     pub fn scan() -> Self {
         SystemIdentity {
             cpu_cores: Self::get_cpu_count(),
@@ -20,14 +20,14 @@ impl SystemIdentity {
     }
 
     fn get_cpu_count() -> u32 {
-        1 // 임시(Dummy) 코어 수 반환
+        1 // Temporary placeholder core count
     }
 
     fn detect_memory_limit() -> usize {
-        1024 * 1024 * 16 // 임시 16MB 반환
+        1024 * 1024 * 16 // Temporary 16 MiB placeholder
     }
 
     fn check_storage_interface() -> bool {
-        false // 임시 반환
+        false // Temporary placeholder
     }
 }

@@ -1,100 +1,92 @@
-# OpenRhiza Known Issues & Constraints
-# 알려진 버그, 제약사항, 해결 상태
+# OpenRhiza Known Issues and Constraints
 
-> **코드를 수정하기 전에 이 문서를 확인하여 이미 알려진 문제를 중복 수정하거나,
-> 의도된 제약을 위반하지 않도록 하세요.**
+This file tracks the current state of the repository after the April 2026 documentation refresh.
 
----
+## High Priority
 
-## 🔴 치명적 (Critical)
+### KI-001: Only one Wasm driver instance can be active
 
-### KI-001: ~~uptime_ms가 실제 시간이 아님~~ → **해결됨 (KI-R06)**
+- Location: `src/core/seed.rs`
+- Current state: `OpenRhizaSeed` stores `wasm_state: Option<WasmState>`
+- Impact: loading a new Wasm driver replaces the previous one
+- Result: no concurrent Wasm-based NIC + USB + storage driver set
+- Suggested fix: move to a driver registry keyed by hardware or capability
 
-### KI-002: ~~네이티브 e1000 드라이버 부재~~ → **해결됨 (KI-R08)**
+### KI-002: ATA write support is missing
 
----
+- Location: `src/storage.rs`
+- Impact: successful drivers and payloads cannot be persisted back to disk from the kernel
+- Current status: read-only bootstrap and payload extraction only
 
-## 🟡 중요 (High)
+### KI-003: The live network path still carries legacy queue-wrapper structure
 
-### KI-003: 단일 Wasm 인스턴스만 지원
-- **위치:** `core/seed.rs` - `wasm_state: Option<WasmState>`
-- **증상:** 새 Wasm 드라이버 주입 시 이전 드라이버가 덮어씌워짐
-- **영향:** e1000 + xHCI 동시 실행 불가
-- **해결:** `Vec<WasmState>` 또는 이름 기반 드라이버 레지스트리
-- **상태:** ⏳ 대기
+- Location: `src/net.rs`, `src/main.rs`, `src/e1000.rs`
+- Current state:
+  - `src/e1000.rs` is now initialized during PCI discovery
+  - `src/net.rs` routes TX/RX traffic through the native `e1000` driver
+  - the `WasmEthernetDevice` wrapper still exists as the `smoltcp` integration surface
+- Impact: the NIC path is now live, but the abstraction layer still carries legacy queue-oriented naming and fallback behavior
 
-### KI-004: ATA PIO 쓰기 미구현
-- **위치:** `storage.rs`
-- **증상:** FAT16 디스크 읽기만 가능, 쓰기 불가
-- **영향:** 성공한 Wasm 드라이버를 wasm_cache.img에 저장할 수 없음 (재부팅 시 소실)
-- **해결:** `write_sector_ata_secondary()` 함수 구현
-- **상태:** ⏳ 대기
+### KI-004: The Nexus fetch path is not yet wired to the in-repo TLS client
 
-### KI-005: VGA WRITER lazy_static 초기화 시점
-- **위치:** `vga.rs` L15-19
-- **증상:** `WRITER` static이 초기화될 때 `PHYS_MEM_OFFSET`이 아직 0이면 주소 0xB8000을 참조하여 Triple Fault
-- **현재 완화:** `_print()`에서 `PHYS_MEM_OFFSET != 0` 체크 추가
-- **근본 해결:** lazy_static 대신 `OnceCell` 패턴으로 명시적 초기화
-- **상태:** ⚠️ 완화됨 (근본 해결 필요)
+- Location: `src/https.rs`, `src/tls.rs`
+- Current state:
+  - `src/https.rs` opens a TCP socket, sends an HTTP request, parses headers, extracts a payload, and verifies the Ed25519 signature
+  - `src/tls.rs` contains a software TLS 1.3 implementation
+  - the two are not connected in the active flow
+- Impact: the transport path is not yet aligned with the repository's longer-term security goals
 
----
+### KI-005: Right Shift is not yet distinct in the current Windows QEMU USB keyboard path
 
-## 🟢 미미 (Low)
+- Location: `src/arch/x86_64/usb.rs`, `run_qemu.ps1`
+- Current state:
+  - left Shift is observed and decoded correctly
+  - right Shift is not consistently delivered to the guest as a distinct HID modifier in the current Windows plus QEMU setup
+  - recent serial captures showed plain `a` input without the expected right-Shift modifier byte
+- Impact: uppercase and symbol entry through the right Shift key is unreliable during interactive VGA CLI testing
+- Suggested fix: continue investigating the QEMU input backend and compare raw HID reports across Windows host paths
 
-### KI-006: 레거시 core_logic 디렉토리 잔존
-- **위치:** `src/arch/core_logic/`
-- **증상:** `seed.rs`가 `src/core/seed.rs`로 이동되었으나, 이전 버전이 아직 존재
-- **영향:** 혼란 유발 가능
-- **해결:** 삭제 또는 명시적 deprecated 표기
-- **상태:** ⏳ 대기
+## Medium Priority
 
-### KI-007: `unused import` 경고
-- **위치:** `storage.rs` L3 (`core::cmp::min`)
-- **증상:** 사용되지 않는 import 경고
-- **상태:** ⏳ 대기
+### KI-006: Global hardware state still relies on low-level mutable statics and raw pointers
 
-### KI-008: static_mut_refs 경고 (Rust 2024 호환성)
-- **위치:** 다수 (`DMA_BASE`, `DMA_OFFSET`, `PHYS_MEM_OFFSET`)
-- **증상:** Rust 2024 edition에서 `static mut` 직접 참조가 unsafe 블록 필요
-- **해결:** `AtomicU32` / `AtomicU64` 또는 `unsafe {}` 블록으로 감싸기
-- **상태:** ⏳ 대기 (현재 Rust 2021 edition이므로 경고만)
+- Location: multiple modules, especially `src/arch/x86_64/discovery.rs`, `src/arch/x86_64/usb.rs`, and `src/allocator.rs`
+- Impact: the current code builds cleanly, but still depends on carefully constrained low-level global state
+- Suggested fix: migrate global mutable state toward atomics, wrappers, or safer ownership patterns
 
----
+### KI-007: Legacy placeholder modules still exist
 
-## ✅ 해결됨 (Resolved)
+- Location:
+  - `src/arch/core_logic/seed.rs`
+  - `src/arch/discovery.rs`
+- Impact: these files can mislead future contributors because they no longer describe the active runtime path
+- Suggested fix: either remove them or clearly isolate them as legacy references
 
-### KI-R01: VGA 출력 비활성화 (2026-04-02 해결)
-- `vga.rs`의 `_print()`에서 VGA 쓰기가 주석 처리되어 시리얼로만 출력되던 문제
-- **해결:** Triple Fault 방지 가드(`PHYS_MEM_OFFSET != 0`)와 함께 VGA+시리얼 이중 출력 복원
+## Resolved or Partially Resolved Historical Items
 
-### KI-R02: 힙 메모리 부족 100KB (2026-04-02 해결)
-- wasmi + smoltcp 동시 사용 시 OOM 가능
-- **해결:** 100KB → 1MB로 확대
+### KI-R01: Native keyboard support exists
 
-### KI-R03: host_brain.py 드라이버 트리거 데드코드 (2026-04-02 해결)
-- `generate_e1000_driver()`, `generate_xhci_driver()` 함수가 정의만 되고 호출 안 됨
-- **해결:** `listen_and_think()`에서 PCI 로그 파싱하여 자동 트리거
+- Status: implemented
+- Notes: a full native QWERTY decoder exists in `src/keyboard.rs`
+- Caveat: the older serial-injected keymap flow is still present in the core loop, and the current Windows QEMU path still has a right-Shift-specific mismatch under investigation
 
-### KI-R04: DMA 풀 경계 체크 없음 (2026-04-02 해결)
-- `alloc_dma_page`가 무한 할당 가능
-- **해결:** `DMA_POOL_SIZE` (4MB) 상한 추가
+### KI-R02: Native xHCI initialization exists
 
-### KI-R05: `net.rs` `queue_rx_packet()` raw pointer 위험 (2026-04-02 해결)
-- 사용되지 않는 함수가 raw pointer로 잘못된 메모리 접근 패턴을 가짐
-- **해결:** 함수 제거 (실제 로직은 seed.rs linker에서 안전하게 처리)
+- Status: implemented
+- Notes: `src/arch/x86_64/usb.rs` now contains a substantial native xHCI path including command/event rings and HID keyboard polling
 
-### KI-R06: uptime_ms가 실제 시간이 아님 (2026-04-02 해결)
-- 루프 회전 수를 ms로 취급하여 smoltcp 타이밍이 완전히 잘못되던 문제
-- **해결:** PIT Channel 0 ~1000Hz 초기화 + AtomicI64 글로벌 카운터 + `interrupts::uptime_ms()` API
+### KI-R03: Signed Nexus payload verification exists
 
-### KI-R07: 키보드가 시리얼 주입에 의존 (2026-04-02 해결)
-- host_brain.py에서 256바이트 키맵을 시리얼로 주입해야만 키보드가 동작하던 문제
-- **해결:** `keyboard.rs` 네이티브 QWERTY 모듈 구현. 모든 표준 키 지원 (Caps Lock, Num Lock, F1-F12, 방향키, Numpad 등)
+- Status: implemented
+- Notes: `src/security.rs` validates payloads against a built-in Ed25519 public key before Wasm execution
 
-### KI-R08: 네이티브 e1000 드라이버 부재 (2026-04-02 해결)
-- 네트워크가 Wasm 드라이버에만 의존하여 host_brain.py 없이는 사용 불가능하던 문제
-- **해결:** `e1000.rs` 네이티브 드라이버. NIC 리셋, EEPROM MAC 읽기, RX/TX Descriptor Ring, PCI Bus Mastering, smoltcp 연동 완료
+### KI-R04: TLS and crypto primitives exist in-tree
 
-### KI-R09: e1000 DMA 버퍼 물리 주소 변환 오버플로우 (2026-04-02 해결)
-- 정적 변수(.bss)의 가상 주소에서 PHYS_MEM_OFFSET를 빼면 오버플로우 발생 (bootloader가 커널을 높은 가상 주소에 매핑)
-- **해결:** DMA_BASE 물리 메모리 풀에서 할당. PHYS_MEM_OFFSET+물리주소로 가상 접근. QEMU 테스트 완료.
+- Status: implemented but not fully integrated
+- Notes: software SHA-256, AES-GCM, HKDF, P-256 ECDH, and a TLS 1.3 client are present
+
+## Practical Interpretation
+
+The repository is beyond the original "just boot and print text" stage.
+However, several modules are ahead of the active runtime path, so "implemented in source" and
+"active in boot flow" must be treated as different statuses.

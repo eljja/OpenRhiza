@@ -36,7 +36,7 @@ impl NexusClient {
     pub fn poll(&mut self) {
         let mut net_stack = NET_STACK.lock();
         if let Some(stack) = net_stack.as_mut() {
-            let mut socket = stack.sockets.get_mut::<Socket>(self.handle);
+            let socket = stack.sockets.get_mut::<Socket>(self.handle);
 
             match &mut self.state {
                 HttpsState::Disconnected => {

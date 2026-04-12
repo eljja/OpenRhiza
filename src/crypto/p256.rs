@@ -1,11 +1,11 @@
 // src/crypto/p256.rs
-// P-256 (secp256r1) 타원 곡선 디피-헬만 (ECDH) 순수 소프트웨어 구현
-// 야코비안 좌표(Jacobian coordinates)를 사용하여 mod_inv 호출을 최소화합니다.
+// Pure software P-256 (secp256r1) Elliptic Curve Diffie-Hellman implementation
+// Uses Jacobian coordinates to minimize `mod_inv` calls.
 // y² = x³ - 3x + b (mod p)
 
 use super::bignum::*;
 
-/// P-256 기저점 G의 x 좌표
+/// X coordinate of the P-256 base point G.
 const G_X: U256 = U256([
     0xF4A13945_D898C296,
     0x77037D81_2DEB33A0,
@@ -13,7 +13,7 @@ const G_X: U256 = U256([
     0x6B17D1F2_E12C4247,
 ]);
 
-/// P-256 기저점 G의 y 좌표
+/// Y coordinate of the P-256 base point G.
 const G_Y: U256 = U256([
     0xCBB64068_37BF51F5,
     0x2BCE3357_6B315ECE,
@@ -21,7 +21,7 @@ const G_Y: U256 = U256([
     0x4FE342E2_FE1A7F9B,
 ]);
 
-/// 야코비안 좌표 점: (X : Y : Z), 아핀 좌표는 (X/Z², Y/Z³)
+/// Jacobian point `(X : Y : Z)`, corresponding to affine `(X/Z², Y/Z³)`.
 #[derive(Clone, Copy)]
 struct JPoint {
     x: U256,
@@ -43,8 +43,8 @@ impl JPoint {
     }
 }
 
-/// 야코비안 점 두 배: 2P (mod_inv 불필요)
-/// 참고: https://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html#doubling-dbl-2001-b
+/// Jacobian point doubling: `2P` without requiring `mod_inv`.
+/// Reference: https://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html#doubling-dbl-2001-b
 #[inline(never)]
 fn point_double_j(p: &JPoint) -> JPoint {
     if p.is_identity() { return *p; }
@@ -58,7 +58,7 @@ fn point_double_j(p: &JPoint) -> JPoint {
     // beta = X1 * gamma
     let beta = mod_mul(&p.x, &gamma, prime);
 
-    // alpha = 3*(X1 - delta)*(X1 + delta)  [P-256에서 a=-3 이므로]
+    // alpha = 3*(X1 - delta)*(X1 + delta) because P-256 uses a = -3
     let xmd = mod_sub(&p.x, &delta, prime);
     let xpd = mod_add(&p.x, &delta, prime);
     let alpha3 = mod_mul(&xmd, &xpd, prime);
@@ -88,8 +88,8 @@ fn point_double_j(p: &JPoint) -> JPoint {
     JPoint { x: x3, y: y3, z: z3 }
 }
 
-/// 야코비안 점 덧셈: P + Q (혼합 덧셈, Q는 아핀 — Z=1)
-/// 참고: https://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html#addition-madd-2004-hmv
+/// Jacobian point addition: `P + Q` using mixed coordinates, with `Q` affine (`Z = 1`).
+/// Reference: https://www.hyperelliptic.org/EFD/g1p/auto-shortw-jacobian-3.html#addition-madd-2004-hmv
 #[inline(never)]
 fn point_add_mixed(p: &JPoint, qx: &U256, qy: &U256) -> JPoint {
     if p.is_identity() {
@@ -139,7 +139,7 @@ fn point_add_mixed(p: &JPoint, qx: &U256, qy: &U256) -> JPoint {
     JPoint { x: x3, y: y3, z: z3 }
 }
 
-/// 스칼라 곱셈: k * G (왼쪽→오른쪽 이진법, 야코비안 좌표)
+/// Scalar multiplication: `k * G` using left-to-right binary double-and-add.
 fn scalar_mul_g(k: &U256) -> JPoint {
     let mut result = JPoint::identity();
 
@@ -152,7 +152,7 @@ fn scalar_mul_g(k: &U256) -> JPoint {
     result
 }
 
-/// 임의의 점에 대한 스칼라 곱셈: k * P
+/// Scalar multiplication for an arbitrary point: `k * P`.
 fn scalar_mul_point(k: &U256, px: &U256, py: &U256) -> JPoint {
     let mut result = JPoint::identity();
 
@@ -165,7 +165,7 @@ fn scalar_mul_point(k: &U256, px: &U256, py: &U256) -> JPoint {
     result
 }
 
-/// 야코비안 → 아핀 변환 (최종 1회만 mod_inv 호출)
+/// Convert a Jacobian point to affine coordinates with a single final `mod_inv`.
 fn to_affine(p: &JPoint) -> (U256, U256) {
     if p.is_identity() {
         return (U256::ZERO, U256::ZERO);
@@ -181,8 +181,8 @@ fn to_affine(p: &JPoint) -> (U256, U256) {
     (x, y)
 }
 
-/// ECDH 키 교환
-/// 개인키(32바이트 랜덤) → 공개키(65바이트 비압축: 04 || x || y)
+/// ECDH public-key derivation.
+/// Converts a 32-byte private key into an uncompressed 65-byte public key (`04 || x || y`).
 pub fn ecdh_public_key(private_key: &[u8; 32]) -> [u8; 65] {
     let k = U256::from_be_bytes(private_key);
     let jp = scalar_mul_g(&k);
@@ -195,8 +195,8 @@ pub fn ecdh_public_key(private_key: &[u8; 32]) -> [u8; 65] {
     out
 }
 
-/// ECDH 공유 비밀 계산
-/// (내 개인키, 상대방 공개키) → 32바이트 공유 비밀 (x 좌표)
+/// Compute the ECDH shared secret.
+/// Takes `(my_private_key, peer_public_key)` and returns the 32-byte x-coordinate secret.
 pub fn ecdh_shared_secret(private_key: &[u8; 32], peer_public: &[u8]) -> Option<[u8; 32]> {
     if peer_public.len() < 65 || peer_public[0] != 0x04 {
         return None;

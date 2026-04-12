@@ -1,11 +1,11 @@
 // src/keyboard.rs
-// 완전한 QWERTY 키보드 네이티브 구현 (시리얼 주입 불필요)
-// PS/2 Scancode Set 1 기반, 모든 표준 키를 지원합니다.
+// Native full-QWERTY keyboard implementation (no serial injection required)
+// Based on PS/2 Scancode Set 1 and supports the standard key set.
 
-/// 키보드 이벤트 — 키 입력의 결과를 나타냅니다.
+/// Keyboard event produced after decoding an input scancode.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KeyEvent {
-    /// 출력 가능한 ASCII 문자 (a-z, A-Z, 0-9, 기호 등)
+    /// Printable ASCII character (a-z, A-Z, 0-9, symbols, and so on)
     Char(u8),
     /// Enter / Keypad Enter
     Enter,
@@ -15,32 +15,32 @@ pub enum KeyEvent {
     Tab,
     /// Escape
     Escape,
-    /// 방향키
+    /// Arrow keys
     ArrowUp,
     ArrowDown,
     ArrowLeft,
     ArrowRight,
-    /// 네비게이션 키
+    /// Navigation keys
     Home,
     End,
     PageUp,
     PageDown,
     Insert,
     Delete,
-    /// Function 키 (F1~F12, 번호 1~12)
+    /// Function keys (F1-F12, encoded as 1-12)
     FunctionKey(u8),
-    /// Modifier만 눌렸을 때 (Shift, Ctrl, Alt 단독) — 보통 무시
+    /// Modifier-only event (Shift, Ctrl, Alt by themselves), usually ignored
     ModifierOnly,
 }
 
-/// 키보드 상태를 추적하는 State Machine
+/// State machine that tracks modifier and lock-key state.
 pub struct KeyboardState {
     pub shift_pressed: bool,
     pub ctrl_pressed: bool,
     pub alt_pressed: bool,
     pub caps_lock: bool,
     pub num_lock: bool,
-    pub is_extended: bool,   // E0 확장 키 플래그
+    pub is_extended: bool,   // E0 extended-key prefix flag
 }
 
 impl KeyboardState {
@@ -55,10 +55,10 @@ impl KeyboardState {
         }
     }
 
-    /// 스캔코드를 받아 KeyEvent로 변환합니다.
-    /// None을 반환하면 해당 스캔코드는 무시해야 합니다 (break 코드, E0 프리픽스 등).
+    /// Convert a scancode into a `KeyEvent`.
+    /// Returns `None` for scancodes that should be ignored, such as break codes and prefixes.
     pub fn process_scancode(&mut self, scancode: u8) -> Option<KeyEvent> {
-        // E0 확장 키 프리픽스 처리
+        // Handle the E0 extended-key prefix.
         if scancode == 0xE0 {
             self.is_extended = true;
             return None;
@@ -67,9 +67,9 @@ impl KeyboardState {
         let is_break = scancode >= 0x80;
         let make_code = scancode & 0x7F;
         let extended = self.is_extended;
-        self.is_extended = false; // 반드시 1회 소비 후 리셋
+        self.is_extended = false; // Consume the prefix once, then clear it.
 
-        // --- Modifier 키 처리 (make/break 모두) ---
+        // --- Modifier keys (both make and break) ---
         match (extended, make_code) {
             // Left Shift (0x2A), Right Shift (0x36)
             (false, 0x2A) | (false, 0x36) => {
@@ -86,31 +86,31 @@ impl KeyboardState {
                 self.alt_pressed = !is_break;
                 return if is_break { None } else { Some(KeyEvent::ModifierOnly) };
             }
-            // Caps Lock (0x3A) — make에서만 토글
+            // Caps Lock (0x3A) — toggle only on make
             (false, 0x3A) => {
                 if !is_break {
                     self.caps_lock = !self.caps_lock;
                 }
                 return None;
             }
-            // Num Lock (0x45) — make에서만 토글
+            // Num Lock (0x45) — toggle only on make
             (false, 0x45) => {
                 if !is_break {
                     self.num_lock = !self.num_lock;
                 }
                 return None;
             }
-            // Scroll Lock (0x46) — 무시
+            // Scroll Lock (0x46) — ignore
             (false, 0x46) => return None,
             _ => {}
         }
 
-        // break(키 뗌) 이벤트는 무시 (문자 출력은 make에서만)
+        // Ignore break/release events. Characters are produced on make only.
         if is_break {
             return None;
         }
 
-        // --- 확장 키(E0 prefix) 처리 ---
+        // --- Extended keys (E0-prefixed) ---
         if extended {
             return match make_code {
                 0x48 => Some(KeyEvent::ArrowUp),
@@ -129,7 +129,7 @@ impl KeyboardState {
             };
         }
 
-        // --- 특수 키 (non-printable) ---
+        // --- Special non-printable keys ---
         match make_code {
             0x01 => return Some(KeyEvent::Escape),
             0x0E => return Some(KeyEvent::Backspace),
@@ -151,7 +151,7 @@ impl KeyboardState {
             _ => {}
         }
 
-        // --- Numpad 키 (Num Lock 상태에 따라) ---
+        // --- Numpad keys (behavior depends on Num Lock) ---
         if self.num_lock {
             match make_code {
                 0x47 => return Some(KeyEvent::Char(b'7')),
@@ -173,7 +173,7 @@ impl KeyboardState {
                 0x48 => return Some(KeyEvent::ArrowUp),
                 0x49 => return Some(KeyEvent::PageUp),
                 0x4B => return Some(KeyEvent::ArrowLeft),
-                0x4C => return None, // Numpad 5 (Num Lock off = 없음)
+                0x4C => return None, // Numpad 5 (no navigation mapping when Num Lock is off)
                 0x4D => return Some(KeyEvent::ArrowRight),
                 0x4F => return Some(KeyEvent::End),
                 0x50 => return Some(KeyEvent::ArrowDown),
@@ -183,7 +183,7 @@ impl KeyboardState {
                 _ => {}
             }
         }
-        // Numpad 연산자
+        // Numpad operators
         match make_code {
             0x37 => return Some(KeyEvent::Char(b'*')), // Keypad *
             0x4A => return Some(KeyEvent::Char(b'-')), // Keypad -
@@ -191,14 +191,14 @@ impl KeyboardState {
             _ => {}
         }
 
-        // --- 일반 출력 가능 문자 (QWERTY 매핑) ---
+        // --- Printable characters (QWERTY mapping) ---
         let effective_shift = self.shift_pressed;
 
-        // 영문 알파벳은 Caps Lock과 Shift를 XOR로 결합
+        // Alphabetic keys combine Caps Lock and Shift through XOR.
         let alpha_upper = self.shift_pressed ^ self.caps_lock;
 
         let ch = match make_code {
-            // 숫자 행 (` 1 2 3 4 5 6 7 8 9 0 - =)
+            // Number row (` 1 2 3 4 5 6 7 8 9 0 - =)
             0x29 => if effective_shift { b'~' } else { b'`' },
             0x02 => if effective_shift { b'!' } else { b'1' },
             0x03 => if effective_shift { b'@' } else { b'2' },
@@ -213,7 +213,7 @@ impl KeyboardState {
             0x0C => if effective_shift { b'_' } else { b'-' },
             0x0D => if effective_shift { b'+' } else { b'=' },
 
-            // QWERTY 1행 (q w e r t y u i o p [ ] \)
+            // QWERTY row 1 (q w e r t y u i o p [ ] \)
             0x10 => if alpha_upper { b'Q' } else { b'q' },
             0x11 => if alpha_upper { b'W' } else { b'w' },
             0x12 => if alpha_upper { b'E' } else { b'e' },
@@ -228,7 +228,7 @@ impl KeyboardState {
             0x1B => if effective_shift { b'}' } else { b']' },
             0x2B => if effective_shift { b'|' } else { b'\\' },
 
-            // QWERTY 2행 (a s d f g h j k l ; ' )
+            // QWERTY row 2 (a s d f g h j k l ; ')
             0x1E => if alpha_upper { b'A' } else { b'a' },
             0x1F => if alpha_upper { b'S' } else { b's' },
             0x20 => if alpha_upper { b'D' } else { b'd' },
@@ -241,7 +241,7 @@ impl KeyboardState {
             0x27 => if effective_shift { b':' } else { b';' },
             0x28 => if effective_shift { b'"' } else { b'\'' },
 
-            // QWERTY 3행 (z x c v b n m , . /)
+            // QWERTY row 3 (z x c v b n m , . /)
             0x2C => if alpha_upper { b'Z' } else { b'z' },
             0x2D => if alpha_upper { b'X' } else { b'x' },
             0x2E => if alpha_upper { b'C' } else { b'c' },

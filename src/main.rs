@@ -1,27 +1,27 @@
 #![no_std]
 #![no_main]
-#![feature(abi_x86_interrupt)] // CPU 예외/인터럽트 처리를 위한 x86-interrupt ABI 활성화
+#![feature(abi_x86_interrupt)] // Enable the x86-interrupt ABI for CPU exceptions and interrupts
 
-extern crate alloc; // 동적 메모리 할당(Vec, String, Box 등)을 위한 내장 alloc 크레이트 활성화
-extern crate smoltcp; // TCP/IP 스택 지원을 명시적으로 링크합니다.
+extern crate alloc; // Enable the built-in alloc crate for Vec, String, Box, and other heap types
+extern crate smoltcp; // Explicitly link the TCP/IP stack crate
 
-// Rust 내장 core 라이브러리와 이름 충돌을 피하기 위해 경로를 매핑하여 로드합니다.
+// Load the seed module under a custom path to avoid naming conflicts with Rust's core crate.
 #[path = "core/seed.rs"]
 pub mod os_core_seed;
 
-// 멀티 아키텍처 모듈 트리 선언
+// Multi-architecture module tree
 pub mod arch {
     pub mod x86_64 {
         pub mod discovery;
-        pub mod interrupts; // 블루스크린 방어막 및 우체통 (IDT)
-        pub mod port;       // I/O 포트 (키보드/마우스 제어 기초)
-        pub mod serial;     // 호스트 PC와 통신할 탯줄 (COM1 UART)
-        pub mod apic;       // 고급 병렬 인터럽트 컨트롤러 (IOAPIC/LAPIC)
-        pub mod usb;        // 네이티브 USB (xHCI 구조체 매핑)
+        pub mod interrupts; // IDT and hardware interrupt handling
+        pub mod port;       // Raw I/O port access primitives
+        pub mod serial;     // COM1 serial link to the host
+        pub mod apic;       // LAPIC/IOAPIC initialization
+        pub mod usb;        // Native USB/xHCI support
     }
 }
 
-// 힙 메모리 할당자 모듈
+// Heap allocator
 pub mod allocator;
 
 pub mod net;
@@ -30,6 +30,8 @@ pub mod storage;
 pub mod https;
 pub mod task;
 pub mod security;
+pub mod e1000;
+pub mod keyboard;
 
 use arch::x86_64::discovery::SystemIdentity;
 use os_core_seed::OpenRhizaSeed;
@@ -44,7 +46,7 @@ fn panic(info: &PanicInfo) -> ! {
 
 #[no_mangle]
 pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
-    // 1. 방어막 분리 (IDT 및 하드웨어 예외 처리) - 가장 먼저 실행!
+    // 1. Install the exception/interrupt guardrail first.
     arch::x86_64::interrupts::init_idt();
 
     let offset = boot_info.physical_memory_offset;
@@ -52,22 +54,22 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
         crate::arch::x86_64::discovery::PHYS_MEM_OFFSET = offset;
     }
 
-    // 2. 레거시 8259 PIC를 완전히 죽이고, 최신 초고속 APIC 컨트롤러 통제권을 장악합니다. (Phase 6.B)
+    // 2. Disable the legacy PIC and take control through APIC.
     unsafe {
         arch::x86_64::interrupts::PICS.lock().disable();
     }
     arch::x86_64::apic::init_apic(offset);
 
-    x86_64::instructions::interrupts::enable(); // CPU가 외부 하드웨어 신호를 듣도록 허용
+    x86_64::instructions::interrupts::enable(); // Allow the CPU to receive external interrupts
 
-    // 시리얼 포트 통신 시작 알림 (호스트 PC로 전송)
+    // Notify the host that serial communications are available.
     crate::println!("OpenRhiza Seed (Layer 0) Booting... Serial Connected!");
 
-    // 2. 힙 메모리 할당자(Heap Allocator) 초기화 (Vec 사용을 위해 필수)
+    // 3. Initialize the heap allocator so Vec and other alloc types can be used.
     allocator::init_heap();
     crate::println!("Heap Allocator initialized!");
 
-    // 2. 하드웨어 스캔 및 초기화 (CPUID 스캔 및 PCI 버스 Enumeration)
+    // 4. Scan the hardware and enumerate PCI devices.
     let identity = SystemIdentity::scan(boot_info);
     crate::println!("Total Usable Memory: {} Bytes", identity.total_memory);
     crate::println!("Hardware Discovery Complete.");
@@ -75,15 +77,20 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
     for dev in &identity.pci_devices {
         crate::println!("  Bus {} Device {}: Vendor {:#06X}, Device {:#06X}, BAR0: {:#010X}", dev.bus, dev.device, dev.vendor_id, dev.device_id, dev.bar0);
         
-        // Bootstrapping USB xHCI dynamically from hardcoded Layer 0
+        // Bootstrap native xHCI from Layer 0 when a controller is discovered.
         if dev.class_code == 0x0C && dev.subclass == 0x03 && dev.prog_if == 0x30 && dev.bar0 != 0 {
             crate::arch::x86_64::usb::init_xhci(dev.bar0, offset, dev.bus, dev.device);
         }
+
+        if dev.vendor_id == 0x8086 && dev.device_id == 0x100E && dev.bar0 != 0 {
+            crate::e1000::enable_pci_bus_mastering(dev.bus, dev.device);
+            if let Some(nic) = crate::e1000::E1000::init(dev.bar0, offset) {
+                crate::net::attach_native_e1000(nic);
+            }
+        }
     }
     
-    crate::println!("Verify Keyboard: Type 'hi!' and Enter");
-
-    // Phase 6: Wasm Cache Bootstrapping Test
+    // Probe the bootstrap storage image and look for cached payloads.
     crate::println!("[Storage] Probing Secondary IDE Drive for Wasm Cache...");
     let mut boot_sector = [0u8; 512];
     storage::read_sector_ata_secondary(0, &mut boot_sector);
@@ -92,8 +99,9 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
         
         crate::println!("[Storage] Executing native FAT16 Parse...");
         if let Some(payload) = storage::extract_payload() {
-            crate::println!("[Storage] Successfully extracted E1000.BIN payload cluster!");
-            if let Ok(preview) = core::str::from_utf8(&payload[0..17]) {
+            crate::println!("[Storage] Successfully extracted E1000.BIN payload ({} bytes).", payload.len());
+            let preview_len = payload.len().min(17);
+            if let Ok(preview) = core::str::from_utf8(&payload[..preview_len]) {
                 crate::println!("[Storage] Payload Preview: '{}'", preview);
             }
         } else {
@@ -103,10 +111,10 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
         crate::println!("[Storage] No valid Wasm Cache drive found. Wait for external Link.");
     }
 
-    // 3. OpenRhiza Seed (Layer 0) 샌드박스 인스턴스 생성
-    let mut rhiza = OpenRhizaSeed::new(identity);
+    // 5. Create the Layer 0 seed / sandbox engine.
+    let rhiza = OpenRhizaSeed::new(identity);
     
-    // 4. OS 네트워킹 스택 초기화 (smoltcp IP/TCP)
+    // 6. Initialize the networking stack.
     crate::net::init_network();
 
     crate::println!("[OS System] All subsystems initialized. Handing over to Async Executor.");
@@ -130,14 +138,14 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
     let mut keymap_index = 0;
 
     loop {
-        // [수면] 타스크를 1 Ticks 동안 대기시킵니다. (CPU 과점유 방지 및 다른 큐 배려)
+        // Sleep for one tick to avoid monopolizing the CPU.
         crate::task::timer::sleep_ticks(1).await;
 
-        // [네트워크 폴링] AI가 생성한 네트워크 드라이버가 살아있다면, DMA 버퍼에서 패킷을 계속 가져옵니다.
+        // Poll the Wasm-side NIC path if an AI-generated driver is active.
         rhiza.poll_wasm_network();
         crate::net::poll(uptime_ms);
         
-        // [USB HID 폴링] xHCI 이벤트 링에서 USB 키보드 입력을 가져와 스캔코드로 변환합니다.
+        // Poll the xHCI event ring and translate USB keyboard reports into scancodes.
         crate::arch::x86_64::usb::poll_usb_keyboard();
         
         uptime_ms += 1;
@@ -174,6 +182,7 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
             if data == 0xFD {
                 keymap_index = 0; 
                 *crate::task::keyboard::DYNAMIC_KEYMAP.lock() = [0x3F; 256];
+                crate::task::keyboard::KEYMAP_OVERRIDE_ACTIVE.store(false, core::sync::atomic::Ordering::Relaxed);
             } else if data == 0xFB {
                 crate::println!("[*] AI is generating e1000 LAN driver... Please wait.");
             } else if data == 0xFA {
@@ -209,11 +218,13 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
                 }
             } else if data == 0xFE && keymap_index < 256 {
                 keymap_index = 0;
+                crate::task::keyboard::KEYMAP_OVERRIDE_ACTIVE.store(false, core::sync::atomic::Ordering::Relaxed);
                 crate::println!("[!] Calibration Failed. Try again:");
             } else if keymap_index < 256 {
                 crate::task::keyboard::DYNAMIC_KEYMAP.lock()[keymap_index] = data;
                 keymap_index += 1;
                 if keymap_index == 256 {
+                    crate::task::keyboard::KEYMAP_OVERRIDE_ACTIVE.store(true, core::sync::atomic::Ordering::Relaxed);
                     crate::println!("[+] Keyboard Driver Loaded.");
                 }
             }

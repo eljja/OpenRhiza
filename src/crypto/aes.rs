@@ -1,8 +1,8 @@
 // src/crypto/aes.rs
-// AES-128 순수 소프트웨어 구현 (FIPS 197)
-// AES-NI/SIMD 없이 룩업 테이블 기반 스칼라 연산
+// Pure software AES-128 implementation (FIPS 197)
+// Scalar lookup-table implementation without AES-NI or SIMD.
 
-// S-Box (SubBytes 변환 테이블)
+// S-Box (SubBytes lookup table)
 const SBOX: [u8; 256] = [
     0x63,0x7c,0x77,0x7b,0xf2,0x6b,0x6f,0xc5,0x30,0x01,0x67,0x2b,0xfe,0xd7,0xab,0x76,
     0xca,0x82,0xc9,0x7d,0xfa,0x59,0x47,0xf0,0xad,0xd4,0xa2,0xaf,0x9c,0xa4,0x72,0xc0,
@@ -25,7 +25,7 @@ const SBOX: [u8; 256] = [
 // Round Constants
 const RCON: [u8; 10] = [0x01,0x02,0x04,0x08,0x10,0x20,0x40,0x80,0x1b,0x36];
 
-/// AES-128 키 확장: 16바이트 키 → 11개 라운드 키 (176바이트)
+/// AES-128 key expansion: 16-byte key -> 11 round keys (176 bytes).
 pub fn key_expansion(key: &[u8; 16]) -> [u8; 176] {
     let mut w = [0u8; 176];
     w[..16].copy_from_slice(key);
@@ -52,7 +52,7 @@ pub fn key_expansion(key: &[u8; 16]) -> [u8; 176] {
     w
 }
 
-/// AES-128 단일 블록 암호화 (16바이트 입력 → 16바이트 출력)
+/// AES-128 single-block encryption (16-byte input -> 16-byte output).
 pub fn encrypt_block(block: &[u8; 16], round_keys: &[u8; 176]) -> [u8; 16] {
     let mut state = *block;
 
@@ -122,7 +122,7 @@ fn gf_mul3(x: u8) -> u8 { gf_mul2(x) ^ x }
 // AES-128-GCM (Galois/Counter Mode)
 // ========================================================================
 
-/// GF(2^128) 곱셈 (GHASH용, 비트 단위 순수 구현)
+/// GF(2^128) multiplication used by GHASH.
 fn gf128_mul(x: &[u8; 16], y: &[u8; 16]) -> [u8; 16] {
     let mut z = [0u8; 16];
     let mut v = *y;
@@ -135,7 +135,7 @@ fn gf128_mul(x: &[u8; 16], y: &[u8; 16]) -> [u8; 16] {
             for j in 0..16 { z[j] ^= v[j]; }
         }
 
-        // v = v >> 1 in GF(2^128), with reduction polynomial
+        // v = v >> 1 in GF(2^128), with the reduction polynomial applied
         let carry = v[15] & 1;
         for j in (1..16).rev() {
             v[j] = (v[j] >> 1) | (v[j-1] << 7);
@@ -148,7 +148,7 @@ fn gf128_mul(x: &[u8; 16], y: &[u8; 16]) -> [u8; 16] {
     z
 }
 
-/// GHASH: GCM의 인증 태그 생성용 해시
+/// GHASH used to generate the GCM authentication tag.
 fn ghash(h: &[u8; 16], aad: &[u8], ciphertext: &[u8]) -> [u8; 16] {
     let mut tag = [0u8; 16];
 
@@ -163,7 +163,7 @@ fn ghash(h: &[u8; 16], aad: &[u8], ciphertext: &[u8]) -> [u8; 16] {
         offset += 16;
     }
 
-    // Process Ciphertext
+    // Process ciphertext
     offset = 0;
     while offset < ciphertext.len() {
         let mut block = [0u8; 16];
@@ -174,7 +174,7 @@ fn ghash(h: &[u8; 16], aad: &[u8], ciphertext: &[u8]) -> [u8; 16] {
         offset += 16;
     }
 
-    // Length block: [AAD length in bits (64-bit BE)][Ciphertext length in bits (64-bit BE)]
+    // Length block: [AAD length in bits][ciphertext length in bits]
     let mut len_block = [0u8; 16];
     let aad_bits = (aad.len() as u64) * 8;
     let ct_bits = (ciphertext.len() as u64) * 8;
@@ -186,7 +186,7 @@ fn ghash(h: &[u8; 16], aad: &[u8], ciphertext: &[u8]) -> [u8; 16] {
     tag
 }
 
-/// CTR 모드에서 카운터 블록 증가 (마지막 4바이트만 증가)
+/// Increment the CTR counter block (only the last 4 bytes change).
 fn inc32(counter: &mut [u8; 16]) {
     for i in (12..16).rev() {
         counter[i] = counter[i].wrapping_add(1);
@@ -194,26 +194,26 @@ fn inc32(counter: &mut [u8; 16]) {
     }
 }
 
-/// AES-128-GCM 암호화
-/// - key: 16바이트 AES 키
-/// - iv: 12바이트 초기화 벡터 (nonce)
-/// - aad: 추가 인증 데이터
-/// - plaintext: 평문
-/// 반환: (ciphertext, 16바이트 authentication tag)
+/// AES-128-GCM encryption.
+/// - key: 16-byte AES key
+/// - iv: 12-byte initialization vector (nonce)
+/// - aad: additional authenticated data
+/// - plaintext: plaintext input
+/// Returns: `(ciphertext, 16-byte authentication tag)`
 pub fn aes_gcm_encrypt(
     key: &[u8; 16], iv: &[u8; 12], aad: &[u8], plaintext: &[u8]
 ) -> (alloc::vec::Vec<u8>, [u8; 16]) {
     let round_keys = key_expansion(key);
 
-    // H = AES(K, 0^128) — GHASH 서브키
+    // H = AES(K, 0^128) — GHASH subkey
     let h = encrypt_block(&[0u8; 16], &round_keys);
 
-    // J0 = IV || 0x00000001 (96비트 IV인 경우)
+    // J0 = IV || 0x00000001 (for a 96-bit IV)
     let mut j0 = [0u8; 16];
     j0[..12].copy_from_slice(iv);
     j0[15] = 1;
 
-    // CTR 모드 암호화 (J0+1 부터 시작)
+    // CTR-mode encryption (starting at J0 + 1)
     let mut counter = j0;
     let mut ciphertext = alloc::vec![0u8; plaintext.len()];
 
@@ -228,7 +228,7 @@ pub fn aes_gcm_encrypt(
         offset += 16;
     }
 
-    // GHASH → 인증 태그
+    // GHASH -> authentication tag
     let ghash_result = ghash(&h, aad, &ciphertext);
 
     // Tag = GHASH XOR AES(K, J0)
@@ -239,8 +239,8 @@ pub fn aes_gcm_encrypt(
     (ciphertext, tag)
 }
 
-/// AES-128-GCM 복호화 + 인증 검증
-/// 태그 불일치 시 None 반환 (위조 감지)
+/// AES-128-GCM decryption with authentication.
+/// Returns `None` if the tag does not match.
 pub fn aes_gcm_decrypt(
     key: &[u8; 16], iv: &[u8; 12], aad: &[u8], ciphertext: &[u8], tag: &[u8; 16]
 ) -> Option<alloc::vec::Vec<u8>> {
@@ -251,18 +251,18 @@ pub fn aes_gcm_decrypt(
     j0[..12].copy_from_slice(iv);
     j0[15] = 1;
 
-    // 태그 검증
+    // Verify the tag.
     let ghash_result = ghash(&h, aad, ciphertext);
     let encrypted_j0 = encrypt_block(&j0, &round_keys);
     let mut computed_tag = [0u8; 16];
     for i in 0..16 { computed_tag[i] = ghash_result[i] ^ encrypted_j0[i]; }
 
-    // 상수 시간 비교 (타이밍 공격 방지)
+    // Constant-time comparison to reduce timing leakage.
     let mut diff = 0u8;
     for i in 0..16 { diff |= computed_tag[i] ^ tag[i]; }
     if diff != 0 { return None; }
 
-    // CTR 모드 복호화
+    // CTR-mode decryption
     let mut counter = j0;
     let mut plaintext = alloc::vec![0u8; ciphertext.len()];
     let mut offset = 0;

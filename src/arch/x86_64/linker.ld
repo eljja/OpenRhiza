@@ -2,30 +2,30 @@ ENTRY(_start)
 
 SECTIONS
 {
-    /* 커널이 로드될 표준 물리 주소 (1MB 지점) */
+/* Standard physical load address for the kernel (1 MiB). */
     . = 1M;
 
     .text :
     {
-        /* 커널의 실행 코드가 위치하는 섹션 */
+/* Section containing executable kernel code. */
         *(.text .text.*)
     }
 
     .rodata :
     {
-        /* 읽기 전용 데이터 (상수 등) */
+/* Read-only data such as constants. */
         *(.rodata .rodata.*)
     }
 
     .data :
     {
-        /* 초기화된 전역 변수 */
+/* Initialized global data. */
         *(.data .data.*)
     }
 
     .bss :
     {
-        /* 초기화되지 않은 전역 변수 (0으로 채워짐) */
+/* Uninitialized globals (zero-filled at boot). */
         *(.bss .bss.*)
     }
 }

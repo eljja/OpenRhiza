@@ -1,18 +1,18 @@
 // src/tls.rs
-// TLS 1.3 클라이언트 (순수 소프트웨어 — RFC 8446)
-// 지원 cipher suite: TLS_AES_128_GCM_SHA256 (0x1301)
-// 지원 key exchange: secp256r1 (0x0017)
+// TLS 1.3 client (pure software implementation based on RFC 8446)
+// Supported cipher suite: TLS_AES_128_GCM_SHA256 (0x1301)
+// Supported key exchange: secp256r1 (0x0017)
 
 use alloc::vec::Vec;
 use crate::crypto::{sha256, aes, p256, random};
 
 // ========================================================================
-// TLS 1.3 상수
+// TLS 1.3 constants
 // ========================================================================
 const TLS_AES_128_GCM_SHA256: u16 = 0x1301;
 const GROUP_SECP256R1: u16 = 0x0017;
-const TLS_12: u16 = 0x0303; // 레코드 레이어 호환 버전
-const TLS_13: u16 = 0x0304; // supported_versions 확장에 사용
+const TLS_12: u16 = 0x0303; // Record-layer compatibility version
+const TLS_13: u16 = 0x0304; // Used in the supported_versions extension
 
 // Content Types
 const CT_CHANGE_CIPHER_SPEC: u8 = 20;
@@ -35,7 +35,7 @@ const EXT_SIGNATURE_ALGORITHMS: u16 = 0x000d;
 const EXT_SUPPORTED_VERSIONS: u16 = 0x002b;
 const EXT_KEY_SHARE: u16 = 0x0033;
 
-/// TLS 핸드셰이크 상태
+/// TLS handshake state.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum TlsState {
     Init,
@@ -49,7 +49,7 @@ pub enum TlsState {
     Error,
 }
 
-/// TLS 키 재료 (Key Material)
+/// TLS key material.
 struct TlsKeys {
     client_write_key: [u8; 16],
     client_write_iv: [u8; 12],
@@ -59,35 +59,35 @@ struct TlsKeys {
     server_seq: u64,
 }
 
-/// TLS 1.3 클라이언트
+/// TLS 1.3 client.
 pub struct TlsClient {
     pub state: TlsState,
-    // 키 교환
+    // Key exchange
     private_key: [u8; 32],
     public_key: [u8; 65],
-    // 트랜스크립트 해시 (모든 핸드셰이크 메시지의 SHA-256)
+    // Transcript hash over all handshake messages
     transcript: sha256::Sha256,
-    // 핸드셰이크 키
+    // Handshake traffic keys
     hs_keys: Option<TlsKeys>,
-    // 애플리케이션 키
+    // Application traffic keys
     app_keys: Option<TlsKeys>,
-    // 수신 버퍼 (TCP 데이터 축적)
+    // Receive buffer used to accumulate TCP payloads
     recv_buf: Vec<u8>,
-    // 송신 버퍼 (전송할 TLS 레코드)
+    // Outbound buffer containing TLS records to send
     pub send_buf: Vec<u8>,
-    // 복호화된 앱 데이터
+    // Decrypted application data
     pub app_data_in: Vec<u8>,
-    // 핸드셰이크 시크릿 (Finished 검증용)
+    // Handshake secrets used during Finished verification
     handshake_secret: [u8; 32],
     server_hs_traffic_secret: [u8; 32],
     client_hs_traffic_secret: [u8; 32],
-    // 서버 이름 (SNI)
+    // Server name (SNI)
     server_name: Vec<u8>,
 }
 
 impl TlsClient {
     pub fn new(server_name: &str) -> Self {
-        // P256 키 생성은 start_handshake()에서 수행 (스택 사용량이 큼)
+        // Generate the P256 keypair in start_handshake() to keep stack usage lower here.
         TlsClient {
             state: TlsState::Init,
             private_key: [0u8; 32],
@@ -105,31 +105,31 @@ impl TlsClient {
         }
     }
 
-    /// ClientHello 생성 및 전송 버퍼에 추가
+    /// Build and queue a ClientHello.
     pub fn start_handshake(&mut self) {
         crate::println!("[TLS] Generating P256 keypair...");
         self.private_key = random::random_bytes_32();
-        // 개인키가 곡선 차수 n 미만이 되도록 상위 비트 조정
+        // Clamp the private key so it stays below the curve order.
         self.private_key[0] &= 0x7F;
         if self.private_key == [0u8; 32] { self.private_key[31] = 1; }
 
         self.public_key = p256::ecdh_public_key(&self.private_key);
         crate::println!("[TLS] P256 keypair ready. Sending ClientHello...");
         let client_hello = self.build_client_hello();
-        // 트랜스크립트에 ClientHello 핸드셰이크 메시지 추가
+        // Add ClientHello to the transcript.
         self.transcript.update(&client_hello);
-        // TLS 레코드로 감싸서 전송
+        // Wrap the handshake in a TLS record.
         self.wrap_record(CT_HANDSHAKE, &client_hello);
         self.state = TlsState::WaitServerHello;
     }
 
-    /// TCP 수신 데이터를 TLS에 공급
+    /// Feed inbound TCP data into the TLS parser.
     pub fn feed_data(&mut self, data: &[u8]) {
         self.recv_buf.extend_from_slice(data);
         self.process_records();
     }
 
-    /// 앱 데이터 전송 (핸드셰이크 완료 후)
+    /// Queue application data after the handshake completes.
     pub fn send_app_data(&mut self, data: &[u8]) {
         if self.state != TlsState::Ready { return; }
         if let Some(ref mut keys) = self.app_keys {
@@ -138,22 +138,22 @@ impl TlsClient {
         }
     }
 
-    /// 전송할 데이터가 있는지 확인
+    /// Return true when there is pending outbound data.
     pub fn has_data_to_send(&self) -> bool { !self.send_buf.is_empty() }
 
-    /// 전송 버퍼를 비우고 반환
+    /// Drain and return the outbound buffer.
     pub fn take_send_buf(&mut self) -> Vec<u8> {
         core::mem::take(&mut self.send_buf)
     }
 
     // ====================================================================
-    // 내부 구현
+    // Internal implementation details
     // ====================================================================
 
     fn build_client_hello(&self) -> Vec<u8> {
         let mut msg = Vec::new();
 
-        // Handshake header (타입 + 길이는 나중에 채움)
+        // Handshake header (type + length is filled in later)
         let mut body = Vec::new();
 
         // Legacy version: TLS 1.2
@@ -240,7 +240,7 @@ impl TlsClient {
     }
 
     fn wrap_record(&mut self, content_type: u8, data: &[u8]) {
-        // TLS Record: ContentType(1) + Version(2) + Length(2) + Data
+        // TLS record = ContentType(1) + Version(2) + Length(2) + Data
         self.send_buf.push(content_type);
         self.send_buf.extend_from_slice(&TLS_12.to_be_bytes());
         self.send_buf.extend_from_slice(&(data.len() as u16).to_be_bytes());
@@ -261,7 +261,7 @@ impl TlsClient {
 
             match content_type {
                 CT_HANDSHAKE => self.handle_handshake(&record_data),
-                CT_CHANGE_CIPHER_SPEC => { /* TLS 1.3: 무시 (호환성) */ }
+                CT_CHANGE_CIPHER_SPEC => { /* TLS 1.3: ignore for compatibility */ }
                 CT_APPLICATION_DATA => self.handle_encrypted_record(&record_data),
                 CT_ALERT => {
                     self.state = TlsState::Error;
@@ -285,12 +285,12 @@ impl TlsClient {
 
         match (self.state, hs_type) {
             (TlsState::WaitServerHello, HT_SERVER_HELLO) => {
-                // 트랜스크립트에 ServerHello 추가
+                // Add ServerHello to the transcript.
                 self.transcript.update(&data[..4 + hs_len]);
                 self.handle_server_hello(hs_body);
             }
             _ => {
-                // 다른 핸드셰이크는 암호화 후에 처리됨
+                // Later handshake messages are handled after encryption starts.
             }
         }
     }
@@ -346,7 +346,7 @@ impl TlsClient {
             offset += ext_data_len;
         }
 
-        // ECDH 공유 비밀 계산
+        // Compute the ECDH shared secret.
         let server_pk = match server_public_key {
             Some(pk) => pk,
             None => { self.state = TlsState::Error; return; }
@@ -357,7 +357,7 @@ impl TlsClient {
             None => { self.state = TlsState::Error; return; }
         };
 
-        // TLS 1.3 Key Schedule
+        // TLS 1.3 key schedule
         self.derive_handshake_keys(&shared_secret);
         self.state = TlsState::WaitEncryptedExtensions;
     }
@@ -375,14 +375,14 @@ impl TlsClient {
         let handshake_secret = sha256::hkdf_extract(&derived1, shared_secret);
         self.handshake_secret = handshake_secret;
 
-        // 현재 트랜스크립트 해시 (ClientHello + ServerHello)
+        // Current transcript hash (ClientHello + ServerHello)
         let transcript_hash = self.transcript_hash();
 
         // client/server handshake traffic secret
         self.client_hs_traffic_secret = derive_secret(&handshake_secret, b"c hs traffic", &transcript_hash);
         self.server_hs_traffic_secret = derive_secret(&handshake_secret, b"s hs traffic", &transcript_hash);
 
-        // 핸드셰이크 키 파생
+        // Derive handshake traffic keys.
         let s_key = hkdf_expand_label(&self.server_hs_traffic_secret, b"key", &[], 16);
         let s_iv = hkdf_expand_label(&self.server_hs_traffic_secret, b"iv", &[], 12);
         let c_key = hkdf_expand_label(&self.client_hs_traffic_secret, b"key", &[], 16);
@@ -401,7 +401,7 @@ impl TlsClient {
     }
 
     fn handle_encrypted_record(&mut self, record_data: &[u8]) {
-        // 어떤 키를 사용할지 결정
+        // Choose handshake keys or application keys based on the current state.
         let keys_ref = if self.state == TlsState::Ready {
             &mut self.app_keys
         } else {
@@ -413,8 +413,8 @@ impl TlsClient {
             None => { self.state = TlsState::Error; return; }
         };
 
-        // AES-GCM 복호화
-        if record_data.len() < 17 { return; } // 최소: 1 content_type + 16 tag
+        // AES-GCM decryption
+        if record_data.len() < 17 { return; } // Minimum: 1 content_type byte + 16-byte tag
         let ciphertext = &record_data[..record_data.len() - 16];
         let tag_slice = &record_data[record_data.len() - 16..];
         let mut tag = [0u8; 16];
@@ -440,7 +440,7 @@ impl TlsClient {
 
         if plaintext.is_empty() { return; }
 
-        // 마지막 바이트는 실제 content type
+        // The last plaintext byte contains the real content type.
         let actual_ct = plaintext[plaintext.len() - 1];
         let inner_data = &plaintext[..plaintext.len() - 1];
 
@@ -462,7 +462,7 @@ impl TlsClient {
             let end = offset + 4 + hs_len;
             if end > data.len() { break; }
 
-            // 트랜스크립트에 추가
+            // Add the message to the transcript.
             self.transcript.update(&data[offset..end]);
 
             match (self.state, hs_type) {
@@ -474,13 +474,12 @@ impl TlsClient {
                 }
                 (TlsState::WaitCertOrFinished, HT_FINISHED) |
                 (TlsState::WaitFinished, HT_FINISHED) => {
-                    // Finished 메시지 검증은 생략 (추후 구현)
-                    // 트랜스크립트에서 Finished 제외 후 해시
+                    // Finished verification is still skipped for now.
                     self.complete_handshake();
                     return;
                 }
                 (TlsState::WaitCertVerify, HT_CERTIFICATE_VERIFY) => {
-                    // 인증서 검증 생략 (추후 구현)
+                    // Certificate verification is still skipped for now.
                     self.state = TlsState::WaitFinished;
                 }
                 _ => {}
@@ -490,19 +489,19 @@ impl TlsClient {
     }
 
     fn complete_handshake(&mut self) {
-        // Client Finished 전송
+        // Send Client Finished.
         let finished_key = hkdf_expand_label(
             &self.client_hs_traffic_secret, b"finished", &[], 32);
         let transcript_hash = self.transcript_hash();
         let verify_data = sha256::hmac_sha256(&finished_key, &transcript_hash);
 
-        // Finished 메시지 구성
+        // Build the Finished message.
         let mut finished_msg = Vec::new();
         finished_msg.push(HT_FINISHED);
         finished_msg.push(0); finished_msg.push(0); finished_msg.push(32); // length = 32
         finished_msg.extend_from_slice(&verify_data);
 
-        // 암호화하여 전송
+        // Encrypt and queue it.
         if let Some(ref mut keys) = self.hs_keys {
             let mut inner = finished_msg.clone();
             inner.push(CT_HANDSHAKE); // inner content type
@@ -511,10 +510,10 @@ impl TlsClient {
             self.send_buf.extend_from_slice(&encrypted);
         }
 
-        // 트랜스크립트에 Finished 추가
+        // Add Finished to the transcript.
         self.transcript.update(&finished_msg);
 
-        // Application Traffic Keys 파생
+        // Derive application traffic keys.
         let transcript_hash = self.transcript_hash();
         let derived2 = derive_secret(&self.handshake_secret, b"derived", &sha256::sha256(&[]));
         let master_secret = sha256::hkdf_extract(&derived2, &[0u8; 32]);
@@ -549,7 +548,7 @@ impl TlsClient {
 }
 
 // ========================================================================
-// TLS 1.3 Key Schedule 헬퍼 함수
+// TLS 1.3 key-schedule helpers
 // ========================================================================
 
 /// Derive-Secret(Secret, Label, TranscriptHash)
@@ -566,7 +565,7 @@ fn hkdf_expand_label(secret: &[u8; 32], label: &[u8], context: &[u8], length: us
     let mut info = Vec::new();
     info.extend_from_slice(&(length as u16).to_be_bytes());
 
-    // Label with "tls13 " prefix
+    // Label with the "tls13 " prefix
     let full_label_len = 6 + label.len();
     info.push(full_label_len as u8);
     info.extend_from_slice(b"tls13 ");
@@ -579,7 +578,7 @@ fn hkdf_expand_label(secret: &[u8; 32], label: &[u8], context: &[u8], length: us
     sha256::hkdf_expand(secret, &info, length)
 }
 
-/// AES-GCM 레코드 암호화
+/// Encrypt a TLS record with AES-GCM.
 fn encrypt_record(keys: &mut TlsKeys, content_type: u8, plaintext: &[u8]) -> Vec<u8> {
     // Nonce
     let mut nonce = keys.client_write_iv;
@@ -597,7 +596,7 @@ fn encrypt_record(keys: &mut TlsKeys, content_type: u8, plaintext: &[u8]) -> Vec
     let (ciphertext, tag) = aes::aes_gcm_encrypt(
         &keys.client_write_key, &nonce, &aad, plaintext);
 
-    // TLS Record
+    // TLS record
     let mut record = Vec::new();
     record.push(content_type);
     record.extend_from_slice(&TLS_12.to_be_bytes());
@@ -607,7 +606,7 @@ fn encrypt_record(keys: &mut TlsKeys, content_type: u8, plaintext: &[u8]) -> Vec
     record
 }
 
-/// 확장 빌더 헬퍼
+/// Extension builder helper.
 fn push_extension(buf: &mut Vec<u8>, ext_type: u16, data: &[u8]) {
     buf.extend_from_slice(&ext_type.to_be_bytes());
     buf.extend_from_slice(&(data.len() as u16).to_be_bytes());

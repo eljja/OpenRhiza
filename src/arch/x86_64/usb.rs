@@ -46,16 +46,17 @@ impl Mapper for UsbMemoryMapper {
 fn dma_alloc_zeroed(size: usize, align: usize) -> (*mut u8, u64) {
     unsafe {
         let base = crate::arch::x86_64::discovery::DMA_BASE as u64;
-        let offset_ref = &mut crate::arch::x86_64::discovery::DMA_OFFSET;
+        let offset_ptr = core::ptr::addr_of_mut!(crate::arch::x86_64::discovery::DMA_OFFSET);
         let phys_mem_offset = crate::arch::x86_64::discovery::PHYS_MEM_OFFSET;
 
         // Align the current offset
-        let current = base + (*offset_ref as u64);
+        let current_offset = core::ptr::read(offset_ptr) as u64;
+        let current = base + current_offset;
         let aligned = (current + (align as u64 - 1)) & !(align as u64 - 1);
         let phys_addr = aligned;
         
         // Advance the bump pointer
-        *offset_ref = (aligned - base + size as u64) as u32;
+        core::ptr::write(offset_ptr, (aligned - base + size as u64) as u32);
         
         // Compute virtual address via bootloader's physical memory mapping
         let virt_addr = (phys_addr + phys_mem_offset) as *mut u8;
@@ -118,6 +119,15 @@ static mut HID_REPORT_PHYS: u64 = 0;
 // Keyboard slot tracking
 static mut KB_SLOT_ID: u8 = 0;
 static mut KB_ENDPOINT_DCI: u8 = 0;
+static mut PREV_HID_MODIFIERS: u8 = 0;
+static mut PREV_HID_KEYS: [u8; 6] = [0; 6];
+
+unsafe fn xhci_regs_mut() -> Option<&'static mut Registers<UsbMemoryMapper>> {
+    match &mut *core::ptr::addr_of_mut!(XHCI_REGS) {
+        Some(regs) => Some(regs),
+        None => None,
+    }
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Event Ring Segment Table Entry (ERST)
@@ -321,14 +331,14 @@ pub fn init_xhci(bar0_physical: u32, offset: u64, pci_bus: u8, pci_device: u8) {
         if ccs {
             crate::serial_println!("[xHCI] Port {} Connected! Speed: {}", port_idx + 1, speed);
             // Store regs globally, then enumerate this port
-            unsafe { XHCI_REGS = Some(regs); }
+            unsafe { *core::ptr::addr_of_mut!(XHCI_REGS) = Some(regs); }
             enumerate_device(port_idx as u8 + 1, speed);
             return;
         }
     }
 
     crate::serial_println!("[xHCI] No USB devices found on any port.");
-    unsafe { XHCI_REGS = Some(regs); }
+    unsafe { *core::ptr::addr_of_mut!(XHCI_REGS) = Some(regs); }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -340,7 +350,7 @@ fn enumerate_device(port_id: u8, speed: u8) {
     // Step 1: Issue Port Reset on this port FIRST. The xHCI spec requires a
     // port reset before the controller will allow device addressing.
     unsafe {
-        if let Some(ref mut regs) = XHCI_REGS {
+        if let Some(regs) = xhci_regs_mut() {
             // port_id is 1-indexed, port_register_set is 0-indexed
             let port_idx = (port_id - 1) as usize;
             regs.port_register_set.update_volatile_at(port_idx, |port| {
@@ -354,7 +364,7 @@ fn enumerate_device(port_id: u8, speed: u8) {
     // We spin-check for the event ring or PORTSC
     for _ in 0..500 {
         unsafe {
-            if let Some(ref mut regs) = XHCI_REGS {
+            if let Some(regs) = xhci_regs_mut() {
                 let port_idx = (port_id - 1) as usize;
                 let portsc = regs.port_register_set.read_volatile_at(port_idx).portsc;
                 if portsc.port_enabled_disabled() && !portsc.port_reset() {
@@ -573,7 +583,7 @@ fn queue_hid_transfer() {
 /// Returns true if a key event was processed.
 pub fn poll_usb_keyboard() -> bool {
     unsafe {
-        if XHCI_REGS.is_none() { return false; }
+        if xhci_regs_mut().is_none() { return false; }
         if KB_SLOT_ID == 0 { return false; }
 
         // Check Event Ring for Transfer Events
@@ -595,7 +605,7 @@ pub fn poll_usb_keyboard() -> bool {
         }
 
         // Update ERDP to tell the controller we consumed the event
-        if let Some(ref mut regs) = XHCI_REGS {
+        if let Some(regs) = xhci_regs_mut() {
             let erdp_phys = EVT_RING_PHYS + (EVT_RING_DEQUEUE as u64 * TRB_SIZE as u64);
             regs.interrupter_register_set.interrupter_mut(0).erdp.update_volatile(|d| {
                 d.set_event_ring_dequeue_pointer(erdp_phys);
@@ -635,97 +645,174 @@ fn process_hid_report() {
         // Byte 0: Modifier keys (Ctrl, Shift, Alt, GUI)
         // Byte 1: Reserved
         // Byte 2-7: Key codes (up to 6 simultaneous keys)
-        
-        let _modifiers = report[0];
-        // report[1] is reserved
-        
-        for i in 2..8 {
-            let keycode = report[i];
-            if keycode == 0 { continue; } // No key pressed in this slot
-            if keycode == 1 { continue; } // Error rollover
-            
-            // Convert HID Usage ID to PS/2 scancode and inject into the keyboard queue
-            let scancode = hid_to_scancode(keycode);
-            if scancode != 0 {
-                crate::serial_println!("[USB-HID] Key: HID={:#04X} -> SC={:#04X}", keycode, scancode);
-                crate::task::keyboard::add_scancode(scancode);
-                // Also queue a key-release event after a tiny delay
-                crate::task::keyboard::add_scancode(scancode | 0x80);
+
+        let modifiers = report[0];
+        let current_keys = [report[2], report[3], report[4], report[5], report[6], report[7]];
+        let previous_keys = PREV_HID_KEYS;
+
+        process_modifier_changes(PREV_HID_MODIFIERS, modifiers);
+
+        for &keycode in &current_keys {
+            if keycode == 0 || keycode == 1 {
+                continue;
+            }
+
+            if !previous_keys.contains(&keycode) {
+                inject_hid_key(keycode, true);
             }
         }
+
+        for &keycode in &previous_keys {
+            if keycode == 0 || keycode == 1 {
+                continue;
+            }
+
+            if !current_keys.contains(&keycode) {
+                inject_hid_key(keycode, false);
+            }
+        }
+
+        PREV_HID_MODIFIERS = modifiers;
+        PREV_HID_KEYS = current_keys;
     }
+}
+
+fn process_modifier_changes(previous: u8, current: u8) {
+    for bit in 0..8 {
+        let mask = 1u8 << bit;
+        let was_pressed = (previous & mask) != 0;
+        let is_pressed = (current & mask) != 0;
+
+        if was_pressed == is_pressed {
+            continue;
+        }
+
+        let (extended, scancode) = match bit {
+            0 => (false, 0x1D), // Left Ctrl
+            1 => (false, 0x2A), // Left Shift
+            2 => (false, 0x38), // Left Alt
+            3 => (true, 0x5B),  // Left GUI
+            4 => (true, 0x1D),  // Right Ctrl
+            5 => (false, 0x36), // Right Shift
+            6 => (true, 0x38),  // Right Alt
+            7 => (true, 0x5C),  // Right GUI
+            _ => continue,
+        };
+
+        crate::serial_println!(
+            "[USB-HID] Modifier bit {} -> {}{}SC={:#04X}",
+            bit,
+            if is_pressed { "make " } else { "break " },
+            if extended { "E0+" } else { "" },
+            scancode
+        );
+        inject_scancode(scancode, extended, is_pressed);
+    }
+}
+
+fn inject_hid_key(keycode: u8, pressed: bool) {
+    let (extended, scancode) = hid_to_scancode(keycode);
+    if scancode == 0 {
+        return;
+    }
+
+    crate::serial_println!(
+        "[USB-HID] Key: HID={:#04X} -> {}SC={:#04X}",
+        keycode,
+        if extended { "E0+" } else { "" },
+        scancode
+    );
+    inject_scancode(scancode, extended, pressed);
+}
+
+fn inject_scancode(scancode: u8, extended: bool, pressed: bool) {
+    if extended {
+        crate::task::keyboard::add_scancode(0xE0);
+    }
+
+    crate::task::keyboard::add_scancode(if pressed { scancode } else { scancode | 0x80 });
 }
 
 
 // ──────────────────────────────────────────────────────────────────────────────
 // HID Usage ID -> PS/2 Scancode Mapping (Boot Protocol Keyboard)
 // ──────────────────────────────────────────────────────────────────────────────
-fn hid_to_scancode(hid_usage: u8) -> u8 {
+fn hid_to_scancode(hid_usage: u8) -> (bool, u8) {
     match hid_usage {
-        0x04 => 0x1E, // A
-        0x05 => 0x30, // B
-        0x06 => 0x2E, // C
-        0x07 => 0x20, // D
-        0x08 => 0x12, // E
-        0x09 => 0x21, // F
-        0x0A => 0x22, // G
-        0x0B => 0x23, // H
-        0x0C => 0x17, // I
-        0x0D => 0x24, // J
-        0x0E => 0x25, // K
-        0x0F => 0x26, // L
-        0x10 => 0x32, // M
-        0x11 => 0x31, // N
-        0x12 => 0x18, // O
-        0x13 => 0x19, // P
-        0x14 => 0x10, // Q
-        0x15 => 0x13, // R
-        0x16 => 0x1F, // S
-        0x17 => 0x14, // T
-        0x18 => 0x16, // U
-        0x19 => 0x2F, // V
-        0x1A => 0x11, // W
-        0x1B => 0x2D, // X
-        0x1C => 0x15, // Y
-        0x1D => 0x2C, // Z
-        0x1E => 0x02, // 1
-        0x1F => 0x03, // 2
-        0x20 => 0x04, // 3
-        0x21 => 0x05, // 4
-        0x22 => 0x06, // 5
-        0x23 => 0x07, // 6
-        0x24 => 0x08, // 7
-        0x25 => 0x09, // 8
-        0x26 => 0x0A, // 9
-        0x27 => 0x0B, // 0
-        0x28 => 0x1C, // Enter
-        0x29 => 0x01, // Escape
-        0x2A => 0x0E, // Backspace
-        0x2B => 0x0F, // Tab
-        0x2C => 0x39, // Space
-        0x2D => 0x0C, // Minus
-        0x2E => 0x0D, // Equals
-        0x2F => 0x1A, // Left Bracket
-        0x30 => 0x1B, // Right Bracket
-        0x31 => 0x2B, // Backslash
-        0x33 => 0x27, // Semicolon
-        0x34 => 0x28, // Apostrophe
-        0x35 => 0x29, // Grave Accent
-        0x36 => 0x33, // Comma
-        0x37 => 0x34, // Period
-        0x38 => 0x35, // Slash
-        0x39 => 0x3A, // Caps Lock
-        0x3A => 0x3B, // F1
-        0x3B => 0x3C, // F2
-        0x3C => 0x3D, // F3
-        0x3D => 0x3E, // F4
-        0x3E => 0x3F, // F5
-        0x3F => 0x40, // F6
-        0x40 => 0x41, // F7
-        0x41 => 0x42, // F8
-        0x42 => 0x43, // F9
-        0x43 => 0x44, // F10
-        _ => 0,
+        0x04 => (false, 0x1E), // A
+        0x05 => (false, 0x30), // B
+        0x06 => (false, 0x2E), // C
+        0x07 => (false, 0x20), // D
+        0x08 => (false, 0x12), // E
+        0x09 => (false, 0x21), // F
+        0x0A => (false, 0x22), // G
+        0x0B => (false, 0x23), // H
+        0x0C => (false, 0x17), // I
+        0x0D => (false, 0x24), // J
+        0x0E => (false, 0x25), // K
+        0x0F => (false, 0x26), // L
+        0x10 => (false, 0x32), // M
+        0x11 => (false, 0x31), // N
+        0x12 => (false, 0x18), // O
+        0x13 => (false, 0x19), // P
+        0x14 => (false, 0x10), // Q
+        0x15 => (false, 0x13), // R
+        0x16 => (false, 0x1F), // S
+        0x17 => (false, 0x14), // T
+        0x18 => (false, 0x16), // U
+        0x19 => (false, 0x2F), // V
+        0x1A => (false, 0x11), // W
+        0x1B => (false, 0x2D), // X
+        0x1C => (false, 0x15), // Y
+        0x1D => (false, 0x2C), // Z
+        0x1E => (false, 0x02), // 1
+        0x1F => (false, 0x03), // 2
+        0x20 => (false, 0x04), // 3
+        0x21 => (false, 0x05), // 4
+        0x22 => (false, 0x06), // 5
+        0x23 => (false, 0x07), // 6
+        0x24 => (false, 0x08), // 7
+        0x25 => (false, 0x09), // 8
+        0x26 => (false, 0x0A), // 9
+        0x27 => (false, 0x0B), // 0
+        0x28 => (false, 0x1C), // Enter
+        0x29 => (false, 0x01), // Escape
+        0x2A => (false, 0x0E), // Backspace
+        0x2B => (false, 0x0F), // Tab
+        0x2C => (false, 0x39), // Space
+        0x2D => (false, 0x0C), // Minus
+        0x2E => (false, 0x0D), // Equals
+        0x2F => (false, 0x1A), // Left Bracket
+        0x30 => (false, 0x1B), // Right Bracket
+        0x31 => (false, 0x2B), // Backslash
+        0x33 => (false, 0x27), // Semicolon
+        0x34 => (false, 0x28), // Apostrophe
+        0x35 => (false, 0x29), // Grave Accent
+        0x36 => (false, 0x33), // Comma
+        0x37 => (false, 0x34), // Period
+        0x38 => (false, 0x35), // Slash
+        0x39 => (false, 0x3A), // Caps Lock
+        0x3A => (false, 0x3B), // F1
+        0x3B => (false, 0x3C), // F2
+        0x3C => (false, 0x3D), // F3
+        0x3D => (false, 0x3E), // F4
+        0x3E => (false, 0x3F), // F5
+        0x3F => (false, 0x40), // F6
+        0x40 => (false, 0x41), // F7
+        0x41 => (false, 0x42), // F8
+        0x42 => (false, 0x43), // F9
+        0x43 => (false, 0x44), // F10
+        0xE0 => (false, 0x1D), // Left Ctrl (fallback)
+        0xE1 => (false, 0x2A), // Left Shift (fallback)
+        0xE2 => (false, 0x38), // Left Alt (fallback)
+        0xE4 => (true, 0x1D),  // Right Ctrl (fallback)
+        0xE5 => (false, 0x36), // Right Shift (fallback)
+        0xE6 => (true, 0x38),  // Right Alt (fallback)
+        0x4F => (true, 0x4D),  // Right Arrow
+        0x50 => (true, 0x4B),  // Left Arrow
+        0x51 => (true, 0x50),  // Down Arrow
+        0x52 => (true, 0x48),  // Up Arrow
+        _ => (false, 0),
     }
 }
 
@@ -762,7 +849,7 @@ fn drain_port_status_events() {
             }
 
             // Update ERDP
-            if let Some(ref mut regs) = XHCI_REGS {
+            if let Some(regs) = xhci_regs_mut() {
                 let erdp = EVT_RING_PHYS + (EVT_RING_DEQUEUE as u64 * TRB_SIZE as u64);
                 regs.interrupter_register_set.interrupter_mut(0).erdp.update_volatile(|d| {
                     d.set_event_ring_dequeue_pointer(erdp);
@@ -824,7 +911,7 @@ fn push_command_trb(raw: &[u32; 4]) {
 
 fn ring_doorbell(slot_id: u8, target: u8) {
     unsafe {
-        if let Some(ref mut regs) = XHCI_REGS {
+        if let Some(regs) = xhci_regs_mut() {
             regs.doorbell.update_volatile_at(slot_id as usize, |db| {
                 db.set_doorbell_target(target);
                 db.set_doorbell_stream_id(0);
@@ -848,7 +935,7 @@ fn wait_for_event() -> [u32; 4] {
                 }
 
                 // Update ERDP
-                if let Some(ref mut regs) = XHCI_REGS {
+                if let Some(regs) = xhci_regs_mut() {
                     let erdp = EVT_RING_PHYS + (EVT_RING_DEQUEUE as u64 * TRB_SIZE as u64);
                     regs.interrupter_register_set.interrupter_mut(0).erdp.update_volatile(|d| {
                         d.set_event_ring_dequeue_pointer(erdp);
@@ -862,9 +949,11 @@ fn wait_for_event() -> [u32; 4] {
             spin_count += 1;
             if spin_count % 5_000_000 == 0 {
                 // Dump diagnostic info every ~5M spins
+                let dequeue = EVT_RING_DEQUEUE;
+                let cycle = EVT_RING_CYCLE as u8;
                 crate::serial_println!("[xHCI] wait_for_event: still waiting... dequeue={}, cycle={}, trb[3]={:#010X}", 
-                    EVT_RING_DEQUEUE, EVT_RING_CYCLE as u8, evt[3]);
-                if let Some(ref mut regs) = XHCI_REGS {
+                    dequeue, cycle, evt[3]);
+                if let Some(regs) = xhci_regs_mut() {
                     let sts = regs.operational.usbsts.read_volatile();
                     crate::serial_println!("[xHCI] USBSTS: halted={}, eint={}, hse={}", 
                         sts.hc_halted(), sts.event_interrupt(), sts.host_system_error());
