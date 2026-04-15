@@ -32,6 +32,8 @@ pub mod task;
 pub mod security;
 pub mod e1000;
 pub mod keyboard;
+pub mod crypto;
+pub mod tls;
 
 use arch::x86_64::discovery::SystemIdentity;
 use os_core_seed::OpenRhizaSeed;
@@ -122,7 +124,29 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
     let mut executor = task::executor::Executor::new();
     executor.spawn(task::Task::new(task::keyboard::keyboard_task()));
     executor.spawn(task::Task::new(core_os_task(rhiza)));
+    executor.spawn(task::Task::new(background_llm_worker()));
     executor.run();
+}
+
+async fn background_llm_worker() {
+    loop {
+        if let Some(prompt) = crate::task::keyboard::PROMPT_QUEUE.pop() {
+            crate::println!("[LLM Orchestrator] Analyzing prompt for sequential vs parallel execution...");
+            crate::vga::init_cli();
+            crate::task::timer::sleep_ticks(500).await;
+            
+            crate::println!("[LLM Worker] Sending prompt to Brain: \"{}\"", prompt);
+            crate::vga::init_cli();
+            
+            // Simulating network fetch / Host serial write logic
+            crate::task::timer::sleep_ticks(2000).await;
+            
+            crate::println!("[Network] Error: Cannot reach LLM servers. Network offline.");
+            crate::vga::init_cli();
+        } else {
+            crate::task::timer::sleep_ticks(100).await;
+        }
+    }
 }
 
 async fn core_os_task(mut rhiza: OpenRhizaSeed) {
@@ -135,7 +159,6 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
     
     let mut uptime_ms: i64 = 0;
     let mut nexus_client: Option<crate::https::NexusClient> = None;
-    let mut keymap_index = 0;
 
     loop {
         // Sleep for one tick to avoid monopolizing the CPU.
@@ -147,6 +170,7 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
         
         // Poll the xHCI event ring and translate USB keyboard reports into scancodes.
         crate::arch::x86_64::usb::poll_usb_keyboard();
+        crate::arch::x86_64::usb::tick_usb_keyboard();
         
         uptime_ms += 1;
 
@@ -180,8 +204,6 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
 
         while let Some(data) = rhiza.poll_host_data() {
             if data == 0xFD {
-                keymap_index = 0; 
-                *crate::task::keyboard::DYNAMIC_KEYMAP.lock() = [0x3F; 256];
                 crate::task::keyboard::KEYMAP_OVERRIDE_ACTIVE.store(false, core::sync::atomic::Ordering::Relaxed);
             } else if data == 0xFB {
                 crate::println!("[*] AI is generating e1000 LAN driver... Please wait.");
@@ -215,17 +237,6 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
                             crate::arch::x86_64::serial::send_byte(0xF9); 
                         }
                     }
-                }
-            } else if data == 0xFE && keymap_index < 256 {
-                keymap_index = 0;
-                crate::task::keyboard::KEYMAP_OVERRIDE_ACTIVE.store(false, core::sync::atomic::Ordering::Relaxed);
-                crate::println!("[!] Calibration Failed. Try again:");
-            } else if keymap_index < 256 {
-                crate::task::keyboard::DYNAMIC_KEYMAP.lock()[keymap_index] = data;
-                keymap_index += 1;
-                if keymap_index == 256 {
-                    crate::task::keyboard::KEYMAP_OVERRIDE_ACTIVE.store(true, core::sync::atomic::Ordering::Relaxed);
-                    crate::println!("[+] Keyboard Driver Loaded.");
                 }
             }
         }

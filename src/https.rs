@@ -4,10 +4,12 @@ use smoltcp::socket::tcp::{Socket, State};
 use smoltcp::wire::IpAddress;
 use smoltcp::iface::SocketHandle;
 use crate::net::NET_STACK;
+use crate::tls::{TlsClient, TlsState};
 
 pub enum HttpsState {
     Disconnected,
     Connecting,
+    TlsHandshake,
     RequestSent,
     ReceivingData(Vec<u8>),
     Complete(Vec<u8>, [u8; 64]),
@@ -20,6 +22,7 @@ pub struct NexusClient {
     target_ip: IpAddress,
     port: u16,
     hardware_id: &'static str,
+    tls: TlsClient,
 }
 
 impl NexusClient {
@@ -30,6 +33,7 @@ impl NexusClient {
             target_ip,
             port,
             hardware_id,
+            tls: TlsClient::new("openrhiza.com"),
         }
     }
 
@@ -48,33 +52,72 @@ impl NexusClient {
                 }
                 HttpsState::Connecting => {
                     if socket.state() == State::Established {
-                        crate::serial_println!("[HTTPS] Connected! Sending GET request...");
-                        let path = format!("/api/nexus/{}.wasm", self.hardware_id.replace(':', "_"));
-                        let req = format!("GET {} HTTP/1.1\r\nHost: openrhiza.com\r\nConnection: close\r\n\r\n", path);
-                        if socket.send_slice(req.as_bytes()).is_ok() {
-                            self.state = HttpsState::RequestSent;
-                        }
+                        crate::serial_println!("[HTTPS] TCP Connected! Starting TLS Handshake...");
+                        self.tls.start_handshake();
+                        self.state = HttpsState::TlsHandshake;
                     } else if socket.state() == State::Closed {
                         self.state = HttpsState::Error("Connection failed");
                     }
                 }
-                HttpsState::RequestSent => {
-                    if socket.can_recv() {
-                        crate::serial_println!("[HTTPS] Receiving Response...");
-                        self.state = HttpsState::ReceivingData(Vec::new());
+                HttpsState::TlsHandshake => {
+                    if self.tls.has_data_to_send() && socket.can_send() {
+                        let outbound = self.tls.take_send_buf();
+                        let _ = socket.send_slice(&outbound);
                     }
-                }
-                HttpsState::ReceivingData(buf) => {
                     if socket.can_recv() {
                         let mut temp_buf = [0; 1024];
                         if let Ok(size) = socket.recv_slice(&mut temp_buf) {
                             if size > 0 {
-                                buf.extend_from_slice(&temp_buf[..size]);
+                                self.tls.feed_data(&temp_buf[..size]);
                             }
                         }
-                    } else if socket.state() == State::CloseWait || socket.state() == State::Closed {
+                    }
+                    if self.tls.state == TlsState::Ready {
+                        crate::serial_println!("[HTTPS] TLS Handshake Complete! Sending encrypted GET request...");
+                        let path = format!("/api/nexus/{}.wasm", self.hardware_id.replace(':', "_"));
+                        let req = format!("GET {} HTTP/1.1\r\nHost: openrhiza.com\r\nConnection: close\r\n\r\n", path);
+                        self.tls.send_app_data(req.as_bytes());
+                        self.state = HttpsState::RequestSent;
+                    } else if self.tls.state == TlsState::Error {
+                        self.state = HttpsState::Error("TLS Handshake failed");
+                    }
+                }
+                HttpsState::RequestSent => {
+                    if self.tls.has_data_to_send() && socket.can_send() {
+                        let outbound = self.tls.take_send_buf();
+                        let _ = socket.send_slice(&outbound);
+                    }
+                    if !self.tls.has_data_to_send() {
+                        self.state = HttpsState::ReceivingData(Vec::new());
+                    }
+                }
+                HttpsState::ReceivingData(buf) => {
+                    if self.tls.has_data_to_send() && socket.can_send() {
+                        let outbound = self.tls.take_send_buf();
+                        let _ = socket.send_slice(&outbound);
+                    }
+                    if socket.can_recv() {
+                        let mut temp_buf = [0; 1024];
+                        if let Ok(size) = socket.recv_slice(&mut temp_buf) {
+                            if size > 0 {
+                                self.tls.feed_data(&temp_buf[..size]);
+                            }
+                        }
+                    }
+                    
+                    if !self.tls.app_data_in.is_empty() {
+                        buf.extend_from_slice(&self.tls.app_data_in);
+                        self.tls.app_data_in.clear();
+                    }
+
+                    if socket.state() == State::CloseWait || socket.state() == State::Closed {
+                        if !self.tls.app_data_in.is_empty() {
+                            buf.extend_from_slice(&self.tls.app_data_in);
+                            self.tls.app_data_in.clear();
+                        }
+                        
                         let data = core::mem::take(buf);
-                        crate::serial_println!("[HTTPS] Response Closed. Total bytes: {}", data.len());
+                        crate::serial_println!("[HTTPS] TLS connection closed. Total decrypted bytes: {}", data.len());
                         
                         let mut body_start = 0;
                         for i in 0..data.len().saturating_sub(4) {

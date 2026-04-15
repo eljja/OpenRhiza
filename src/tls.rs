@@ -12,6 +12,7 @@ use crate::crypto::{sha256, aes, p256, random};
 const TLS_AES_128_GCM_SHA256: u16 = 0x1301;
 const GROUP_SECP256R1: u16 = 0x0017;
 const TLS_12: u16 = 0x0303; // Record-layer compatibility version
+#[allow(dead_code)]
 const TLS_13: u16 = 0x0304; // Used in the supported_versions extension
 
 // Content Types
@@ -542,7 +543,7 @@ impl TlsClient {
     }
 
     fn transcript_hash(&self) -> [u8; 32] {
-        let mut hasher = self.transcript.clone();
+        let hasher = self.transcript.clone();
         hasher.finalize()
     }
 }

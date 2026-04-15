@@ -637,6 +637,30 @@ pub fn poll_usb_keyboard() -> bool {
     }
 }
 
+static mut REPEAT_TIMER: u32 = 0;
+
+pub fn tick_usb_keyboard() {
+    unsafe {
+        if xhci_regs_mut().is_none() { return; }
+        if KB_SLOT_ID == 0 { return; }
+        
+        let all_released = PREV_HID_KEYS.iter().all(|&k| k == 0 || k == 1);
+        if all_released {
+            REPEAT_TIMER = 0;
+            return;
+        }
+
+        REPEAT_TIMER += 1;
+        if REPEAT_TIMER > 9 { // ~500ms delay (at 55ms per tick) 
+            if REPEAT_TIMER % 1 == 0 { // Repeat every tick (18 chars/sec)
+                if let Some(&keycode) = PREV_HID_KEYS.iter().find(|&&k| k != 0 && k != 1) {
+                    inject_hid_key(keycode, true);
+                }
+            }
+        }
+    }
+}
+
 /// Decode 8-byte HID Boot Protocol report and inject scancodes
 fn process_hid_report() {
     unsafe {
@@ -802,12 +826,21 @@ fn hid_to_scancode(hid_usage: u8) -> (bool, u8) {
         0x41 => (false, 0x42), // F8
         0x42 => (false, 0x43), // F9
         0x43 => (false, 0x44), // F10
+        0x44 => (false, 0x57), // F11
+        0x45 => (false, 0x58), // F12
+        0x47 => (false, 0x46), // Scroll Lock
+        0x49 => (true, 0x52),  // Insert
         0xE0 => (false, 0x1D), // Left Ctrl (fallback)
         0xE1 => (false, 0x2A), // Left Shift (fallback)
         0xE2 => (false, 0x38), // Left Alt (fallback)
         0xE4 => (true, 0x1D),  // Right Ctrl (fallback)
         0xE5 => (false, 0x36), // Right Shift (fallback)
         0xE6 => (true, 0x38),  // Right Alt (fallback)
+        0x4A => (true, 0x47),  // Home
+        0x4B => (true, 0x49),  // Page Up
+        0x4C => (true, 0x53),  // Delete
+        0x4D => (true, 0x4F),  // End
+        0x4E => (true, 0x51),  // Page Down
         0x4F => (true, 0x4D),  // Right Arrow
         0x50 => (true, 0x4B),  // Left Arrow
         0x51 => (true, 0x50),  // Down Arrow

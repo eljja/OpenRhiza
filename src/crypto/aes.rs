@@ -35,7 +35,7 @@ pub fn key_expansion(key: &[u8; 16]) -> [u8; 176] {
         let curr = i * 16;
 
         // RotWord + SubWord + Rcon
-        let mut temp = [
+        let temp = [
             SBOX[w[prev + 13] as usize] ^ RCON[i - 1],
             SBOX[w[prev + 14] as usize],
             SBOX[w[prev + 15] as usize],

@@ -1,8 +1,12 @@
 // src/crypto/random.rs
 // Random generator using RDRAND with a TSC fallback.
 
-/// Generate a 64-bit random value with the RDRAND instruction.
+/// Generate a 64-bit random value with the RDRAND instruction if supported.
 fn rdrand64() -> Option<u64> {
+    let cpuid = core::arch::x86_64::__cpuid(1);
+    let has_rdrand = (cpuid.ecx & (1 << 30)) != 0;
+    if !has_rdrand { return None; }
+
     let val: u64;
     let success: u8;
     unsafe {
@@ -25,16 +29,19 @@ fn tsc() -> u64 {
     ((hi as u64) << 32) | (lo as u64)
 }
 
-/// Simple xorshift64 PRNG state.
-static mut PRNG_STATE: u64 = 0;
+use core::sync::atomic::{AtomicU64, Ordering};
 
-fn xorshift64(state: &mut u64) -> u64 {
-    if *state == 0 { *state = tsc() ^ 0xdeadbeef12345678; }
-    let mut x = *state;
+/// Simple xorshift64 PRNG state.
+static PRNG_STATE: AtomicU64 = AtomicU64::new(0);
+
+fn xorshift64() -> u64 {
+    let mut state = PRNG_STATE.load(Ordering::Relaxed);
+    if state == 0 { state = tsc() ^ 0xdeadbeef12345678; }
+    let mut x = state;
     x ^= x << 13;
     x ^= x >> 7;
     x ^= x << 17;
-    *state = x;
+    PRNG_STATE.store(x, Ordering::Relaxed);
     x
 }
 
@@ -45,7 +52,7 @@ pub fn fill_random(buf: &mut [u8]) {
         let val = if let Some(r) = rdrand64() {
             r
         } else {
-            unsafe { xorshift64(&mut PRNG_STATE) }
+            xorshift64()
         };
         let bytes = val.to_le_bytes();
         let to_copy = core::cmp::min(8, buf.len() - offset);

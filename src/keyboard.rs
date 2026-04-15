@@ -27,6 +27,11 @@ pub enum KeyEvent {
     PageDown,
     Insert,
     Delete,
+    CtrlC,
+    CtrlL,
+    CtrlW,
+    CtrlU,
+    CtrlK,
     /// Function keys (F1-F12, encoded as 1-12)
     FunctionKey(u8),
     /// Modifier-only event (Shift, Ctrl, Alt by themselves), usually ignored
@@ -258,6 +263,19 @@ impl KeyboardState {
 
             _ => return None,
         };
+
+        if self.ctrl_pressed {
+            match ch {
+                b'a' | b'A' => return Some(KeyEvent::Home),
+                b'e' | b'E' => return Some(KeyEvent::End),
+                b'c' | b'C' => return Some(KeyEvent::CtrlC),
+                b'l' | b'L' => return Some(KeyEvent::CtrlL),
+                b'w' | b'W' => return Some(KeyEvent::CtrlW),
+                b'u' | b'U' => return Some(KeyEvent::CtrlU),
+                b'k' | b'K' => return Some(KeyEvent::CtrlK),
+                _ => {}
+            }
+        }
 
         Some(KeyEvent::Char(ch))
     }

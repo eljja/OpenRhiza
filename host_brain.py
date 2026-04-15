@@ -33,16 +33,16 @@ if not api_key:
 client = genai.Client(api_key=api_key)
 
 parser = argparse.ArgumentParser(description="OpenRhiza Host AI Brain")
-parser.add_argument('--model', type=str, default='gemini-2.5-flash-lite', help='Primary LLM Model ID')
+parser.add_argument('--model', type=str, default='gemini-3.1-flash-lite-preview', help='Primary LLM Model ID')
 args = parser.parse_args()
 PRIMARY_MODEL = args.model
 
 FALLBACK_MODELS = [
-    'gemini-2.5-flash-lite', 
-    'gemini-2.5-flash-lite-preview-09-2025', 
     'gemini-3.1-flash-lite-preview', 
+    'gemini-3-flash-preview',
     'gemini-2.5-flash', 
-    'gemini-3-flash-preview'
+    'gemini-2.5-flash-lite', 
+    'gemini-2.5-flash-lite-preview-09-2025'
 ]
 
 MODELS_TO_TRY = [PRIMARY_MODEL] + [m for m in FALLBACK_MODELS if m != PRIMARY_MODEL]

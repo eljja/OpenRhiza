@@ -11,6 +11,7 @@ lazy_static! {
     pub static ref SCANCODE_QUEUE: Arc<ArrayQueue<u8>> = Arc::new(ArrayQueue::new(100));
     pub static ref WAKER: Mutex<Option<Waker>> = Mutex::new(None);
     pub static ref DYNAMIC_KEYMAP: Mutex<[u8; 256]> = Mutex::new([0x3F; 256]);
+    pub static ref PROMPT_QUEUE: Arc<ArrayQueue<alloc::string::String>> = Arc::new(ArrayQueue::new(10));
 }
 
 pub static KEYMAP_OVERRIDE_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -55,8 +56,6 @@ impl core::future::Future for ScancodeStream {
 
 pub async fn keyboard_task() {
     let mut keyboard = crate::keyboard::KeyboardState::new();
-    let mut is_extended = false;
-    let mut shift_pressed = false;
 
     crate::vga::init_cli();
 
@@ -65,40 +64,29 @@ pub async fn keyboard_task() {
 
         crate::serial_println!("QEMU_LOG: Received scancode -> {:#04X}", scancode);
 
-        if KEYMAP_OVERRIDE_ACTIVE.load(core::sync::atomic::Ordering::Relaxed) {
-            if scancode == 0xE0 {
-                is_extended = true;
-                continue;
-            }
-
-            let is_break = scancode >= 0x80;
-            let real_scancode = scancode & 0x7F;
-
-            match (is_extended, real_scancode) {
-                (false, 0x2A) | (false, 0x36) => {
-                    shift_pressed = !is_break;
-                    is_extended = false;
-                    continue;
-                }
-                _ => {}
-            }
-
-            is_extended = false;
-
-            if !is_break {
-                let map_index = if shift_pressed { real_scancode as usize + 128 } else { real_scancode as usize };
-                let char_to_print = DYNAMIC_KEYMAP.lock()[map_index];
-                handle_input_byte(char_to_print);
-            }
-            continue;
-        }
-
         if let Some(event) = keyboard.process_scancode(scancode) {
             match event {
                 crate::keyboard::KeyEvent::Char(byte) => handle_input_byte(byte),
                 crate::keyboard::KeyEvent::Enter => submit_cli_command(),
-                crate::keyboard::KeyEvent::Backspace => WRITER.lock().pop_input_char(),
-                _ => {}
+                crate::keyboard::KeyEvent::Backspace => crate::vga::WRITER.lock().pop_input_char(),
+                crate::keyboard::KeyEvent::Delete => crate::vga::WRITER.lock().delete_char(),
+                crate::keyboard::KeyEvent::PageUp => crate::vga::WRITER.lock().scroll_up(10),
+                crate::keyboard::KeyEvent::PageDown => crate::vga::WRITER.lock().scroll_down(10),
+                crate::keyboard::KeyEvent::ArrowLeft => crate::vga::WRITER.lock().cursor_left(),
+                crate::keyboard::KeyEvent::ArrowRight => crate::vga::WRITER.lock().cursor_right(),
+                crate::keyboard::KeyEvent::ArrowUp => crate::vga::WRITER.lock().history_up(),
+                crate::keyboard::KeyEvent::ArrowDown => crate::vga::WRITER.lock().history_down(),
+                crate::keyboard::KeyEvent::Home => crate::vga::WRITER.lock().home(),
+                crate::keyboard::KeyEvent::End => crate::vga::WRITER.lock().end(),
+                crate::keyboard::KeyEvent::CtrlC => {
+                    crate::println!("^C");
+                    crate::vga::WRITER.lock().cancel_line();
+                },
+                crate::keyboard::KeyEvent::CtrlL => crate::vga::WRITER.lock().clear_log_area(),
+                crate::keyboard::KeyEvent::CtrlU => crate::vga::WRITER.lock().clear_before_cursor(),
+                crate::keyboard::KeyEvent::CtrlK => crate::vga::WRITER.lock().clear_after_cursor(),
+                crate::keyboard::KeyEvent::CtrlW => crate::vga::WRITER.lock().delete_word(),
+                _ => { crate::vga::WRITER.lock().snap_to_bottom(); } // Snap to bottom on any other key
             }
         }
     }
@@ -111,13 +99,14 @@ fn handle_input_byte(byte: u8) {
 
     match byte {
         b'\n' => submit_cli_command(),
-        0x08 => WRITER.lock().pop_input_char(),
-        _ => WRITER.lock().push_input_char(byte),
+        0x08 => crate::vga::WRITER.lock().pop_input_char(),
+        _ => crate::vga::WRITER.lock().push_input_char(byte),
     }
 }
 
 fn submit_cli_command() {
-    if let Some(command) = WRITER.lock().submit_input() {
+    let command_opt = WRITER.lock().submit_input();
+    if let Some(command) = command_opt {
         handle_cli_command(command.as_str());
     }
 }
@@ -137,7 +126,14 @@ fn handle_cli_command(command: &str) {
             crate::println!("[CLI] Keyboard input ready.");
             crate::println!("[CLI] Serial debug logs remain on COM1 only.");
         }
-        _ => crate::println!("[CLI] Unknown command: {}", command),
+        _ => {
+            // Unrecognized native command. Assume it's an LLM Prompt.
+            if let Ok(_) = PROMPT_QUEUE.push(alloc::string::String::from(command)) {
+                crate::println!("[CLI] Prompt pushed to background queue. Awaiting LLM...");
+            } else {
+                crate::println!("[CLI] Prompt queue full! Wait for the LLM to finish.");
+            }
+        }
     }
 
     crate::vga::init_cli();
