@@ -27,3 +27,5 @@ cargo bootimage
 - ARCHITECTURE.md: The 5-layer system and evolutionary bootstrap phases.
 - SECURITY.md: Sandbox and fault isolation concepts.
 - CONTRIBUTING.md: How to contribute to the future of AI OS.
+- OPENRHIZA_COM_PLAN.md: The current service and integration roadmap for `openrhiza.com`.
+- OPENRHIZA_API_V1.md: The first draft of the machine-oriented OS and service API contract.
