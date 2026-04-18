@@ -2,6 +2,9 @@ use x2apic::lapic::{LocalApic, LocalApicBuilder};
 use x2apic::ioapic::{IoApic, IrqFlags, IrqMode, RedirectionTableEntry};
 use spin::Mutex;
 
+const PIT_BASE_FREQUENCY_HZ: u32 = 1_193_182;
+const PIT_TARGET_FREQUENCY_HZ: u32 = 1_000;
+
 pub struct SafeLocalApic(pub LocalApic);
 unsafe impl Send for SafeLocalApic {}
 unsafe impl Sync for SafeLocalApic {}
@@ -59,6 +62,8 @@ pub fn init_apic(phys_mem_offset: u64) {
         ioapic.enable_irq(2); 
     }
 
+    init_pit_timer();
+
     crate::serial_println!("[APIC] IOAPIC Routing Configured. Timer/Keyboard Active.");
     *IOAPIC.lock() = Some(SafeIoApic(ioapic));
 }
@@ -67,4 +72,18 @@ pub fn end_of_interrupt() {
     if let Some(wrapper) = LAPIC.lock().as_mut() {
         unsafe { wrapper.0.end_of_interrupt(); }
     }
+}
+
+fn init_pit_timer() {
+    let divisor = (PIT_BASE_FREQUENCY_HZ / PIT_TARGET_FREQUENCY_HZ) as u16;
+
+    crate::arch::x86_64::port::write_port_u8(0x43, 0x34);
+    crate::arch::x86_64::port::write_port_u8(0x40, (divisor & 0x00FF) as u8);
+    crate::arch::x86_64::port::write_port_u8(0x40, (divisor >> 8) as u8);
+
+    crate::serial_println!(
+        "[APIC] PIT configured for {} Hz (divisor={}).",
+        PIT_TARGET_FREQUENCY_HZ,
+        divisor
+    );
 }

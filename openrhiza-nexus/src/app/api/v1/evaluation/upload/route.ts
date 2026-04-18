@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { recordEvaluation } from "@/app/registry-data";
 import { fail, isV1Protocol, ok, type EvaluationUploadRequest } from "@/lib/openrhiza-v1";
 
 export async function POST(req: Request) {
@@ -13,11 +14,7 @@ export async function POST(req: Request) {
       return NextResponse.json(fail("node_id and driver_id are required."), { status: 400 });
     }
 
-    return NextResponse.json(
-      ok({
-        evaluation_id: `eval_${body.node_id}_${body.driver_id}`,
-      }),
-    );
+    return NextResponse.json(ok(recordEvaluation(body)));
   } catch (error) {
     return NextResponse.json(fail(String(error), 500), { status: 500 });
   }

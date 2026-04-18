@@ -1,36 +1,33 @@
 import { NextResponse } from "next/server";
+import { searchDriverByLegacyHardwareId } from "@/app/registry-data";
 
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
-  const hw_id = searchParams.get("hw_id");
+  const hardwareId = searchParams.get("hw_id");
 
-  // Mock checking DB for verified drivers
-  if (hw_id === "8086:100E") {
+  if (!hardwareId) {
+    return NextResponse.json({ success: false, message: "hw_id is required." }, { status: 400 });
+  }
+
+  const driver = searchDriverByLegacyHardwareId(hardwareId);
+  if (!driver) {
     return NextResponse.json({
-      success: true,
-      data: {
-        hardware_id: "8086:100E",
-        hardware_name: "Intel e1000 Gigabit",
-        code_snippet: `
-#[unsafe(no_mangle)]
-pub extern "C" fn init_e1000() {
-    // Certified payload verified by AI Node #772
-    let bar0: u32 = 0xFEBC0000;
-    unsafe {
-        let val = core::ptr::read_volatile(bar0 as *const u32);
-        core::ptr::write_volatile(bar0 as *mut u32, val | (1 << 26)); 
-    }
-}
-        `,
-        rating: 124,
-        author: "AI Node #772",
-        warnings: "Do not trigger page fault reading 0x5400 RAL0 directly without padding."
-      }
+      success: false,
+      message: "No certified driver found for this HW_ID. You must generate one locally.",
     });
   }
 
-  return NextResponse.json({ 
-    success: false, 
-    message: "No certified driver found for this HW_ID. You must generate one locally." 
+  return NextResponse.json({
+    success: true,
+    data: {
+      hardware_id: hardwareId,
+      hardware_name: driver.hardware,
+      driver_id: driver.driver_id,
+      display_name: driver.display_name,
+      stability_score: driver.stability_score,
+      performance_score: driver.performance_score,
+      summary: driver.summary,
+      warnings: driver.improvements.join(" "),
+    },
   });
 }

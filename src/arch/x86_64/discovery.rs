@@ -1,4 +1,4 @@
-use core::arch::x86_64::__cpuid;
+use core::arch::x86_64::{__cpuid, __cpuid_count};
 use alloc::vec::Vec;
 use x86_64::instructions::port::Port;
 use bootloader::bootinfo::{BootInfo, MemoryRegionType};
@@ -60,10 +60,36 @@ impl SystemIdentity {
     }
 
     fn get_cpu_count() -> u32 {
-        // Invoke CPUID with EAX=1.
-        let result = __cpuid(1);
-        // EBX bits [23:16] contain the logical processor count.
-        ((result.ebx >> 16) & 0xFF) as u32
+        let max_basic = __cpuid(0).eax;
+
+        if max_basic >= 0x0B {
+            for subleaf in 0..=4 {
+                let leaf = __cpuid_count(0x0B, subleaf);
+                let level_type = (leaf.ecx >> 8) & 0xFF;
+                let logical_count = leaf.ebx & 0xFFFF;
+
+                if level_type == 1 && logical_count != 0 {
+                    return logical_count;
+                }
+            }
+        }
+
+        let max_extended = __cpuid(0x8000_0000).eax;
+        if max_extended >= 0x8000_0008 {
+            let extended = __cpuid(0x8000_0008);
+            let cores_minus_one = extended.ecx & 0xFF;
+            if cores_minus_one != 0 {
+                return cores_minus_one + 1;
+            }
+        }
+
+        let leaf1 = __cpuid(1);
+        let logical_count = (leaf1.ebx >> 16) & 0xFF;
+        if logical_count != 0 {
+            logical_count
+        } else {
+            1
+        }
     }
 
     // --- PCI bus enumeration ---

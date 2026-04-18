@@ -1,6 +1,7 @@
 import socket
 import os
 import ssl
+import json
 from cryptography import x509
 from cryptography.x509.oid import NameOID
 from cryptography.hazmat.primitives import hashes
@@ -10,6 +11,55 @@ import datetime
 
 HOST = '127.0.0.1' 
 PORT = 4443
+
+
+def read_http_request(conn):
+    data = b""
+    while b"\r\n\r\n" not in data:
+        chunk = conn.recv(1024)
+        if not chunk:
+            return b""
+        data += chunk
+
+    header_bytes, body = data.split(b"\r\n\r\n", 1)
+    headers_text = header_bytes.decode("utf-8", errors="ignore")
+    content_length = 0
+    for line in headers_text.split("\r\n")[1:]:
+        if ":" not in line:
+            continue
+        key, value = line.split(":", 1)
+        if key.lower().strip() == "content-length":
+            try:
+                content_length = int(value.strip())
+            except ValueError:
+                content_length = 0
+
+    while len(body) < content_length:
+        chunk = conn.recv(1024)
+        if not chunk:
+            break
+        body += chunk
+
+    return header_bytes + b"\r\n\r\n" + body
+
+
+def send_json(conn, status_code, payload):
+    body = json.dumps(payload).encode("utf-8")
+    reason = {
+        200: "OK",
+        400: "Bad Request",
+        404: "Not Found",
+        500: "Internal Server Error",
+    }.get(status_code, "OK")
+    response_headers = (
+        f"HTTP/1.1 {status_code} {reason}\r\n"
+        "Content-Type: application/json\r\n"
+        f"Content-Length: {len(body)}\r\n"
+        "Connection: close\r\n"
+        "\r\n"
+    )
+    conn.sendall(response_headers.encode("utf-8"))
+    conn.sendall(body)
 
 def generate_self_signed_cert(cert_path="nexus_cert.pem", key_path="nexus_key.pem"):
     if os.path.exists(cert_path) and os.path.exists(key_path):
@@ -79,15 +129,58 @@ def start_server():
 
                 with conn:
                     print(f"[Nexus] TLS Connected by {addr}")
-                    data = conn.recv(1024)
+                    data = read_http_request(conn)
                     if not data:
                         continue
                     
                     request = data.decode('utf-8', errors='ignore')
                     print(f"[Nexus] Request:\n{request.strip()}")
                     
+                    if "POST /api/v1/node/register " in request:
+                        send_json(conn, 200, {
+                            "success": True,
+                            "data": {
+                                "node": {
+                                    "node_id": "mock_node_register",
+                                    "trust_tier": "software"
+                                },
+                                "server": {
+                                    "protocol_version": "v1",
+                                    "min_heartbeat_interval_ms": 30000
+                                }
+                            }
+                        })
+                    elif "POST /api/v1/hardware/report " in request:
+                        send_json(conn, 200, {
+                            "success": True,
+                            "data": {
+                                "profile_id": "hwprof_mock_001",
+                                "recognized_devices": 2,
+                                "unknown_devices": 3
+                            }
+                        })
+                    elif "POST /api/v1/driver/query " in request:
+                        send_json(conn, 200, {
+                            "success": True,
+                            "data": {
+                                "recommendations": [
+                                    {
+                                        "match_key": "pci:8086:100e",
+                                        "driver_id": "drv_e1000_native_v1",
+                                        "display_name": "Intel e1000 Native Driver",
+                                        "delivery_type": "builtin_reference",
+                                        "stability_score": 92,
+                                        "performance_score": 88,
+                                        "summary": "Recommended for standard Intel e1000 adapters.",
+                                        "improvements": [
+                                            "Validate RX ring starvation under sustained burst traffic."
+                                        ]
+                                    }
+                                ]
+                            }
+                        })
                     # Check if it's the expected driver
-                    if "GET /api/nexus/0x0C_0x03.wasm" in request:
+                    elif "GET /api/nexus/0x0C_0x03.wasm" in request:
                         # Serve the e1000 Wasm payload as a mock
                         cache_path = "nexus_cache/8086_100E.wasm"
                         if os.path.exists(cache_path):

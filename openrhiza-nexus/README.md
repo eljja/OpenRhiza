@@ -1,36 +1,136 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# OpenRhiza Nexus
 
-## Getting Started
+`openrhiza-nexus` is the first server-side program intended to back `openrhiza.com`.
 
-First, run the development server:
+It serves two roles:
+
+- machine-oriented APIs for OpenRhiza OS nodes
+- a simple human-facing read-only site for operators and observers
+
+## Included APIs
+
+- `GET /api/health`
+- `POST /api/v1/node/register`
+- `POST /api/v1/node/heartbeat`
+- `POST /api/v1/hardware/report`
+- `POST /api/v1/driver/query`
+- `POST /api/v1/software/query`
+- `POST /api/v1/llm/query`
+- `GET /api/v1/llm/google/models`
+- `POST /api/v1/llm/generate`
+- `POST /api/v1/evaluation/upload`
+
+## Ubuntu deployment
+
+### 1. Install runtime
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt-get install -y nodejs
+node -v
+npm -v
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 2. Install dependencies
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+cd openrhiza-nexus
+npm ci
+cp .env.example .env
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 3. Build and run
 
-## Learn More
+```bash
+npm run build
+HOSTNAME=0.0.0.0 PORT=3000 npm start
+```
 
-To learn more about Next.js, take a look at the following resources:
+The server will listen on `http://0.0.0.0:3000`.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## SQLite storage
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The registry now uses a local SQLite database through Node's built-in `node:sqlite`.
 
-## Deploy on Vercel
+Default path:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+./data/openrhiza.db
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Override with:
+
+```bash
+OPENRHIZA_DB_PATH=/absolute/path/to/openrhiza.db
+```
+
+The first boot seeds the database with initial drivers, software, models, nodes, and evaluations.
+
+## Google Gemini integration
+
+If you want `openrhiza.com` to proxy requests to Google Gemini, set:
+
+```bash
+GOOGLE_GEMINI_API_KEY=your_api_key
+OPENRHIZA_GEMINI_MODEL=gemini-2.5-flash
+```
+
+Relevant routes:
+
+- `GET /api/v1/llm/google/models`
+- `POST /api/v1/llm/generate`
+
+Example request:
+
+```bash
+curl -X POST http://127.0.0.1:3000/api/v1/llm/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "protocol_version":"v1",
+    "node_id":"demo-node",
+    "provider":"google",
+    "prompt":"Explain what an e1000 driver does in a text-only OS.",
+    "system_instruction":"Be concise and technical."
+  }'
+```
+
+## Reverse proxy
+
+Use Nginx or Caddy in front of this service for TLS termination and public domain routing.
+
+Suggested public routes:
+
+- `https://openrhiza.com/`
+- `https://openrhiza.com/api/health`
+- `https://openrhiza.com/api/v1/...`
+
+## systemd
+
+A sample unit file is provided at:
+
+- `deploy/openrhiza-nexus.service`
+
+Example install path:
+
+```bash
+sudo mkdir -p /opt/openrhiza
+sudo cp -r openrhiza-nexus /opt/openrhiza/
+sudo cp /opt/openrhiza/openrhiza-nexus/deploy/openrhiza-nexus.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now openrhiza-nexus
+```
+
+## Docker
+
+Build and run:
+
+```bash
+docker build -t openrhiza-nexus .
+docker run --rm -p 3000:3000 --env-file .env openrhiza-nexus
+```
+
+## Notes
+
+- This is still an early registry service, not the final production backend.
+- The current API handlers return deterministic mock or reference data.
+- The intended next step is to back these handlers with persistent storage and real artifact delivery.

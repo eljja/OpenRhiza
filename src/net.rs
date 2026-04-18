@@ -1,6 +1,7 @@
 // src/net.rs
 use alloc::vec;
 use alloc::vec::Vec;
+use core::sync::atomic::{AtomicU16, Ordering};
 use spin::Mutex;
 use lazy_static::lazy_static;
 use smoltcp::phy::{Device, DeviceCapabilities, RxToken, TxToken, Medium};
@@ -99,6 +100,8 @@ lazy_static! {
     pub static ref NET_STACK: Mutex<Option<NetStack>> = Mutex::new(None);
 }
 
+static NEXT_TCP_PORT: AtomicU16 = AtomicU16::new(49152);
+
 pub fn init_network() {
     let mut device = WasmEthernetDevice;
     let hardware_addr = if let Some(mac) = ACTIVE_E1000.lock().as_ref().map(|nic| nic.mac) {
@@ -139,6 +142,23 @@ pub fn create_tcp_socket() -> SocketHandle {
         stack.sockets.add(tcp_socket)
     } else {
         panic!("Network stack not initialized!");
+    }
+}
+
+pub fn destroy_socket(handle: SocketHandle) {
+    let mut stack_lock = NET_STACK.lock();
+    if let Some(stack) = stack_lock.as_mut() {
+        stack.sockets.remove(handle);
+    }
+}
+
+pub fn allocate_tcp_local_port() -> u16 {
+    let port = NEXT_TCP_PORT.fetch_add(1, Ordering::Relaxed);
+    if port >= 65000 {
+        NEXT_TCP_PORT.store(49152, Ordering::Relaxed);
+        49152
+    } else {
+        port
     }
 }
 

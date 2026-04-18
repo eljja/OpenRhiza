@@ -638,25 +638,35 @@ pub fn poll_usb_keyboard() -> bool {
 }
 
 static mut REPEAT_TIMER: u32 = 0;
+static mut REPEAT_HID_KEY: u8 = 0;
+
+const TYPEMATIC_INITIAL_DELAY_TICKS: u32 = crate::task::timer::ms_to_ticks(500) as u32;
+const TYPEMATIC_REPEAT_INTERVAL_TICKS: u32 = crate::task::timer::ms_to_ticks(40) as u32;
 
 pub fn tick_usb_keyboard() {
     unsafe {
-        if xhci_regs_mut().is_none() { return; }
-        if KB_SLOT_ID == 0 { return; }
-        
-        let all_released = PREV_HID_KEYS.iter().all(|&k| k == 0 || k == 1);
-        if all_released {
+        if xhci_regs_mut().is_none() {
+            return;
+        }
+        if KB_SLOT_ID == 0 {
+            return;
+        }
+
+        let current_keys = core::ptr::read(core::ptr::addr_of!(PREV_HID_KEYS));
+        let repeat_key = core::ptr::read(core::ptr::addr_of!(REPEAT_HID_KEY));
+
+        if repeat_key == 0 || !current_keys.contains(&repeat_key) {
             REPEAT_TIMER = 0;
+            REPEAT_HID_KEY = 0;
             return;
         }
 
         REPEAT_TIMER += 1;
-        if REPEAT_TIMER > 9 { // ~500ms delay (at 55ms per tick) 
-            if REPEAT_TIMER % 1 == 0 { // Repeat every tick (18 chars/sec)
-                if let Some(&keycode) = PREV_HID_KEYS.iter().find(|&&k| k != 0 && k != 1) {
-                    inject_hid_key(keycode, true);
-                }
-            }
+        if REPEAT_TIMER >= TYPEMATIC_INITIAL_DELAY_TICKS
+            && (REPEAT_TIMER - TYPEMATIC_INITIAL_DELAY_TICKS) % TYPEMATIC_REPEAT_INTERVAL_TICKS == 0
+        {
+            inject_hid_key(repeat_key, false);
+            inject_hid_key(repeat_key, true);
         }
     }
 }
@@ -673,6 +683,7 @@ fn process_hid_report() {
         let modifiers = report[0];
         let current_keys = [report[2], report[3], report[4], report[5], report[6], report[7]];
         let previous_keys = PREV_HID_KEYS;
+        let keys_changed = current_keys != previous_keys;
 
         process_modifier_changes(PREV_HID_MODIFIERS, modifiers);
 
@@ -696,9 +707,32 @@ fn process_hid_report() {
             }
         }
 
+        if keys_changed {
+            REPEAT_TIMER = 0;
+            REPEAT_HID_KEY = select_repeat_hid_key(current_keys);
+        }
+
         PREV_HID_MODIFIERS = modifiers;
         PREV_HID_KEYS = current_keys;
     }
+}
+
+fn select_repeat_hid_key(current_keys: [u8; 6]) -> u8 {
+    let mut candidate = 0u8;
+
+    for keycode in current_keys {
+        if keycode == 0 || keycode == 1 {
+            continue;
+        }
+
+        if candidate != 0 {
+            return 0;
+        }
+
+        candidate = keycode;
+    }
+
+    candidate
 }
 
 fn process_modifier_changes(previous: u8, current: u8) {

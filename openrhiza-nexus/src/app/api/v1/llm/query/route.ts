@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { queryModels } from "@/app/registry-data";
 import { fail, isV1Protocol, ok, type LlmQueryRequest } from "@/lib/openrhiza-v1";
 
 export async function POST(req: Request) {
@@ -9,18 +10,7 @@ export async function POST(req: Request) {
       return NextResponse.json(fail("Unsupported protocol version."), { status: 400 });
     }
 
-    return NextResponse.json(
-      ok({
-        models: [
-          {
-            model_id: "llm_remote_general_v1",
-            display_name: "OpenRhiza Remote General Model",
-            mode: "remote_api",
-            summary: "General-purpose remote inference endpoint for early OpenRhiza nodes.",
-          },
-        ],
-      }),
-    );
+    return NextResponse.json(ok(queryModels(body)));
   } catch (error) {
     return NextResponse.json(fail(String(error), 500), { status: 500 });
   }

@@ -1,13 +1,23 @@
-use core::{pin::Pin, task::{Poll, Context, Waker}};
+use alloc::vec::Vec;
+use core::{
+    pin::Pin,
+    task::{Context, Poll, Waker},
+};
 use spin::Mutex;
 
-pub static TIMER_WAKER: Mutex<Option<Waker>> = Mutex::new(None);
+pub const TICKS_PER_SECOND: u64 = 1_000;
+pub static TIMER_WAKERS: Mutex<Vec<Waker>> = Mutex::new(Vec::new());
 pub static TICKS: Mutex<u64> = Mutex::new(0);
+
+pub const fn ms_to_ticks(ms: u64) -> u64 {
+    let ticks = (ms * TICKS_PER_SECOND + (TICKS_PER_SECOND - 1)) / TICKS_PER_SECOND;
+    if ticks == 0 { 1 } else { ticks }
+}
 
 pub fn timer_tick() {
     let mut ticks = TICKS.lock();
     *ticks += 1;
-    if let Some(waker) = TIMER_WAKER.lock().take() {
+    for waker in TIMER_WAKERS.lock().drain(..) {
         waker.wake();
     }
 }
@@ -31,7 +41,10 @@ impl core::future::Future for TimerFuture {
         if current >= self.target_tick {
             Poll::Ready(())
         } else {
-            *TIMER_WAKER.lock() = Some(cx.waker().clone());
+            let mut wakers = TIMER_WAKERS.lock();
+            if !wakers.iter().any(|waker| waker.will_wake(cx.waker())) {
+                wakers.push(cx.waker().clone());
+            }
             Poll::Pending
         }
     }

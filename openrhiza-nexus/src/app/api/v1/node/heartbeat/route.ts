@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { recordHeartbeat } from "@/app/registry-data";
 import { fail, isV1Protocol, ok, type NodeHeartbeatRequest } from "@/lib/openrhiza-v1";
 
 export async function POST(req: Request) {
@@ -13,12 +14,7 @@ export async function POST(req: Request) {
       return NextResponse.json(fail("node_id and hardware_fingerprint are required."), { status: 400 });
     }
 
-    return NextResponse.json(
-      ok({
-        server_time: new Date().toISOString(),
-        next_actions: [],
-      }),
-    );
+    return NextResponse.json(ok(recordHeartbeat(body)));
   } catch (error) {
     return NextResponse.json(fail(String(error), 500), { status: 500 });
   }

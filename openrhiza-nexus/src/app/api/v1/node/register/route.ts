@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { registerNode } from "@/app/registry-data";
 import { fail, isV1Protocol, ok, type NodeRegisterRequest } from "@/lib/openrhiza-v1";
 
 export async function POST(req: Request) {
@@ -15,10 +16,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json(
       ok({
-        node: {
-          node_id: body.node_id,
-          trust_tier: (body.identity_type === "tpm_key" ? "tpm" : "software") as "tpm" | "software",
-        },
+        node: registerNode(body),
         server: {
           protocol_version: "v1",
           min_heartbeat_interval_ms: 30000,
