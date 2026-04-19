@@ -37,6 +37,8 @@ pub mod crypto;
 pub mod tls;
 pub mod identity;
 pub mod api_v1;
+pub mod driver_cache;
+pub mod runtime_bindings;
 
 use alloc::format;
 use alloc::string::String;
@@ -55,6 +57,10 @@ enum ServiceApiPhase {
     RootHttps,
     HardwareReport,
     DriverQuery,
+    SkillQuery,
+    WorkflowQuery,
+    PolicyQuery,
+    EvaluationQuery,
     DriverUpload,
     DriverComment,
     DriverVote,
@@ -87,6 +93,14 @@ enum PlainHttpAction {
 struct GeminiRequest {
     prompt: String,
     model_index: usize,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PromptOrchestrationStage {
+    SkillQuery,
+    WorkflowQuery,
+    PolicyQuery,
+    Gemini,
 }
 
 const ENABLE_SERVICE_API_BOOTSTRAP: bool = false;
@@ -126,6 +140,10 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
     // 4. Scan the hardware and enumerate PCI devices.
     let identity = SystemIdentity::scan(boot_info);
     crate::println!("Total Usable Memory: {} Bytes", identity.total_memory);
+    crate::println!(
+        "Storage Interface Detected: {}",
+        if identity.storage_detected { "yes" } else { "no" }
+    );
     crate::println!("Hardware Discovery Complete.");
     crate::println!("Found {} PCI devices:", identity.pci_devices.len());
     for dev in &identity.pci_devices {
@@ -146,9 +164,8 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
     
     // Probe the bootstrap storage image and look for cached payloads.
     crate::println!("[Storage] Probing Secondary IDE Drive for Wasm Cache...");
-    let mut boot_sector = [0u8; 512];
-    storage::read_sector_ata_secondary(0, &mut boot_sector);
-    if boot_sector[510] == 0x55 && boot_sector[511] == 0xAA {
+    let mut local_driver_bindings = None;
+    if storage::probe_secondary_bootstrap_disk() {
         crate::println!("[Storage] Native Bootstrap Disk Detected! Boot Signature: 0x55AA");
         
         crate::println!("[Storage] Executing native FAT16 Parse...");
@@ -161,6 +178,24 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
         } else {
             crate::println!("[Storage] E1000.BIN not found in Root Directory.");
         }
+
+        local_driver_bindings = crate::driver_cache::load_active_driver_map();
+        match &local_driver_bindings {
+            Some(bindings) => {
+                crate::println!(
+                    "[Driver Cache] Loaded {} active driver bindings from local storage.",
+                    bindings.len()
+                );
+                let installed = crate::runtime_bindings::install_local_bindings(bindings);
+                crate::println!(
+                    "[Driver Runtime] Installed {} live driver bindings from local cache.",
+                    installed
+                );
+            }
+            None => crate::println!(
+                "[Driver Cache] No local active driver map found. Using registry-first fallback."
+            ),
+        }
     } else {
         crate::println!("[Storage] No valid Wasm Cache drive found. Wait for external Link.");
     }
@@ -169,6 +204,24 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
     let node_profile = crate::identity::NodeProfile::collect(&identity).install();
     node_profile.log_summary();
     crate::api_v1::log_request_previews(&node_profile);
+    if local_driver_bindings.is_some() {
+        let mut matched_local = 0usize;
+        for device in &node_profile.machine_profile.pci_devices {
+            let match_key = crate::identity::stable_device_match_key(device);
+            if let Some(driver_id) = crate::runtime_bindings::current_driver(&match_key) {
+                crate::println!(
+                    "[Driver Runtime] Live driver for {} -> {}",
+                    match_key,
+                    driver_id
+                );
+                matched_local += 1;
+            }
+        }
+
+        if matched_local == 0 {
+            crate::println!("[Driver Runtime] No local live driver matched current PCI devices.");
+        }
+    }
 
     let rhiza = OpenRhizaSeed::new(identity);
     
@@ -220,6 +273,8 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
     let mut service_api_chain_active = false;
     let mut gemini_client: Option<crate::https::ApiClient> = None;
     let mut gemini_request: Option<GeminiRequest> = None;
+    let mut pending_orchestration_prompt: Option<String> = None;
+    let mut prompt_orchestration_stage: Option<PromptOrchestrationStage> = None;
     let mut openrhiza_ip: Option<Ipv4Address> = None;
     let mut gemini_ip: Option<Ipv4Address> = None;
     let mut dns_client: Option<crate::dns::DnsClient> = None;
@@ -392,6 +447,54 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
                             &mut service_api_chain_active,
                         );
                     }
+                    crate::api_v1::ServiceApiCommand::SkillQuery => {
+                        start_service_or_resolve(
+                            ServiceApiPhase::SkillQuery,
+                            false,
+                            openrhiza_ip,
+                            &mut dns_client,
+                            &mut pending_dns_action,
+                            &mut service_api_client,
+                            &mut service_api_phase,
+                            &mut service_api_chain_active,
+                        );
+                    }
+                    crate::api_v1::ServiceApiCommand::WorkflowQuery => {
+                        start_service_or_resolve(
+                            ServiceApiPhase::WorkflowQuery,
+                            false,
+                            openrhiza_ip,
+                            &mut dns_client,
+                            &mut pending_dns_action,
+                            &mut service_api_client,
+                            &mut service_api_phase,
+                            &mut service_api_chain_active,
+                        );
+                    }
+                    crate::api_v1::ServiceApiCommand::PolicyQuery => {
+                        start_service_or_resolve(
+                            ServiceApiPhase::PolicyQuery,
+                            false,
+                            openrhiza_ip,
+                            &mut dns_client,
+                            &mut pending_dns_action,
+                            &mut service_api_client,
+                            &mut service_api_phase,
+                            &mut service_api_chain_active,
+                        );
+                    }
+                    crate::api_v1::ServiceApiCommand::EvaluationQuery => {
+                        start_service_or_resolve(
+                            ServiceApiPhase::EvaluationQuery,
+                            false,
+                            openrhiza_ip,
+                            &mut dns_client,
+                            &mut pending_dns_action,
+                            &mut service_api_client,
+                            &mut service_api_phase,
+                            &mut service_api_chain_active,
+                        );
+                    }
                     crate::api_v1::ServiceApiCommand::All => {
                         start_service_or_resolve(
                             ServiceApiPhase::Register,
@@ -437,17 +540,21 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
             && service_api_phase == ServiceApiPhase::Idle
         {
             if let Some(prompt) = crate::api_v1::GEMINI_PROMPT_QUEUE.pop() {
-                let request = GeminiRequest {
-                    prompt,
-                    model_index: 0,
-                };
-                if let Some(ip) = gemini_ip {
-                    gemini_client = spawn_gemini_client(ip, &request);
-                    gemini_request = Some(request);
-                } else {
-                    dns_client = Some(spawn_dns_client(crate::api_v1::gemini_host()));
-                    pending_dns_action = Some(PendingDnsAction::Gemini(request));
-                }
+                pending_orchestration_prompt = Some(prompt);
+                prompt_orchestration_stage = Some(PromptOrchestrationStage::SkillQuery);
+                start_prompt_orchestration_stage(
+                    PromptOrchestrationStage::SkillQuery,
+                    openrhiza_ip,
+                    gemini_ip,
+                    &mut dns_client,
+                    &mut pending_dns_action,
+                    &mut service_api_client,
+                    &mut service_api_phase,
+                    &mut service_api_chain_active,
+                    &mut gemini_client,
+                    &mut gemini_request,
+                    pending_orchestration_prompt.as_ref(),
+                );
             }
         }
 
@@ -513,6 +620,43 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
             if let Some(response) = client.take_response() {
                 crate::net::destroy_socket(client.handle());
                 log_service_api_response(service_api_phase, &response);
+                if response.status_code >= 200 && response.status_code < 300 {
+                    handle_successful_service_api_side_effects(service_api_phase, &response);
+                } else if service_api_phase == ServiceApiPhase::DriverUpload {
+                    let _ = crate::api_v1::take_pending_driver_upload_match_key();
+                }
+
+                if let Some(stage) = prompt_orchestration_stage {
+                    if matches!(
+                        service_api_phase,
+                        ServiceApiPhase::SkillQuery
+                            | ServiceApiPhase::WorkflowQuery
+                            | ServiceApiPhase::PolicyQuery
+                    ) {
+                        service_api_client = None;
+                        service_api_phase = ServiceApiPhase::Idle;
+                        service_api_chain_active = false;
+                        prompt_orchestration_stage = advance_prompt_orchestration_stage(stage);
+                        if let Some(next_stage) = prompt_orchestration_stage {
+                            start_prompt_orchestration_stage(
+                                next_stage,
+                                openrhiza_ip,
+                                gemini_ip,
+                                &mut dns_client,
+                                &mut pending_dns_action,
+                                &mut service_api_client,
+                                &mut service_api_phase,
+                                &mut service_api_chain_active,
+                                &mut gemini_client,
+                                &mut gemini_request,
+                                pending_orchestration_prompt.as_ref(),
+                            );
+                        } else {
+                            pending_orchestration_prompt = None;
+                        }
+                        continue;
+                    }
+                }
 
                 service_api_phase = match service_api_phase {
                     ServiceApiPhase::Register => {
@@ -559,6 +703,41 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
             } else if let Some(error) = client.error_message() {
                 crate::net::destroy_socket(client.handle());
                 crate::println!("[API v1] {:?} failed: {}", service_api_phase_name(service_api_phase), error);
+                if service_api_phase == ServiceApiPhase::DriverUpload {
+                    let _ = crate::api_v1::take_pending_driver_upload_match_key();
+                }
+
+                if let Some(stage) = prompt_orchestration_stage {
+                    if matches!(
+                        service_api_phase,
+                        ServiceApiPhase::SkillQuery
+                            | ServiceApiPhase::WorkflowQuery
+                            | ServiceApiPhase::PolicyQuery
+                    ) {
+                        service_api_chain_active = false;
+                        service_api_client = None;
+                        service_api_phase = ServiceApiPhase::Idle;
+                        prompt_orchestration_stage = advance_prompt_orchestration_stage(stage);
+                        if let Some(next_stage) = prompt_orchestration_stage {
+                            start_prompt_orchestration_stage(
+                                next_stage,
+                                openrhiza_ip,
+                                gemini_ip,
+                                &mut dns_client,
+                                &mut pending_dns_action,
+                                &mut service_api_client,
+                                &mut service_api_phase,
+                                &mut service_api_chain_active,
+                                &mut gemini_client,
+                                &mut gemini_request,
+                                pending_orchestration_prompt.as_ref(),
+                            );
+                        } else {
+                            pending_orchestration_prompt = None;
+                        }
+                        continue;
+                    }
+                }
                 service_api_chain_active = false;
                 service_api_client = None;
                 service_api_phase = ServiceApiPhase::Idle;
@@ -712,6 +891,80 @@ fn start_service_or_resolve(
     }
 }
 
+fn advance_prompt_orchestration_stage(
+    stage: PromptOrchestrationStage,
+) -> Option<PromptOrchestrationStage> {
+    match stage {
+        PromptOrchestrationStage::SkillQuery => Some(PromptOrchestrationStage::WorkflowQuery),
+        PromptOrchestrationStage::WorkflowQuery => Some(PromptOrchestrationStage::PolicyQuery),
+        PromptOrchestrationStage::PolicyQuery => Some(PromptOrchestrationStage::Gemini),
+        PromptOrchestrationStage::Gemini => None,
+    }
+}
+
+fn start_prompt_orchestration_stage(
+    stage: PromptOrchestrationStage,
+    openrhiza_ip: Option<Ipv4Address>,
+    gemini_ip: Option<Ipv4Address>,
+    dns_client: &mut Option<crate::dns::DnsClient>,
+    pending_dns_action: &mut Option<PendingDnsAction>,
+    service_api_client: &mut Option<crate::https::ApiClient>,
+    service_api_phase: &mut ServiceApiPhase,
+    service_api_chain_active: &mut bool,
+    gemini_client: &mut Option<crate::https::ApiClient>,
+    gemini_request: &mut Option<GeminiRequest>,
+    prompt: Option<&String>,
+) {
+    match stage {
+        PromptOrchestrationStage::SkillQuery => start_service_or_resolve(
+            ServiceApiPhase::SkillQuery,
+            false,
+            openrhiza_ip,
+            dns_client,
+            pending_dns_action,
+            service_api_client,
+            service_api_phase,
+            service_api_chain_active,
+        ),
+        PromptOrchestrationStage::WorkflowQuery => start_service_or_resolve(
+            ServiceApiPhase::WorkflowQuery,
+            false,
+            openrhiza_ip,
+            dns_client,
+            pending_dns_action,
+            service_api_client,
+            service_api_phase,
+            service_api_chain_active,
+        ),
+        PromptOrchestrationStage::PolicyQuery => start_service_or_resolve(
+            ServiceApiPhase::PolicyQuery,
+            false,
+            openrhiza_ip,
+            dns_client,
+            pending_dns_action,
+            service_api_client,
+            service_api_phase,
+            service_api_chain_active,
+        ),
+        PromptOrchestrationStage::Gemini => {
+            let Some(prompt) = prompt.cloned() else {
+                return;
+            };
+            let request = GeminiRequest {
+                prompt,
+                model_index: 0,
+            };
+            if let Some(ip) = gemini_ip {
+                *gemini_client = spawn_gemini_client(ip, &request);
+                *gemini_request = Some(request);
+            } else {
+                *dns_client = Some(spawn_dns_client(crate::api_v1::gemini_host()));
+                *pending_dns_action = Some(PendingDnsAction::Gemini(request));
+            }
+        }
+    }
+}
+
 fn spawn_dns_client(hostname: &'static str) -> crate::dns::DnsClient {
     let socket_handle = crate::net::create_udp_socket(512, 512);
     crate::dns::DnsClient::new(socket_handle, crate::dns::DEFAULT_DNS_SERVER, hostname)
@@ -771,6 +1024,26 @@ fn spawn_service_api_client(
             "/api/v1/driver/query",
             crate::api_v1::build_driver_query_request(&profile).into_bytes(),
         ),
+        ServiceApiPhase::SkillQuery => (
+            crate::https::ApiMethod::Post,
+            "/api/v1/skill/query",
+            crate::api_v1::build_skill_query_request(&profile).into_bytes(),
+        ),
+        ServiceApiPhase::WorkflowQuery => (
+            crate::https::ApiMethod::Post,
+            "/api/v1/workflow/query",
+            crate::api_v1::build_workflow_query_request(&profile).into_bytes(),
+        ),
+        ServiceApiPhase::PolicyQuery => (
+            crate::https::ApiMethod::Post,
+            "/api/v1/policy/query",
+            crate::api_v1::build_policy_query_request(&profile).into_bytes(),
+        ),
+        ServiceApiPhase::EvaluationQuery => (
+            crate::https::ApiMethod::Post,
+            "/api/v1/evaluation/query",
+            crate::api_v1::build_evaluation_query_request(&profile).into_bytes(),
+        ),
         _ => return None,
     };
 
@@ -804,6 +1077,7 @@ fn build_custom_service_request_from_driver_command(
                     return None;
                 }
             };
+            crate::api_v1::record_pending_driver_upload(match_key);
             Some(ServiceRequestSpec {
                 phase: ServiceApiPhase::DriverUpload,
                 path: String::from("/api/v1/driver/upload"),
@@ -986,6 +1260,52 @@ fn log_service_api_summary(phase: ServiceApiPhase, body: &[u8]) {
             }
             log_unmatched_local_devices(&match_keys);
         }
+        ServiceApiPhase::SkillQuery => {
+            let skill_count = body_text.matches("\"skill_id\":\"").count();
+            crate::result_println!("[API v1] skills returned: {}", skill_count);
+            let skill_ids = extract_json_string_list(body_text, "skill_id");
+            for skill_id in skill_ids.iter().take(4) {
+                crate::result_println!("[API v1] skill candidate: {}", skill_id);
+            }
+            if !skill_ids.is_empty() {
+                crate::api_v1::record_skill_registry_summary(
+                    summarize_registry_ids(&skill_ids, 4).as_str(),
+                );
+            }
+        }
+        ServiceApiPhase::WorkflowQuery => {
+            let workflow_count = body_text.matches("\"workflow_id\":\"").count();
+            crate::result_println!("[API v1] workflows returned: {}", workflow_count);
+            let workflow_ids = extract_json_string_list(body_text, "workflow_id");
+            for workflow_id in workflow_ids.iter().take(4) {
+                crate::result_println!("[API v1] workflow candidate: {}", workflow_id);
+            }
+            if !workflow_ids.is_empty() {
+                crate::api_v1::record_workflow_registry_summary(
+                    summarize_registry_ids(&workflow_ids, 4).as_str(),
+                );
+            }
+        }
+        ServiceApiPhase::PolicyQuery => {
+            let policy_count = body_text.matches("\"policy_id\":\"").count();
+            crate::result_println!("[API v1] policies returned: {}", policy_count);
+            let policy_ids = extract_json_string_list(body_text, "policy_id");
+            for policy_id in policy_ids.iter().take(4) {
+                crate::result_println!("[API v1] policy candidate: {}", policy_id);
+            }
+            if !policy_ids.is_empty() {
+                crate::api_v1::record_policy_registry_summary(
+                    summarize_registry_ids(&policy_ids, 4).as_str(),
+                );
+            }
+        }
+        ServiceApiPhase::EvaluationQuery => {
+            let evaluation_count = body_text.matches("\"evaluation_id\":\"").count();
+            crate::result_println!("[API v1] evaluations returned: {}", evaluation_count);
+            for evaluation_id in extract_json_string_list(body_text, "evaluation_id").iter().take(4) {
+                crate::result_println!("[API v1] evaluation id: {}", evaluation_id);
+            }
+        }
         ServiceApiPhase::DriverUpload => {
             if let Some(driver_id) = extract_json_string(body_text, "driver_id") {
                 crate::result_println!("[API v1] uploaded driver_id: {}", driver_id);
@@ -1011,6 +1331,82 @@ fn log_service_api_summary(phase: ServiceApiPhase, body: &[u8]) {
             }
         }
         _ => {}
+    }
+}
+
+fn handle_successful_service_api_side_effects(
+    phase: ServiceApiPhase,
+    response: &crate::https::ApiResponse,
+) {
+    if phase != ServiceApiPhase::DriverUpload {
+        return;
+    }
+
+    let Some(body_text) = core::str::from_utf8(&response.body).ok() else {
+        return;
+    };
+    let Some(driver_id) = extract_json_string(body_text, "driver_id") else {
+        return;
+    };
+    let Some(match_key) = crate::api_v1::take_pending_driver_upload_match_key() else {
+        return;
+    };
+
+    let activation = crate::runtime_bindings::activate_binding(
+        match_key.as_str(),
+        driver_id,
+        "uploaded-driver",
+    );
+    if activation.changed {
+        if let Some(previous) = activation.previous_driver_id.as_deref() {
+            crate::result_println!(
+                "[Driver Runtime] Activated {} -> {} (previously {})",
+                match_key,
+                driver_id,
+                previous
+            );
+        } else {
+            crate::result_println!(
+                "[Driver Runtime] Activated {} -> {}",
+                match_key,
+                driver_id
+            );
+        }
+    } else {
+        crate::result_println!(
+            "[Driver Runtime] {} is already active for {}",
+            driver_id,
+            match_key
+        );
+    }
+
+    match crate::driver_cache::persist_active_driver_binding(match_key.as_str(), driver_id) {
+        Ok(()) => crate::result_println!(
+            "[Driver Cache] Persisted preferred binding {} -> {}",
+            match_key,
+            driver_id
+        ),
+        Err(error) => crate::result_println!(
+            "[Driver Cache] Active binding not persisted: {}",
+            error
+        ),
+    }
+
+    if let Some(text) = crate::api_v1::last_gemini_text() {
+        match crate::driver_cache::persist_last_generated_driver_note(
+            match_key.as_str(),
+            driver_id,
+            text.as_str(),
+        ) {
+            Ok(()) => crate::result_println!(
+                "[Driver Cache] Persisted last generated driver note for {}",
+                match_key
+            ),
+            Err(error) => crate::result_println!(
+                "[Driver Cache] Generated driver note not persisted: {}",
+                error
+            ),
+        }
     }
 }
 
@@ -1099,6 +1495,22 @@ fn extract_json_string_list(body: &str, key: &str) -> alloc::vec::Vec<String> {
     }
 
     values
+}
+
+fn summarize_registry_ids(ids: &[String], limit: usize) -> String {
+    let mut summary = String::new();
+    for (index, id) in ids.iter().take(limit).enumerate() {
+        if index > 0 {
+            summary.push_str(", ");
+        }
+        summary.push_str(id.as_str());
+    }
+
+    if ids.len() > limit {
+        summary.push_str(", ...");
+    }
+
+    summary
 }
 
 fn log_gemini_response(response: &crate::https::ApiResponse) {
@@ -1198,6 +1610,10 @@ fn service_api_phase_name(phase: ServiceApiPhase) -> &'static str {
         ServiceApiPhase::RootHttps => "root_https",
         ServiceApiPhase::HardwareReport => "hardware_report",
         ServiceApiPhase::DriverQuery => "driver_query",
+        ServiceApiPhase::SkillQuery => "skill_query",
+        ServiceApiPhase::WorkflowQuery => "workflow_query",
+        ServiceApiPhase::PolicyQuery => "policy_query",
+        ServiceApiPhase::EvaluationQuery => "evaluation_query",
         ServiceApiPhase::DriverUpload => "driver_upload",
         ServiceApiPhase::DriverComment => "driver_comment",
         ServiceApiPhase::DriverVote => "driver_vote",

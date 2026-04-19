@@ -100,6 +100,32 @@ export interface DriverVoteRequest {
   vote: "up" | "down";
 }
 
+export interface SkillQueryRequest {
+  protocol_version: "v1";
+  node_id: string;
+  capabilities: string[];
+  preferred_domains: string[];
+}
+
+export interface WorkflowQueryRequest {
+  protocol_version: "v1";
+  node_id: string;
+  goal: string;
+  available_skills: string[];
+}
+
+export interface PolicyQueryRequest {
+  protocol_version: "v1";
+  node_id: string;
+  scope: "runtime" | "driver" | "storage" | "workflow" | "all";
+}
+
+export interface EvaluationQueryRequest {
+  protocol_version: "v1";
+  node_id: string;
+  subject_type: "driver" | "skill" | "workflow" | "program" | "all";
+}
+
 export interface SoftwareQueryRequest {
   protocol_version: "v1";
   node_id: string;
@@ -120,8 +146,11 @@ export interface LlmQueryRequest {
 export interface EvaluationUploadRequest {
   protocol_version: "v1";
   node_id: string;
-  driver_id: string;
-  hardware_match_key: string;
+  subject_type?: "driver" | "skill" | "workflow" | "program";
+  subject_id?: string;
+  subject_label?: string;
+  driver_id?: string;
+  hardware_match_key?: string;
   stability_score: number;
   performance_score: number;
   notes: string[];
@@ -150,3 +179,4 @@ export function fail(message: string, status = 400) {
     status,
   };
 }
+

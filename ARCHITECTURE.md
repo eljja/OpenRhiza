@@ -35,7 +35,9 @@ While targeting generic physical CPUs (x86, ARM, RISC-V), we use VMware/QEMU for
 ### Phase 4: Muscle Building
 - Leveraging external APIs, the system builds complex architecture drivers.
 - Validated Wasm drivers are promoted to **Native Kernel Modules** to achieve full control and maximum speed over local Storage and hardware accelerators (GPU/NPU).
+- Non-core modules should increasingly move toward reboot-free hot-swap and rollback rather than reboot-only promotion.
 
 ### Phase 5: The Ultimate Form
 - A Local LLM (small to large-scale) is downloaded and loaded into the GPU/NPU or CPU memory.
 - The OS is now completely self-reliant, capable of offline thought, self-improvement, and generative application rendering.
+- The preferred runtime model is prompt-driven, sandbox-first, and hot-swappable outside the minimal core.

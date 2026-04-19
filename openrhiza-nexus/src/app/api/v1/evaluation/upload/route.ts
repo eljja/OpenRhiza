@@ -10,8 +10,9 @@ export async function POST(req: Request) {
       return NextResponse.json(fail("Unsupported protocol version."), { status: 400 });
     }
 
-    if (!body.node_id || !body.driver_id) {
-      return NextResponse.json(fail("node_id and driver_id are required."), { status: 400 });
+    const subjectId = body.subject_id ?? body.driver_id;
+    if (!body.node_id || !subjectId) {
+      return NextResponse.json(fail("node_id and subject_id (or driver_id) are required."), { status: 400 });
     }
 
     return NextResponse.json(ok(recordEvaluation(body)));

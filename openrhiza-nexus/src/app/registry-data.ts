@@ -7,13 +7,17 @@ import type {
   DriverQueryRequest,
   DriverUploadRequest,
   DriverVoteRequest,
+  EvaluationQueryRequest,
   EvaluationUploadRequest,
   HardwareDevice,
   HardwareReportRequest,
   LlmQueryRequest,
   NodeHeartbeatRequest,
   NodeRegisterRequest,
+  PolicyQueryRequest,
+  SkillQueryRequest,
   SoftwareQueryRequest,
+  WorkflowQueryRequest,
 } from "@/lib/openrhiza-v1";
 
 export const registryVersion = "v1";
@@ -64,6 +68,35 @@ export interface LlmRecord {
   summary: string;
   recommended_for: string[];
   status: "online" | "limited" | "planned";
+}
+
+export interface SkillRecord {
+  skill_id: string;
+  display_name: string;
+  category: string;
+  delivery: string;
+  summary: string;
+  recommended_for: string[];
+  status: "available" | "testing" | "planned";
+  updated_at: string;
+}
+
+export interface WorkflowRecord {
+  workflow_id: string;
+  display_name: string;
+  summary: string;
+  status: "available" | "testing" | "planned";
+  steps: string[];
+  updated_at: string;
+}
+
+export interface PolicyRecord {
+  policy_id: string;
+  scope: "runtime" | "driver" | "storage" | "workflow";
+  summary: string;
+  status: "active" | "draft";
+  rules: string[];
+  updated_at: string;
 }
 
 export interface NodeRecord {
@@ -163,6 +196,41 @@ function mapModel(row: Record<string, unknown>): LlmRecord {
   };
 }
 
+function mapSkill(row: Record<string, unknown>): SkillRecord {
+  return {
+    skill_id: String(row.skill_id),
+    display_name: String(row.display_name),
+    category: String(row.category),
+    delivery: String(row.delivery),
+    summary: String(row.summary),
+    recommended_for: parseJsonArray(String(row.recommended_for_json ?? "[]")),
+    status: row.status as SkillRecord["status"],
+    updated_at: String(row.updated_at),
+  };
+}
+
+function mapWorkflow(row: Record<string, unknown>): WorkflowRecord {
+  return {
+    workflow_id: String(row.workflow_id),
+    display_name: String(row.display_name),
+    summary: String(row.summary),
+    status: row.status as WorkflowRecord["status"],
+    steps: parseJsonArray(String(row.steps_json ?? "[]")),
+    updated_at: String(row.updated_at),
+  };
+}
+
+function mapPolicy(row: Record<string, unknown>): PolicyRecord {
+  return {
+    policy_id: String(row.policy_id),
+    scope: row.scope as PolicyRecord["scope"],
+    summary: String(row.summary),
+    status: row.status as PolicyRecord["status"],
+    rules: parseJsonArray(String(row.rules_json ?? "[]")),
+    updated_at: String(row.updated_at),
+  };
+}
+
 function mapNode(row: Record<string, unknown>): NodeRecord {
   return {
     node_id: String(row.node_id),
@@ -239,6 +307,22 @@ function seedIfEmpty(db: DatabaseSync) {
     INSERT OR IGNORE INTO llm_models VALUES
     ('llm_remote_general_v1','OpenRhiza Remote General Model','OpenRhiza','remote_api','General-purpose remote inference endpoint for early OpenRhiza nodes.','["driver planning","software generation","registry lookups"]','online'),
     ('llm_google_gateway_candidate','Google API Gateway Candidate','Google','remote_api','Planned external LLM integration for code generation and structured reasoning tasks.','["driver generation","program synthesis","analysis"]','planned');
+
+    INSERT OR IGNORE INTO skills VALUES
+    ('skill_web_search_v1','Web Search','network','remote_skill','Text-first web lookup skill for live documentation, registry validation, and external reference checks.','["web research","documentation lookup","capability discovery"]','available','2026-04-19'),
+    ('skill_registry_lookup_v1','Registry Lookup','registry','builtin_skill','Searches OpenRhiza capability records before generation or activation.','["driver lookup","program lookup","skill lookup"]','available','2026-04-19'),
+    ('skill_python_sandbox_v1','Python Sandbox','validation','sandbox_skill','Runs generated Python snippets or tests inside a constrained validation loop.','["test harness","benchmarking","quick validation"]','testing','2026-04-19'),
+    ('skill_driver_smoke_v1','Driver Smoke Test','driver','sandbox_skill','Performs short-run driver validation before live activation or persistence.','["driver validation","hardware smoke tests","rollback gating"]','available','2026-04-19');
+
+    INSERT OR IGNORE INTO workflows VALUES
+    ('workflow_driver_acquire_v1','Driver Acquire And Promote','driver','available','["Inspect local runtime bindings","Query OpenRhiza.com registry","Generate if missing","Sandbox smoke test","Activate live binding","Persist preferred binding","Upload evaluation/comment/vote"]','2026-04-19'),
+    ('workflow_program_acquire_v1','Program Acquire And Run','program','available','["Search capability registry","Download or generate program","Validate execution path","Run for user task","Upload evaluation"]','2026-04-19'),
+    ('workflow_skill_load_v1','Skill Load And Execute','skill','available','["Search local and remote skills","Load sandbox-safe skill","Run skill for current task","Record outcome"]','2026-04-19');
+
+    INSERT OR IGNORE INTO policies VALUES
+    ('policy_registry_first_v1','workflow','Always query the capability registry before generating new drivers, programs, or skills.','active','["local cache first","registry second","generation third"]','2026-04-19'),
+    ('policy_runtime_hotswap_v1','runtime','Prefer live activation and rollback for non-core changes instead of reboot-based rollout.','active','["sandbox-first","live binding switch","rollback before reboot"]','2026-04-19'),
+    ('policy_storage_safe_write_v1','storage','Treat storage write paths as high-risk and promote them only after stronger validation.','active','["read-only first","staged writes","rollback target required"]','2026-04-19');
 
     INSERT OR IGNORE INTO nodes VALUES
     ('orhiza_node_qemu_01','software','seed_public_key_demo','sha256:4fe9...b8a1','online','QEMU test node with e1000 and xHCI keyboard path.','2026-04-18T12:30:00Z',0,'0.1.0','["tls","http_json","signed_wasm"]','{}','[]'),
@@ -321,6 +405,35 @@ function openDb() {
       summary TEXT NOT NULL,
       recommended_for_json TEXT NOT NULL,
       status TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS skills (
+      skill_id TEXT PRIMARY KEY,
+      display_name TEXT NOT NULL,
+      category TEXT NOT NULL,
+      delivery TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      recommended_for_json TEXT NOT NULL,
+      status TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS workflows (
+      workflow_id TEXT PRIMARY KEY,
+      display_name TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      status TEXT NOT NULL,
+      steps_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS policies (
+      policy_id TEXT PRIMARY KEY,
+      scope TEXT NOT NULL,
+      summary TEXT NOT NULL,
+      status TEXT NOT NULL,
+      rules_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS nodes (
@@ -439,6 +552,48 @@ export function getModel(modelId: string) {
     | Record<string, unknown>
     | undefined;
   return row ? mapModel(row) : null;
+}
+
+export function listSkills() {
+  return openDb()
+    .prepare("SELECT * FROM skills ORDER BY updated_at DESC, skill_id ASC")
+    .all()
+    .map((row) => mapSkill(row as Record<string, unknown>));
+}
+
+export function listWorkflows() {
+  return openDb()
+    .prepare("SELECT * FROM workflows ORDER BY updated_at DESC, workflow_id ASC")
+    .all()
+    .map((row) => mapWorkflow(row as Record<string, unknown>));
+}
+
+export function listPolicies() {
+  return openDb()
+    .prepare("SELECT * FROM policies ORDER BY updated_at DESC, policy_id ASC")
+    .all()
+    .map((row) => mapPolicy(row as Record<string, unknown>));
+}
+
+export function getSkill(skillId: string) {
+  const row = openDb().prepare("SELECT * FROM skills WHERE skill_id = ?").get(skillId) as
+    | Record<string, unknown>
+    | undefined;
+  return row ? mapSkill(row) : null;
+}
+
+export function getWorkflow(workflowId: string) {
+  const row = openDb().prepare("SELECT * FROM workflows WHERE workflow_id = ?").get(workflowId) as
+    | Record<string, unknown>
+    | undefined;
+  return row ? mapWorkflow(row) : null;
+}
+
+export function getPolicy(policyId: string) {
+  const row = openDb().prepare("SELECT * FROM policies WHERE policy_id = ?").get(policyId) as
+    | Record<string, unknown>
+    | undefined;
+  return row ? mapPolicy(row) : null;
 }
 
 export function listNodes() {
@@ -681,9 +836,55 @@ export function queryModels(_input: LlmQueryRequest) {
   };
 }
 
+export function querySkills(input: SkillQueryRequest) {
+  const skills = listSkills();
+  const domains = new Set(input.preferred_domains.map((value) => value.toLowerCase()));
+  const capabilities = new Set(input.capabilities.map((value) => value.toLowerCase()));
+  return {
+    skills: skills.filter((skill) => {
+      if (domains.size === 0 && capabilities.size === 0) {
+        return true;
+      }
+      const haystack = `${skill.category} ${skill.summary} ${skill.recommended_for.join(" ")}`.toLowerCase();
+      return [...domains, ...capabilities].some((value) => haystack.includes(value));
+    }),
+  };
+}
+
+export function queryWorkflows(input: WorkflowQueryRequest) {
+  const workflows = listWorkflows();
+  const goal = input.goal.toLowerCase();
+  return {
+    workflows: workflows.filter((workflow) => {
+      if (!goal.trim()) {
+        return true;
+      }
+      const haystack = `${workflow.display_name} ${workflow.summary} ${workflow.steps.join(" ")}`.toLowerCase();
+      return haystack.includes(goal) || input.available_skills.some((skill) => haystack.includes(skill.toLowerCase()));
+    }),
+  };
+}
+
+export function queryPolicies(input: PolicyQueryRequest) {
+  return {
+    policies: listPolicies().filter((policy) => input.scope === "all" || policy.scope === input.scope),
+  };
+}
+
+export function queryEvaluations(input: EvaluationQueryRequest) {
+  const evaluations = listEvaluations();
+  return {
+    evaluations: input.subject_type === "all"
+      ? evaluations
+      : evaluations.filter((evaluation) => evaluation.subject.toLowerCase().startsWith(`${input.subject_type.toLowerCase()}:`)),
+  };
+}
+
 export function recordEvaluation(input: EvaluationUploadRequest) {
-  const evaluationId = `eval_${input.node_id}_${input.driver_id}_${Date.now()}`;
-  const driver = getDriver(input.driver_id);
+  const subjectType = input.subject_type ?? "driver";
+  const subjectId = input.subject_id ?? input.driver_id ?? `subject_${Date.now()}`;
+  const subjectLabel = input.subject_label ?? getDriver(subjectId)?.display_name ?? subjectId;
+  const evaluationId = `eval_${input.node_id}_${subjectType}_${subjectId}_${Date.now()}`;
   const note = input.notes[0] ?? "No detailed note provided.";
   const createdAt = new Date().toISOString();
 
@@ -696,10 +897,10 @@ export function recordEvaluation(input: EvaluationUploadRequest) {
     `)
     .run(
       evaluationId,
-      driver?.display_name ?? input.driver_id,
+      `${subjectType}:${subjectLabel}`,
       input.node_id,
-      input.driver_id,
-      input.hardware_match_key,
+      subjectId,
+      input.hardware_match_key ?? "",
       input.stability_score,
       input.performance_score,
       note,
@@ -709,6 +910,8 @@ export function recordEvaluation(input: EvaluationUploadRequest) {
 
   return {
     evaluation_id: evaluationId,
+    subject_type: subjectType,
+    subject_id: subjectId,
   };
 }
 
@@ -753,4 +956,6 @@ export function archiveUploadedDriver(input: {
     message: "Driver payload archived in Nexus.",
   };
 }
+
+
 

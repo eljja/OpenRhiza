@@ -48,7 +48,7 @@ impl SystemIdentity {
             }
         }
         
-        let storage = false;
+        let storage = Self::check_storage_interface();
         let pci_devices = Self::enumerate_pci();
         
         SystemIdentity {
@@ -89,6 +89,14 @@ impl SystemIdentity {
             logical_count
         } else {
             1
+        }
+    }
+
+    fn check_storage_interface() -> bool {
+        unsafe {
+            let mut status_port = Port::<u8>::new(0x177);
+            let status = status_port.read();
+            status != 0xFF
         }
     }
 

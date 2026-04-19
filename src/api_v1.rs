@@ -18,8 +18,9 @@ const DEFAULT_GEMINI_MODELS: [&str; 4] = [
     "gemini-2.5-flash",
     "gemini-2.5-flash-lite",
 ];
-const OPENRHIZA_SYSTEM_INSTRUCTION: &str =
-    "You are OpenRhiza OS. Be concise, safe, incremental, and technically explicit.";
+const OPENRHIZA_SYSTEM_INSTRUCTION_HEADER: &str =
+    "You are OpenRhiza OS. Follow the baseline below. Be concise, safe, incremental, and technically explicit.";
+const OPENRHIZA_OS_BASELINE_MD: &str = include_str!("../OS.md");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ServiceApiCommand {
@@ -31,6 +32,10 @@ pub enum ServiceApiCommand {
     RootHttps,
     HardwareReport,
     DriverQuery,
+    SkillQuery,
+    WorkflowQuery,
+    PolicyQuery,
+    EvaluationQuery,
     All,
 }
 
@@ -56,6 +61,10 @@ lazy_static! {
     static ref LAST_GEMINI_PROMPT: Mutex<Option<String>> = Mutex::new(None);
     static ref LAST_GEMINI_TEXT: Mutex<Option<String>> = Mutex::new(None);
     static ref LAST_GEMINI_MODEL: Mutex<Option<String>> = Mutex::new(None);
+    static ref LAST_DRIVER_UPLOAD_MATCH_KEY: Mutex<Option<String>> = Mutex::new(None);
+    static ref LAST_SKILL_REGISTRY_SUMMARY: Mutex<Option<String>> = Mutex::new(None);
+    static ref LAST_WORKFLOW_REGISTRY_SUMMARY: Mutex<Option<String>> = Mutex::new(None);
+    static ref LAST_POLICY_REGISTRY_SUMMARY: Mutex<Option<String>> = Mutex::new(None);
 }
 
 pub fn build_node_register_request(profile: &NodeProfile) -> String {
@@ -142,10 +151,46 @@ pub fn build_driver_query_request(profile: &NodeProfile) -> String {
     body
 }
 
+pub fn build_skill_query_request(profile: &NodeProfile) -> String {
+    format!(
+        "{{\"protocol_version\":\"{}\",\"node_id\":\"{}\",\"capabilities\":[\"registry\",\"gemini\",\"sandbox\",\"driver_runtime\",\"hot_swap\"],\"preferred_domains\":[\"driver\",\"skill\",\"workflow\",\"policy\"]}}",
+        PROTOCOL_VERSION,
+        profile.node_id_hex()
+    )
+}
+
+pub fn build_workflow_query_request(profile: &NodeProfile) -> String {
+    format!(
+        "{{\"protocol_version\":\"{}\",\"node_id\":\"{}\",\"goal\":\"capability_registry_lookup\",\"available_skills\":[\"registry_lookup\",\"sandbox\",\"gemini\"]}}",
+        PROTOCOL_VERSION,
+        profile.node_id_hex()
+    )
+}
+
+pub fn build_policy_query_request(profile: &NodeProfile) -> String {
+    format!(
+        "{{\"protocol_version\":\"{}\",\"node_id\":\"{}\",\"scope\":\"all\"}}",
+        PROTOCOL_VERSION,
+        profile.node_id_hex()
+    )
+}
+
+pub fn build_evaluation_query_request(profile: &NodeProfile) -> String {
+    format!(
+        "{{\"protocol_version\":\"{}\",\"node_id\":\"{}\",\"subject_type\":\"all\"}}",
+        PROTOCOL_VERSION,
+        profile.node_id_hex()
+    )
+}
+
 pub fn log_request_previews(profile: &NodeProfile) {
     let register = build_node_register_request(profile);
     let hardware = build_hardware_report_request(profile);
     let driver_query = build_driver_query_request(profile);
+    let skill_query = build_skill_query_request(profile);
+    let workflow_query = build_workflow_query_request(profile);
+    let policy_query = build_policy_query_request(profile);
+    let evaluation_query = build_evaluation_query_request(profile);
 
     crate::println!(
         "[API v1] Prepared register request: {} bytes",
@@ -158,6 +203,22 @@ pub fn log_request_previews(profile: &NodeProfile) {
     crate::println!(
         "[API v1] Prepared driver query: {} bytes",
         driver_query.len()
+    );
+    crate::println!(
+        "[API v1] Prepared skill query: {} bytes",
+        skill_query.len()
+    );
+    crate::println!(
+        "[API v1] Prepared workflow query: {} bytes",
+        workflow_query.len()
+    );
+    crate::println!(
+        "[API v1] Prepared policy query: {} bytes",
+        policy_query.len()
+    );
+    crate::println!(
+        "[API v1] Prepared evaluation query: {} bytes",
+        evaluation_query.len()
     );
 
     if let Some(device) = profile.machine_profile.pci_devices.first() {
@@ -203,6 +264,55 @@ pub fn last_gemini_model() -> Option<String> {
     LAST_GEMINI_MODEL.lock().clone()
 }
 
+pub fn record_pending_driver_upload(match_key: &str) {
+    *LAST_DRIVER_UPLOAD_MATCH_KEY.lock() = Some(String::from(match_key));
+}
+
+pub fn take_pending_driver_upload_match_key() -> Option<String> {
+    LAST_DRIVER_UPLOAD_MATCH_KEY.lock().take()
+}
+
+pub fn record_skill_registry_summary(summary: &str) {
+    *LAST_SKILL_REGISTRY_SUMMARY.lock() = Some(String::from(summary));
+}
+
+pub fn record_workflow_registry_summary(summary: &str) {
+    *LAST_WORKFLOW_REGISTRY_SUMMARY.lock() = Some(String::from(summary));
+}
+
+pub fn record_policy_registry_summary(summary: &str) {
+    *LAST_POLICY_REGISTRY_SUMMARY.lock() = Some(String::from(summary));
+}
+
+pub fn current_registry_context_block() -> Option<String> {
+    let skill = LAST_SKILL_REGISTRY_SUMMARY.lock().clone();
+    let workflow = LAST_WORKFLOW_REGISTRY_SUMMARY.lock().clone();
+    let policy = LAST_POLICY_REGISTRY_SUMMARY.lock().clone();
+
+    if skill.is_none() && workflow.is_none() && policy.is_none() {
+        return None;
+    }
+
+    let mut out = String::from("Recent capability registry context:\n");
+    if let Some(skill) = skill {
+        out.push_str("- skills: ");
+        out.push_str(skill.as_str());
+        out.push('\n');
+    }
+    if let Some(workflow) = workflow {
+        out.push_str("- workflows: ");
+        out.push_str(workflow.as_str());
+        out.push('\n');
+    }
+    if let Some(policy) = policy {
+        out.push_str("- policies: ");
+        out.push_str(policy.as_str());
+        out.push('\n');
+    }
+
+    Some(out)
+}
+
 pub fn openrhiza_host() -> &'static str {
     OPENRHIZA_HOST
 }
@@ -224,9 +334,17 @@ pub fn build_gemini_generate_path(model: &str) -> String {
 }
 
 pub fn build_gemini_generate_request(prompt: &str) -> String {
+    let mut system_instruction = String::from(OPENRHIZA_SYSTEM_INSTRUCTION_HEADER);
+    system_instruction.push_str("\n\n");
+    system_instruction.push_str(OPENRHIZA_OS_BASELINE_MD.trim());
+    if let Some(context) = current_registry_context_block() {
+        system_instruction.push_str("\n\n");
+        system_instruction.push_str(context.trim());
+    }
+
     format!(
         "{{\"system_instruction\":{{\"parts\":[{{\"text\":\"{}\"}}]}},\"contents\":[{{\"role\":\"user\",\"parts\":[{{\"text\":\"{}\"}}]}}]}}",
-        json_escape(OPENRHIZA_SYSTEM_INSTRUCTION),
+        json_escape(&system_instruction),
         json_escape(prompt)
     )
 }

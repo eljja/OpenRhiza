@@ -155,7 +155,7 @@ fn handle_cli_command(command: &str) {
 
     if let Some(local_command) = command.strip_prefix('/') {
         match local_command {
-            "help" => crate::result_println!("[CLI] Local commands: /help, /clear, /status, /nexus-fetch, /api-register, /api-register-http, /http-health, /https-health, /https-root, /api-hw, /api-driver, /api-all, /gemini-test, /driver-generate <match_key>, /driver-upload <match_key>, /driver-comment <driver_id> <text>, /driver-vote <driver_id> up|down"),
+            "help" => crate::result_println!("[CLI] Local commands: /help, /clear, /status, /nexus-fetch, /api-register, /api-register-http, /http-health, /https-health, /https-root, /api-hw, /api-driver, /api-skill, /api-workflow, /api-policy, /api-eval, /api-all, /gemini-test, /driver-generate <match_key>, /driver-upload <match_key>, /driver-comment <driver_id> <text>, /driver-vote <driver_id> up|down, /driver-bindings, /driver-activate <match_key> <driver_id>, /driver-rollback <match_key>"),
             "clear" => WRITER.lock().clear_log_area(),
             "status" => {
                 crate::result_println!("[CLI] Keyboard input ready.");
@@ -170,6 +170,10 @@ fn handle_cli_command(command: &str) {
             "https-root" => queue_api_command(crate::api_v1::ServiceApiCommand::RootHttps, "root_https"),
             "api-hw" => queue_api_command(crate::api_v1::ServiceApiCommand::HardwareReport, "hardware_report"),
             "api-driver" => queue_api_command(crate::api_v1::ServiceApiCommand::DriverQuery, "driver_query"),
+            "api-skill" => queue_api_command(crate::api_v1::ServiceApiCommand::SkillQuery, "skill_query"),
+            "api-workflow" => queue_api_command(crate::api_v1::ServiceApiCommand::WorkflowQuery, "workflow_query"),
+            "api-policy" => queue_api_command(crate::api_v1::ServiceApiCommand::PolicyQuery, "policy_query"),
+            "api-eval" => queue_api_command(crate::api_v1::ServiceApiCommand::EvaluationQuery, "evaluation_query"),
             "api-all" => queue_api_command(crate::api_v1::ServiceApiCommand::All, "full_api_sequence"),
             "gemini-test" => queue_gemini_prompt("Summarize the current role of OpenRhiza OS in one short sentence.".into()),
             _ if local_command.starts_with("driver-generate ") => {
@@ -187,6 +191,15 @@ fn handle_cli_command(command: &str) {
             _ if local_command.starts_with("driver-vote ") => {
                 let rest = &local_command["driver-vote ".len()..];
                 queue_driver_vote(rest);
+            }
+            "driver-bindings" => show_driver_bindings(),
+            _ if local_command.starts_with("driver-activate ") => {
+                let rest = &local_command["driver-activate ".len()..];
+                activate_driver_binding(rest);
+            }
+            _ if local_command.starts_with("driver-rollback ") => {
+                let match_key = local_command["driver-rollback ".len()..].trim();
+                rollback_driver_binding(match_key);
             }
             _ => crate::result_println!("[CLI] Unknown local command. Use /help."),
         }
@@ -296,5 +309,92 @@ fn queue_driver_vote(rest: &str) {
     ) {
         Ok(()) => crate::result_println!("[CLI] Queued driver vote for {}", driver_id),
         Err(_) => crate::result_println!("[CLI] Driver registry queue full."),
+    }
+}
+
+fn show_driver_bindings() {
+    let bindings = crate::runtime_bindings::snapshot();
+    if bindings.is_empty() {
+        crate::result_println!("[Driver Runtime] No live driver bindings are active.");
+        return;
+    }
+
+    crate::result_println!(
+        "[Driver Runtime] Active live bindings: {}",
+        bindings.len()
+    );
+    for binding in bindings.iter().take(12) {
+        if let Some(previous) = binding.previous_driver_id.as_deref() {
+            crate::result_println!(
+                "[Driver Runtime] {} -> {} [{} | rollback {}]",
+                binding.match_key,
+                binding.driver_id,
+                binding.source,
+                previous
+            );
+        } else {
+            crate::result_println!(
+                "[Driver Runtime] {} -> {} [{}]",
+                binding.match_key,
+                binding.driver_id,
+                binding.source
+            );
+        }
+    }
+}
+
+fn activate_driver_binding(rest: &str) {
+    let mut parts = rest.splitn(2, ' ');
+    let Some(match_key) = parts.next() else {
+        crate::result_println!("[CLI] Usage: /driver-activate <match_key> <driver_id>");
+        return;
+    };
+    let Some(driver_id) = parts.next() else {
+        crate::result_println!("[CLI] Usage: /driver-activate <match_key> <driver_id>");
+        return;
+    };
+
+    let outcome = crate::runtime_bindings::activate_binding(
+        match_key.trim(),
+        driver_id.trim(),
+        "manual-cli",
+    );
+    if outcome.changed {
+        if let Some(previous) = outcome.previous_driver_id.as_deref() {
+            crate::result_println!(
+                "[Driver Runtime] Activated {} -> {} (previously {})",
+                match_key.trim(),
+                driver_id.trim(),
+                previous
+            );
+        } else {
+            crate::result_println!(
+                "[Driver Runtime] Activated {} -> {}",
+                match_key.trim(),
+                driver_id.trim()
+            );
+        }
+    } else {
+        crate::result_println!(
+            "[Driver Runtime] {} is already active for {}",
+            driver_id.trim(),
+            match_key.trim()
+        );
+    }
+}
+
+fn rollback_driver_binding(match_key: &str) {
+    if match_key.is_empty() {
+        crate::result_println!("[CLI] Usage: /driver-rollback <match_key>");
+        return;
+    }
+
+    match crate::runtime_bindings::rollback_binding(match_key) {
+        Ok(driver_id) => crate::result_println!(
+            "[Driver Runtime] Rolled back {} -> {}",
+            match_key,
+            driver_id
+        ),
+        Err(error) => crate::result_println!("[Driver Runtime] Rollback failed: {}", error),
     }
 }
