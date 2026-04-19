@@ -28,6 +28,7 @@ pub mod net;
 pub mod vga;
 pub mod storage;
 pub mod https;
+pub mod dns;
 pub mod task;
 pub mod security;
 pub mod e1000;
@@ -37,18 +38,44 @@ pub mod tls;
 pub mod identity;
 pub mod api_v1;
 
+use alloc::format;
+use alloc::string::String;
+use alloc::vec;
 use arch::x86_64::discovery::SystemIdentity;
 use os_core_seed::OpenRhizaSeed;
 use core::panic::PanicInfo;
 use bootloader::bootinfo::BootInfo;
+use smoltcp::wire::Ipv4Address;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum ServiceApiPhase {
     Idle,
     Register,
+    HealthHttps,
+    RootHttps,
     HardwareReport,
     DriverQuery,
     Done,
+}
+
+enum PendingDnsAction {
+    Service {
+        phase: ServiceApiPhase,
+        chain_active: bool,
+    },
+    PlainHttp(PlainHttpAction),
+    Gemini(GeminiRequest),
+}
+
+#[derive(Clone, Copy)]
+enum PlainHttpAction {
+    Register,
+    Health,
+}
+
+struct GeminiRequest {
+    prompt: String,
+    model_index: usize,
 }
 
 const ENABLE_SERVICE_API_BOOTSTRAP: bool = false;
@@ -180,7 +207,14 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
     let mut nexus_client: Option<crate::https::NexusClient> = None;
     let mut service_api_phase = ServiceApiPhase::Idle;
     let mut service_api_client: Option<crate::https::ApiClient> = None;
+    let mut plain_http_client: Option<crate::https::PlainHttpClient> = None;
     let mut service_api_chain_active = false;
+    let mut gemini_client: Option<crate::https::ApiClient> = None;
+    let mut gemini_request: Option<GeminiRequest> = None;
+    let mut openrhiza_ip: Option<Ipv4Address> = None;
+    let mut gemini_ip: Option<Ipv4Address> = None;
+    let mut dns_client: Option<crate::dns::DnsClient> = None;
+    let mut pending_dns_action: Option<PendingDnsAction> = None;
     let mut keymap_index = 0;
 
     loop {
@@ -227,15 +261,29 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
             && nexus_client.is_none()
             && service_api_phase == ServiceApiPhase::Idle
             && service_api_client.is_none()
+            && plain_http_client.is_none()
+            && gemini_client.is_none()
+            && dns_client.is_none()
         {
-            service_api_client = spawn_service_api_client(ServiceApiPhase::Register);
-            if service_api_client.is_some() {
-                service_api_phase = ServiceApiPhase::Register;
+            if let Some(ip) = openrhiza_ip {
+                service_api_client = spawn_service_api_client(ServiceApiPhase::Register, ip);
+                if service_api_client.is_some() {
+                    service_api_phase = ServiceApiPhase::Register;
+                }
+            } else {
+                dns_client = Some(spawn_dns_client(crate::api_v1::openrhiza_host()));
+                pending_dns_action = Some(PendingDnsAction::Service {
+                    phase: ServiceApiPhase::Register,
+                    chain_active: false,
+                });
             }
         }
 
         if nexus_client.is_none()
             && service_api_client.is_none()
+            && plain_http_client.is_none()
+            && gemini_client.is_none()
+            && dns_client.is_none()
             && service_api_phase == ServiceApiPhase::Idle
         {
             if let Some(command) = crate::api_v1::SERVICE_API_QUEUE.pop() {
@@ -257,37 +305,165 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
                         }
                     }
                     crate::api_v1::ServiceApiCommand::Register => {
-                        service_api_chain_active = false;
-                        service_api_client = spawn_service_api_client(ServiceApiPhase::Register);
-                        if service_api_client.is_some() {
-                            service_api_phase = ServiceApiPhase::Register;
+                        start_service_or_resolve(
+                            ServiceApiPhase::Register,
+                            false,
+                            openrhiza_ip,
+                            &mut dns_client,
+                            &mut pending_dns_action,
+                            &mut service_api_client,
+                            &mut service_api_phase,
+                            &mut service_api_chain_active,
+                        );
+                    }
+                    crate::api_v1::ServiceApiCommand::HealthHttps => {
+                        start_service_or_resolve(
+                            ServiceApiPhase::HealthHttps,
+                            false,
+                            openrhiza_ip,
+                            &mut dns_client,
+                            &mut pending_dns_action,
+                            &mut service_api_client,
+                            &mut service_api_phase,
+                            &mut service_api_chain_active,
+                        );
+                    }
+                    crate::api_v1::ServiceApiCommand::RootHttps => {
+                        start_service_or_resolve(
+                            ServiceApiPhase::RootHttps,
+                            false,
+                            openrhiza_ip,
+                            &mut dns_client,
+                            &mut pending_dns_action,
+                            &mut service_api_client,
+                            &mut service_api_phase,
+                            &mut service_api_chain_active,
+                        );
+                    }
+                    crate::api_v1::ServiceApiCommand::RegisterHttp => {
+                        if let Some(ip) = openrhiza_ip {
+                            plain_http_client = spawn_plain_http_register_client(ip);
+                        } else {
+                            dns_client = Some(spawn_dns_client(crate::api_v1::openrhiza_host()));
+                            pending_dns_action = Some(PendingDnsAction::PlainHttp(
+                                PlainHttpAction::Register,
+                            ));
+                        }
+                    }
+                    crate::api_v1::ServiceApiCommand::HealthHttp => {
+                        if let Some(ip) = openrhiza_ip {
+                            plain_http_client = spawn_plain_http_health_client(ip);
+                        } else {
+                            dns_client = Some(spawn_dns_client(crate::api_v1::openrhiza_host()));
+                            pending_dns_action =
+                                Some(PendingDnsAction::PlainHttp(PlainHttpAction::Health));
                         }
                     }
                     crate::api_v1::ServiceApiCommand::HardwareReport => {
-                        service_api_chain_active = false;
-                        service_api_client =
-                            spawn_service_api_client(ServiceApiPhase::HardwareReport);
-                        if service_api_client.is_some() {
-                            service_api_phase = ServiceApiPhase::HardwareReport;
-                        }
+                        start_service_or_resolve(
+                            ServiceApiPhase::HardwareReport,
+                            false,
+                            openrhiza_ip,
+                            &mut dns_client,
+                            &mut pending_dns_action,
+                            &mut service_api_client,
+                            &mut service_api_phase,
+                            &mut service_api_chain_active,
+                        );
                     }
                     crate::api_v1::ServiceApiCommand::DriverQuery => {
-                        service_api_chain_active = false;
-                        service_api_client = spawn_service_api_client(ServiceApiPhase::DriverQuery);
-                        if service_api_client.is_some() {
-                            service_api_phase = ServiceApiPhase::DriverQuery;
-                        }
+                        start_service_or_resolve(
+                            ServiceApiPhase::DriverQuery,
+                            false,
+                            openrhiza_ip,
+                            &mut dns_client,
+                            &mut pending_dns_action,
+                            &mut service_api_client,
+                            &mut service_api_phase,
+                            &mut service_api_chain_active,
+                        );
                     }
                     crate::api_v1::ServiceApiCommand::All => {
-                        service_api_chain_active = true;
-                        service_api_client = spawn_service_api_client(ServiceApiPhase::Register);
-                        if service_api_client.is_some() {
-                            service_api_phase = ServiceApiPhase::Register;
-                        } else {
-                            service_api_chain_active = false;
-                        }
+                        start_service_or_resolve(
+                            ServiceApiPhase::Register,
+                            true,
+                            openrhiza_ip,
+                            &mut dns_client,
+                            &mut pending_dns_action,
+                            &mut service_api_client,
+                            &mut service_api_phase,
+                            &mut service_api_chain_active,
+                        );
                     }
                 }
+            }
+        }
+
+        if nexus_client.is_none()
+            && service_api_client.is_none()
+            && gemini_client.is_none()
+            && dns_client.is_none()
+            && service_api_phase == ServiceApiPhase::Idle
+        {
+            if let Some(prompt) = crate::api_v1::GEMINI_PROMPT_QUEUE.pop() {
+                let request = GeminiRequest {
+                    prompt,
+                    model_index: 0,
+                };
+                if let Some(ip) = gemini_ip {
+                    gemini_client = spawn_gemini_client(ip, &request);
+                    gemini_request = Some(request);
+                } else {
+                    dns_client = Some(spawn_dns_client(crate::api_v1::gemini_host()));
+                    pending_dns_action = Some(PendingDnsAction::Gemini(request));
+                }
+            }
+        }
+
+        if let Some(client) = &mut dns_client {
+            client.poll();
+
+            if let Some(resolved_ip) = client.take_resolved_ip() {
+                crate::net::destroy_socket(client.handle());
+                let action = pending_dns_action.take();
+                dns_client = None;
+
+                match action {
+                    Some(PendingDnsAction::Service {
+                        phase,
+                        chain_active,
+                    }) => {
+                        openrhiza_ip = Some(resolved_ip);
+                        service_api_chain_active = chain_active;
+                        service_api_client = spawn_service_api_client(phase, resolved_ip);
+                        if service_api_client.is_some() {
+                            service_api_phase = phase;
+                        } else {
+                            service_api_chain_active = false;
+                            service_api_phase = ServiceApiPhase::Idle;
+                        }
+                    }
+                    Some(PendingDnsAction::PlainHttp(action)) => {
+                        openrhiza_ip = Some(resolved_ip);
+                        plain_http_client = match action {
+                            PlainHttpAction::Register => spawn_plain_http_register_client(resolved_ip),
+                            PlainHttpAction::Health => spawn_plain_http_health_client(resolved_ip),
+                        };
+                    }
+                    Some(PendingDnsAction::Gemini(request)) => {
+                        gemini_ip = Some(resolved_ip);
+                        gemini_client = spawn_gemini_client(resolved_ip, &request);
+                        gemini_request = Some(request);
+                    }
+                    None => {}
+                }
+            } else if let Some(error) = client.error_message() {
+                crate::net::destroy_socket(client.handle());
+                crate::println!("[DNS] resolution failed: {}", error);
+                dns_client = None;
+                pending_dns_action = None;
+                service_api_chain_active = false;
+                service_api_phase = ServiceApiPhase::Idle;
             }
         }
 
@@ -301,8 +477,8 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
                 service_api_phase = match service_api_phase {
                     ServiceApiPhase::Register => {
                         if service_api_chain_active {
-                            service_api_client =
-                                spawn_service_api_client(ServiceApiPhase::HardwareReport);
+                            service_api_client = openrhiza_ip
+                                .and_then(|ip| spawn_service_api_client(ServiceApiPhase::HardwareReport, ip));
                             if service_api_client.is_some() {
                                 ServiceApiPhase::HardwareReport
                             } else {
@@ -315,8 +491,8 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
                     }
                     ServiceApiPhase::HardwareReport => {
                         if service_api_chain_active {
-                            service_api_client =
-                                spawn_service_api_client(ServiceApiPhase::DriverQuery);
+                            service_api_client = openrhiza_ip
+                                .and_then(|ip| spawn_service_api_client(ServiceApiPhase::DriverQuery, ip));
                             if service_api_client.is_some() {
                                 ServiceApiPhase::DriverQuery
                             } else {
@@ -346,6 +522,66 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
                 service_api_chain_active = false;
                 service_api_client = None;
                 service_api_phase = ServiceApiPhase::Idle;
+            }
+        }
+
+        if let Some(client) = &mut plain_http_client {
+            client.poll();
+
+            if let Some(response) = client.take_response() {
+                crate::net::destroy_socket(client.handle());
+                log_plain_http_response(&response);
+                plain_http_client = None;
+            } else if let Some(error) = client.error_message() {
+                crate::net::destroy_socket(client.handle());
+                crate::println!("[HTTP] request failed: {}", error);
+                plain_http_client = None;
+            }
+        }
+
+        if let Some(client) = &mut gemini_client {
+            client.poll();
+
+            if let Some(response) = client.take_response() {
+                crate::net::destroy_socket(client.handle());
+                if (200..300).contains(&response.status_code) {
+                    log_gemini_response(&response);
+                    gemini_client = None;
+                    gemini_request = None;
+                } else if let Some(next_request) = advance_gemini_request(gemini_request.take()) {
+                    let previous_model = gemini_model_name(next_request.model_index - 1);
+                    let next_model = gemini_model_name(next_request.model_index);
+                    crate::println!(
+                        "[Gemini] {} returned status {}. Falling back to {}",
+                        previous_model,
+                        response.status_code,
+                        next_model
+                    );
+                    gemini_client = gemini_ip.and_then(|ip| spawn_gemini_client(ip, &next_request));
+                    gemini_request = Some(next_request);
+                } else {
+                    log_gemini_response(&response);
+                    gemini_client = None;
+                    gemini_request = None;
+                }
+            } else if let Some(error) = client.error_message() {
+                crate::net::destroy_socket(client.handle());
+                if let Some(next_request) = advance_gemini_request(gemini_request.take()) {
+                    let previous_model = gemini_model_name(next_request.model_index - 1);
+                    let next_model = gemini_model_name(next_request.model_index);
+                    crate::println!(
+                        "[Gemini] {} failed: {}. Falling back to {}",
+                        previous_model,
+                        error,
+                        next_model
+                    );
+                    gemini_client = gemini_ip.and_then(|ip| spawn_gemini_client(ip, &next_request));
+                    gemini_request = Some(next_request);
+                } else {
+                    crate::println!("[Gemini] request failed: {}", error);
+                    gemini_client = None;
+                    gemini_request = None;
+                }
             }
         }
 
@@ -403,19 +639,65 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
     }
 }
 
-fn spawn_service_api_client(phase: ServiceApiPhase) -> Option<crate::https::ApiClient> {
+fn start_service_or_resolve(
+    phase: ServiceApiPhase,
+    chain_active: bool,
+    openrhiza_ip: Option<Ipv4Address>,
+    dns_client: &mut Option<crate::dns::DnsClient>,
+    pending_dns_action: &mut Option<PendingDnsAction>,
+    service_api_client: &mut Option<crate::https::ApiClient>,
+    service_api_phase: &mut ServiceApiPhase,
+    service_api_chain_active: &mut bool,
+) {
+    *service_api_chain_active = chain_active;
+    if let Some(ip) = openrhiza_ip {
+        *service_api_client = spawn_service_api_client(phase, ip);
+        if service_api_client.is_some() {
+            *service_api_phase = phase;
+        } else {
+            *service_api_chain_active = false;
+            *service_api_phase = ServiceApiPhase::Idle;
+        }
+    } else {
+        *dns_client = Some(spawn_dns_client(crate::api_v1::openrhiza_host()));
+        *pending_dns_action = Some(PendingDnsAction::Service { phase, chain_active });
+    }
+}
+
+fn spawn_dns_client(hostname: &'static str) -> crate::dns::DnsClient {
+    let socket_handle = crate::net::create_udp_socket(512, 512);
+    crate::dns::DnsClient::new(socket_handle, crate::dns::DEFAULT_DNS_SERVER, hostname)
+}
+
+fn spawn_service_api_client(
+    phase: ServiceApiPhase,
+    target_ip: Ipv4Address,
+) -> Option<crate::https::ApiClient> {
     let profile = crate::identity::current_profile()?;
     let socket_handle = crate::net::create_tcp_socket();
-    let (path, body) = match phase {
+    let (method, path, body) = match phase {
         ServiceApiPhase::Register => (
+            crate::https::ApiMethod::Post,
             "/api/v1/node/register",
             crate::api_v1::build_node_register_request(&profile).into_bytes(),
         ),
+        ServiceApiPhase::HealthHttps => (
+            crate::https::ApiMethod::Get,
+            "/api/health",
+            alloc::vec::Vec::new(),
+        ),
+        ServiceApiPhase::RootHttps => (
+            crate::https::ApiMethod::Get,
+            "/",
+            alloc::vec::Vec::new(),
+        ),
         ServiceApiPhase::HardwareReport => (
+            crate::https::ApiMethod::Post,
             "/api/v1/hardware/report",
             crate::api_v1::build_hardware_report_request(&profile).into_bytes(),
         ),
         ServiceApiPhase::DriverQuery => (
+            crate::https::ApiMethod::Post,
             "/api/v1/driver/query",
             crate::api_v1::build_driver_query_request(&profile).into_bytes(),
         ),
@@ -430,13 +712,109 @@ fn spawn_service_api_client(phase: ServiceApiPhase) -> Option<crate::https::ApiC
 
     Some(crate::https::ApiClient::new(
         socket_handle,
-        smoltcp::wire::IpAddress::Ipv4(smoltcp::wire::Ipv4Address::new(10, 0, 2, 2)),
-        4443,
-        "openrhiza.com",
-        crate::https::ApiMethod::Post,
+        smoltcp::wire::IpAddress::Ipv4(target_ip),
+        443,
+        crate::api_v1::openrhiza_host(),
+        method,
         path,
         body,
     ))
+}
+
+fn spawn_gemini_client(
+    target_ip: Ipv4Address,
+    request: &GeminiRequest,
+) -> Option<crate::https::ApiClient> {
+    let api_key = match crate::api_v1::gemini_api_key() {
+        Some(key) => key,
+        None => {
+            crate::println!(
+                "[Gemini] OPENRHIZA_GEMINI_API_KEY is not set at build time. Rebuild with the key."
+            );
+            return None;
+        }
+    };
+
+    let socket_handle = crate::net::create_tcp_socket();
+    let model = gemini_model_name(request.model_index);
+    let path = crate::api_v1::build_gemini_generate_path(model);
+    let body = crate::api_v1::build_gemini_generate_request(&request.prompt).into_bytes();
+    let headers = vec![(
+        String::from("x-goog-api-key"),
+        String::from(api_key),
+    )];
+
+    crate::println!(
+        "[Gemini] Starting direct request with {} -> {}{}",
+        model,
+        crate::api_v1::gemini_host(),
+        path
+    );
+
+    Some(crate::https::ApiClient::new_with_headers(
+        socket_handle,
+        smoltcp::wire::IpAddress::Ipv4(target_ip),
+        443,
+        crate::api_v1::gemini_host(),
+        crate::https::ApiMethod::Post,
+        path.as_str(),
+        body,
+        headers,
+    ))
+}
+
+fn spawn_plain_http_register_client(
+    target_ip: Ipv4Address,
+) -> Option<crate::https::PlainHttpClient> {
+    let profile = crate::identity::current_profile()?;
+    let body = crate::api_v1::build_node_register_request(&profile);
+    let request = format!(
+        "POST /api/v1/node/register HTTP/1.1\r\nHost: {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        crate::api_v1::openrhiza_host(),
+        body.len(),
+        body
+    );
+    let socket_handle = crate::net::create_tcp_socket();
+    crate::println!("[HTTP] Starting plain register -> /api/v1/node/register");
+    Some(crate::https::PlainHttpClient::new(
+        socket_handle,
+        smoltcp::wire::IpAddress::Ipv4(target_ip),
+        80,
+        request.into_bytes(),
+    ))
+}
+
+fn spawn_plain_http_health_client(
+    target_ip: Ipv4Address,
+) -> Option<crate::https::PlainHttpClient> {
+    let request = format!(
+        "GET /api/health HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
+        crate::api_v1::openrhiza_host()
+    );
+    let socket_handle = crate::net::create_tcp_socket();
+    crate::println!("[HTTP] Starting plain health -> /api/health");
+    Some(crate::https::PlainHttpClient::new(
+        socket_handle,
+        smoltcp::wire::IpAddress::Ipv4(target_ip),
+        80,
+        request.into_bytes(),
+    ))
+}
+
+fn advance_gemini_request(request: Option<GeminiRequest>) -> Option<GeminiRequest> {
+    let mut request = request?;
+    if request.model_index + 1 >= crate::api_v1::gemini_models().len() {
+        return None;
+    }
+    request.model_index += 1;
+    Some(request)
+}
+
+fn gemini_model_name(index: usize) -> &'static str {
+    crate::api_v1::gemini_models()
+        .get(index)
+        .copied()
+        .unwrap_or("unknown-model")
 }
 
 fn log_service_api_response(phase: ServiceApiPhase, response: &crate::https::ApiResponse) {
@@ -456,10 +834,75 @@ fn log_service_api_response(phase: ServiceApiPhase, response: &crate::https::Api
     }
 }
 
+fn log_gemini_response(response: &crate::https::ApiResponse) {
+    crate::println!("[Gemini] response status: {}", response.status_code);
+
+    if let Some(text) = extract_first_text_field(&response.body) {
+        crate::println!("[Gemini] text: {}", text);
+        return;
+    }
+
+    match core::str::from_utf8(&response.body) {
+        Ok(body) => crate::println!("[Gemini] raw body: {}", body),
+        Err(_) => crate::println!(
+            "[Gemini] response body is not valid UTF-8 ({} bytes)",
+            response.body.len()
+        ),
+    }
+}
+
+fn log_plain_http_response(response: &crate::https::ApiResponse) {
+    crate::println!("[HTTP] response status: {}", response.status_code);
+    match core::str::from_utf8(&response.body) {
+        Ok(body) => crate::println!("[HTTP] response body: {}", body),
+        Err(_) => crate::println!(
+            "[HTTP] response body is not valid UTF-8 ({} bytes)",
+            response.body.len()
+        ),
+    }
+}
+
+fn extract_first_text_field(body: &[u8]) -> Option<String> {
+    let start = find_subsequence(body, b"\"text\":\"")? + 8;
+    let mut out = String::new();
+    let mut escaped = false;
+
+    for &byte in &body[start..] {
+        if escaped {
+            match byte {
+                b'n' => out.push('\n'),
+                b'r' => out.push('\r'),
+                b't' => out.push('\t'),
+                b'"' => out.push('"'),
+                b'\\' => out.push('\\'),
+                _ => out.push(byte as char),
+            }
+            escaped = false;
+            continue;
+        }
+
+        match byte {
+            b'\\' => escaped = true,
+            b'"' => return Some(out),
+            _ => out.push(byte as char),
+        }
+    }
+
+    None
+}
+
+fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
+}
+
 fn service_api_phase_name(phase: ServiceApiPhase) -> &'static str {
     match phase {
         ServiceApiPhase::Idle => "idle",
         ServiceApiPhase::Register => "register",
+        ServiceApiPhase::HealthHttps => "health_https",
+        ServiceApiPhase::RootHttps => "root_https",
         ServiceApiPhase::HardwareReport => "hardware_report",
         ServiceApiPhase::DriverQuery => "driver_query",
         ServiceApiPhase::Done => "done",

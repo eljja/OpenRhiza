@@ -9,11 +9,25 @@ use crate::identity::{HardwareDeviceSummary, NodeProfile, format_mac};
 
 const PROTOCOL_VERSION: &str = "v1";
 const OS_VERSION: &str = "0.1.0";
+const OPENRHIZA_HOST: &str = "openrhiza.com";
+const GEMINI_HOST: &str = "generativelanguage.googleapis.com";
+const DEFAULT_GEMINI_MODELS: [&str; 4] = [
+    "gemini-3-flash-preview",
+    "gemini-3.1-flash-lite-preview",
+    "gemini-2.5-flash",
+    "gemini-2.5-flash-lite",
+];
+const OPENRHIZA_SYSTEM_INSTRUCTION: &str =
+    "You are OpenRhiza OS. Be concise, safe, incremental, and technically explicit.";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ServiceApiCommand {
     NexusFetch,
     Register,
+    RegisterHttp,
+    HealthHttp,
+    HealthHttps,
+    RootHttps,
     HardwareReport,
     DriverQuery,
     All,
@@ -22,6 +36,7 @@ pub enum ServiceApiCommand {
 lazy_static! {
     pub static ref SERVICE_API_QUEUE: Arc<ArrayQueue<ServiceApiCommand>> =
         Arc::new(ArrayQueue::new(8));
+    pub static ref GEMINI_PROMPT_QUEUE: Arc<ArrayQueue<String>> = Arc::new(ArrayQueue::new(4));
 }
 
 pub fn build_node_register_request(profile: &NodeProfile) -> String {
@@ -136,6 +151,38 @@ pub fn log_request_previews(profile: &NodeProfile) {
 
 pub fn queue_service_api_command(command: ServiceApiCommand) -> Result<(), ServiceApiCommand> {
     SERVICE_API_QUEUE.push(command)
+}
+
+pub fn queue_gemini_prompt(prompt: String) -> Result<(), String> {
+    GEMINI_PROMPT_QUEUE.push(prompt)
+}
+
+pub fn openrhiza_host() -> &'static str {
+    OPENRHIZA_HOST
+}
+
+pub fn gemini_host() -> &'static str {
+    GEMINI_HOST
+}
+
+pub fn gemini_models() -> &'static [&'static str] {
+    &DEFAULT_GEMINI_MODELS
+}
+
+pub fn gemini_api_key() -> Option<&'static str> {
+    option_env!("OPENRHIZA_GEMINI_API_KEY")
+}
+
+pub fn build_gemini_generate_path(model: &str) -> String {
+    format!("/v1beta/models/{}:generateContent", model)
+}
+
+pub fn build_gemini_generate_request(prompt: &str) -> String {
+    format!(
+        "{{\"system_instruction\":{{\"parts\":[{{\"text\":\"{}\"}}]}},\"contents\":[{{\"role\":\"user\",\"parts\":[{{\"text\":\"{}\"}}]}}]}}",
+        json_escape(OPENRHIZA_SYSTEM_INSTRUCTION),
+        json_escape(prompt)
+    )
 }
 
 fn device_json(device: &HardwareDeviceSummary, include_topology: bool) -> String {

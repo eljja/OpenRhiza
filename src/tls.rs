@@ -78,6 +78,9 @@ pub struct TlsClient {
     pub send_buf: Vec<u8>,
     // Decrypted application data
     pub app_data_in: Vec<u8>,
+    // Fragment reassembly for plaintext/encrypted handshake messages
+    handshake_plain_in: Vec<u8>,
+    handshake_encrypted_in: Vec<u8>,
     // Handshake secrets used during Finished verification
     handshake_secret: [u8; 32],
     server_hs_traffic_secret: [u8; 32],
@@ -99,6 +102,8 @@ impl TlsClient {
             recv_buf: Vec::new(),
             send_buf: Vec::new(),
             app_data_in: Vec::new(),
+            handshake_plain_in: Vec::new(),
+            handshake_encrypted_in: Vec::new(),
             handshake_secret: [0u8; 32],
             server_hs_traffic_secret: [0u8; 32],
             client_hs_traffic_secret: [0u8; 32],
@@ -134,7 +139,10 @@ impl TlsClient {
     pub fn send_app_data(&mut self, data: &[u8]) {
         if self.state != TlsState::Ready { return; }
         if let Some(ref mut keys) = self.app_keys {
-            let encrypted = encrypt_record(keys, CT_APPLICATION_DATA, data);
+            let mut inner = Vec::with_capacity(data.len() + 1);
+            inner.extend_from_slice(data);
+            inner.push(CT_APPLICATION_DATA);
+            let encrypted = encrypt_record(keys, CT_APPLICATION_DATA, &inner);
             self.send_buf.extend_from_slice(&encrypted);
         }
     }
@@ -142,9 +150,15 @@ impl TlsClient {
     /// Return true when there is pending outbound data.
     pub fn has_data_to_send(&self) -> bool { !self.send_buf.is_empty() }
 
-    /// Drain and return the outbound buffer.
-    pub fn take_send_buf(&mut self) -> Vec<u8> {
-        core::mem::take(&mut self.send_buf)
+    /// Borrow the pending outbound TLS bytes.
+    pub fn send_buf(&self) -> &[u8] {
+        &self.send_buf
+    }
+
+    /// Drop bytes that were successfully written to the TCP socket.
+    pub fn consume_send_buf(&mut self, count: usize) {
+        let drain_len = core::cmp::min(count, self.send_buf.len());
+        self.send_buf.drain(..drain_len);
     }
 
     // ====================================================================
@@ -223,7 +237,7 @@ impl TlsClient {
 
         // Supported Versions: TLS 1.3
         let versions = [
-            0x03, // list length (3 bytes: 1 version)
+            0x02, // vector length in bytes: one ProtocolVersion entry
             0x03, 0x04, // TLS 1.3
         ];
         push_extension(&mut ext, EXT_SUPPORTED_VERSIONS, &versions);
@@ -265,10 +279,21 @@ impl TlsClient {
                 CT_CHANGE_CIPHER_SPEC => { /* TLS 1.3: ignore for compatibility */ }
                 CT_APPLICATION_DATA => self.handle_encrypted_record(&record_data),
                 CT_ALERT => {
+                    if record_data.len() >= 2 {
+                        crate::println!(
+                            "[TLS] Alert received: level={} description={}",
+                            record_data[0],
+                            record_data[1]
+                        );
+                    } else {
+                        crate::println!("[TLS] Short alert record received");
+                    }
                     self.state = TlsState::Error;
                     return;
                 }
-                _ => {}
+                other => {
+                    crate::println!("[TLS] Unexpected record content type: {}", other);
+                }
             }
 
             if self.state == TlsState::Error { return; }
@@ -276,42 +301,76 @@ impl TlsClient {
     }
 
     fn handle_handshake(&mut self, data: &[u8]) {
-        if data.len() < 4 { self.state = TlsState::Error; return; }
+        self.handshake_plain_in.extend_from_slice(data);
 
-        let hs_type = data[0];
-        let hs_len = ((data[1] as usize) << 16) | ((data[2] as usize) << 8) | (data[3] as usize);
-
-        if data.len() < 4 + hs_len { self.state = TlsState::Error; return; }
-        let hs_body = &data[4..4 + hs_len];
-
-        match (self.state, hs_type) {
-            (TlsState::WaitServerHello, HT_SERVER_HELLO) => {
-                // Add ServerHello to the transcript.
-                self.transcript.update(&data[..4 + hs_len]);
-                self.handle_server_hello(hs_body);
+        loop {
+            if self.handshake_plain_in.len() < 4 {
+                return;
             }
-            _ => {
-                // Later handshake messages are handled after encryption starts.
+
+            let hs_type = self.handshake_plain_in[0];
+            let hs_len = ((self.handshake_plain_in[1] as usize) << 16)
+                | ((self.handshake_plain_in[2] as usize) << 8)
+                | (self.handshake_plain_in[3] as usize);
+            let full_len = 4 + hs_len;
+
+            if self.handshake_plain_in.len() < full_len {
+                return;
+            }
+
+            let message = self.handshake_plain_in[..full_len].to_vec();
+            self.handshake_plain_in.drain(..full_len);
+            let hs_body = &message[4..];
+
+            crate::println!(
+                "[TLS] Plain handshake message type={} len={}",
+                hs_type,
+                hs_len
+            );
+
+            match (self.state, hs_type) {
+                (TlsState::WaitServerHello, HT_SERVER_HELLO) => {
+                    self.transcript.update(&message);
+                    self.handle_server_hello(hs_body);
+                }
+                _ => {}
+            }
+
+            if self.state == TlsState::Error {
+                return;
             }
         }
     }
 
     fn handle_server_hello(&mut self, body: &[u8]) {
-        if body.len() < 34 { self.state = TlsState::Error; return; }
+        if body.len() < 34 {
+            crate::println!("[TLS] ServerHello too short");
+            self.state = TlsState::Error;
+            return;
+        }
 
         let mut offset = 0;
         // server version (2) + random (32)
         offset += 34;
 
         // session_id
-        if offset >= body.len() { self.state = TlsState::Error; return; }
+        if offset >= body.len() {
+            crate::println!("[TLS] ServerHello missing session id");
+            self.state = TlsState::Error;
+            return;
+        }
         let sid_len = body[offset] as usize;
         offset += 1 + sid_len;
 
         // cipher_suite (2)
-        if offset + 2 > body.len() { self.state = TlsState::Error; return; }
+        if offset + 2 > body.len() {
+            crate::println!("[TLS] ServerHello missing cipher suite");
+            self.state = TlsState::Error;
+            return;
+        }
         let cipher = u16::from_be_bytes([body[offset], body[offset + 1]]);
         if cipher != TLS_AES_128_GCM_SHA256 {
+            crate::println!("[TLS] Unsupported cipher suite: {:#06x}", cipher);
             self.state = TlsState::Error;
             return;
         }
@@ -321,7 +380,11 @@ impl TlsClient {
         offset += 1;
 
         // extensions
-        if offset + 2 > body.len() { self.state = TlsState::Error; return; }
+        if offset + 2 > body.len() {
+            crate::println!("[TLS] ServerHello missing extensions");
+            self.state = TlsState::Error;
+            return;
+        }
         let ext_len = u16::from_be_bytes([body[offset], body[offset + 1]]) as usize;
         offset += 2;
 
@@ -350,12 +413,20 @@ impl TlsClient {
         // Compute the ECDH shared secret.
         let server_pk = match server_public_key {
             Some(pk) => pk,
-            None => { self.state = TlsState::Error; return; }
+            None => {
+                crate::println!("[TLS] ServerHello missing P-256 key share");
+                self.state = TlsState::Error;
+                return;
+            }
         };
 
         let shared_secret = match p256::ecdh_shared_secret(&self.private_key, &server_pk) {
             Some(s) => s,
-            None => { self.state = TlsState::Error; return; }
+            None => {
+                crate::println!("[TLS] P-256 shared secret derivation failed");
+                self.state = TlsState::Error;
+                return;
+            }
         };
 
         // TLS 1.3 key schedule
@@ -441,30 +512,64 @@ impl TlsClient {
 
         if plaintext.is_empty() { return; }
 
-        // The last plaintext byte contains the real content type.
-        let actual_ct = plaintext[plaintext.len() - 1];
-        let inner_data = &plaintext[..plaintext.len() - 1];
+        // TLS 1.3 inner plaintext is content || type || zero-padding.
+        let mut content_type_index = None;
+        for (index, byte) in plaintext.iter().enumerate().rev() {
+            if *byte != 0 {
+                content_type_index = Some(index);
+                break;
+            }
+        }
+
+        let content_type_index = match content_type_index {
+            Some(index) => index,
+            None => {
+                crate::println!("[TLS] Empty inner plaintext after removing padding");
+                self.state = TlsState::Error;
+                return;
+            }
+        };
+
+        let actual_ct = plaintext[content_type_index];
+        let inner_data = &plaintext[..content_type_index];
 
         match actual_ct {
             CT_HANDSHAKE => self.handle_encrypted_handshake(inner_data),
             CT_APPLICATION_DATA => self.app_data_in.extend_from_slice(inner_data),
             CT_ALERT => { self.state = TlsState::Error; }
-            _ => {}
+            other => {
+                crate::println!("[TLS] Unexpected inner content type: {}", other);
+            }
         }
     }
 
     fn handle_encrypted_handshake(&mut self, data: &[u8]) {
-        let mut offset = 0;
-        while offset + 4 <= data.len() {
-            let hs_type = data[offset];
-            let hs_len = ((data[offset+1] as usize) << 16)
-                       | ((data[offset+2] as usize) << 8)
-                       | (data[offset+3] as usize);
-            let end = offset + 4 + hs_len;
-            if end > data.len() { break; }
+        self.handshake_encrypted_in.extend_from_slice(data);
 
-            // Add the message to the transcript.
-            self.transcript.update(&data[offset..end]);
+        loop {
+            if self.handshake_encrypted_in.len() < 4 {
+                return;
+            }
+
+            let hs_type = self.handshake_encrypted_in[0];
+            let hs_len = ((self.handshake_encrypted_in[1] as usize) << 16)
+                | ((self.handshake_encrypted_in[2] as usize) << 8)
+                | (self.handshake_encrypted_in[3] as usize);
+            let end = 4 + hs_len;
+            if self.handshake_encrypted_in.len() < end {
+                return;
+            }
+
+            let message = self.handshake_encrypted_in[..end].to_vec();
+            self.handshake_encrypted_in.drain(..end);
+
+            self.transcript.update(&message);
+
+            crate::println!(
+                "[TLS] Encrypted handshake message type={} len={}",
+                hs_type,
+                hs_len
+            );
 
             match (self.state, hs_type) {
                 (TlsState::WaitEncryptedExtensions, HT_ENCRYPTED_EXTENSIONS) => {
@@ -485,7 +590,10 @@ impl TlsClient {
                 }
                 _ => {}
             }
-            offset = end;
+
+            if self.state == TlsState::Error {
+                return;
+            }
         }
     }
 
@@ -495,6 +603,10 @@ impl TlsClient {
             &self.client_hs_traffic_secret, b"finished", &[], 32);
         let transcript_hash = self.transcript_hash();
         let verify_data = sha256::hmac_sha256(&finished_key, &transcript_hash);
+
+        // TLS 1.3 application traffic secrets are derived from the transcript
+        // up to Server Finished, before Client Finished is appended.
+        let app_transcript_hash = transcript_hash;
 
         // Build the Finished message.
         let mut finished_msg = Vec::new();
@@ -515,12 +627,11 @@ impl TlsClient {
         self.transcript.update(&finished_msg);
 
         // Derive application traffic keys.
-        let transcript_hash = self.transcript_hash();
         let derived2 = derive_secret(&self.handshake_secret, b"derived", &sha256::sha256(&[]));
         let master_secret = sha256::hkdf_extract(&derived2, &[0u8; 32]);
 
-        let c_app_secret = derive_secret(&master_secret, b"c ap traffic", &transcript_hash);
-        let s_app_secret = derive_secret(&master_secret, b"s ap traffic", &transcript_hash);
+        let c_app_secret = derive_secret(&master_secret, b"c ap traffic", &app_transcript_hash);
+        let s_app_secret = derive_secret(&master_secret, b"s ap traffic", &app_transcript_hash);
 
         let sk = hkdf_expand_label(&s_app_secret, b"key", &[], 16);
         let si = hkdf_expand_label(&s_app_secret, b"iv", &[], 12);

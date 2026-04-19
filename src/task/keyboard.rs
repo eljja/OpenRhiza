@@ -152,7 +152,7 @@ fn handle_cli_command(command: &str) {
     crate::println!("cli> {}", command);
 
     match command {
-        "help" => crate::println!("[CLI] Commands: help, clear, status, nexus-fetch, api-register, api-hw, api-driver, api-all"),
+        "help" => crate::println!("[CLI] Commands: help, clear, status, nexus-fetch, api-register, api-register-http, http-health, https-health, https-root, api-hw, api-driver, api-all, gemini-test, gemini <prompt>"),
         "clear" => WRITER.lock().clear_log_area(),
         "status" => {
             crate::println!("[CLI] Keyboard input ready.");
@@ -160,11 +160,18 @@ fn handle_cli_command(command: &str) {
         }
         "nexus-fetch" => queue_api_command(crate::api_v1::ServiceApiCommand::NexusFetch, "nexus_fetch"),
         "api-register" => queue_api_command(crate::api_v1::ServiceApiCommand::Register, "register"),
+        "api-register-http" => queue_api_command(crate::api_v1::ServiceApiCommand::RegisterHttp, "register_http"),
+        "http-health" => queue_api_command(crate::api_v1::ServiceApiCommand::HealthHttp, "health_http"),
+        "https-health" => queue_api_command(crate::api_v1::ServiceApiCommand::HealthHttps, "health_https"),
+        "https-root" => queue_api_command(crate::api_v1::ServiceApiCommand::RootHttps, "root_https"),
         "api-hw" => queue_api_command(crate::api_v1::ServiceApiCommand::HardwareReport, "hardware_report"),
         "api-driver" => queue_api_command(crate::api_v1::ServiceApiCommand::DriverQuery, "driver_query"),
         "api-all" => queue_api_command(crate::api_v1::ServiceApiCommand::All, "full_api_sequence"),
+        "gemini-test" => queue_gemini_prompt("Summarize the current role of OpenRhiza OS in one short sentence.".into()),
         _ => {
-            if let Ok(_) = PROMPT_QUEUE.push(alloc::string::String::from(command)) {
+            if let Some(prompt) = command.strip_prefix("gemini ") {
+                queue_gemini_prompt(alloc::string::String::from(prompt));
+            } else if let Ok(_) = PROMPT_QUEUE.push(alloc::string::String::from(command)) {
                 crate::println!("[CLI] Prompt queued.");
             } else {
                 crate::println!("[CLI] Prompt queue full.");
@@ -179,5 +186,12 @@ fn queue_api_command(command: crate::api_v1::ServiceApiCommand, label: &str) {
     match crate::api_v1::queue_service_api_command(command) {
         Ok(()) => crate::println!("[CLI] Queued API command: {}", label),
         Err(_) => crate::println!("[CLI] API command queue full."),
+    }
+}
+
+fn queue_gemini_prompt(prompt: alloc::string::String) {
+    match crate::api_v1::queue_gemini_prompt(prompt) {
+        Ok(()) => crate::println!("[CLI] Queued Gemini prompt."),
+        Err(_) => crate::println!("[CLI] Gemini prompt queue full."),
     }
 }

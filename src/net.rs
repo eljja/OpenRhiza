@@ -145,6 +145,25 @@ pub fn create_tcp_socket() -> SocketHandle {
     }
 }
 
+pub fn create_udp_socket(rx_capacity: usize, tx_capacity: usize) -> SocketHandle {
+    let udp_rx_buffer = smoltcp::socket::udp::PacketBuffer::new(
+        vec![smoltcp::socket::udp::PacketMetadata::EMPTY; 4],
+        vec![0; rx_capacity],
+    );
+    let udp_tx_buffer = smoltcp::socket::udp::PacketBuffer::new(
+        vec![smoltcp::socket::udp::PacketMetadata::EMPTY; 4],
+        vec![0; tx_capacity],
+    );
+    let udp_socket = smoltcp::socket::udp::Socket::new(udp_rx_buffer, udp_tx_buffer);
+
+    let mut stack_lock = NET_STACK.lock();
+    if let Some(stack) = stack_lock.as_mut() {
+        stack.sockets.add(udp_socket)
+    } else {
+        panic!("Network stack not initialized!");
+    }
+}
+
 pub fn destroy_socket(handle: SocketHandle) {
     let mut stack_lock = NET_STACK.lock();
     if let Some(stack) = stack_lock.as_mut() {
