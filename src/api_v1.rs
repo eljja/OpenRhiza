@@ -4,6 +4,7 @@ use alloc::string::String;
 
 use crossbeam_queue::ArrayQueue;
 use lazy_static::lazy_static;
+use spin::Mutex;
 
 use crate::identity::{HardwareDeviceSummary, NodeProfile, format_mac};
 
@@ -33,10 +34,28 @@ pub enum ServiceApiCommand {
     All,
 }
 
+#[derive(Debug, Clone)]
+pub enum DriverRegistryCommand {
+    UploadGenerated { match_key: String },
+    Comment { driver_id: String, comment: String },
+    Vote { driver_id: String, vote: DriverVote },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DriverVote {
+    Up,
+    Down,
+}
+
 lazy_static! {
     pub static ref SERVICE_API_QUEUE: Arc<ArrayQueue<ServiceApiCommand>> =
         Arc::new(ArrayQueue::new(8));
     pub static ref GEMINI_PROMPT_QUEUE: Arc<ArrayQueue<String>> = Arc::new(ArrayQueue::new(4));
+    pub static ref DRIVER_REGISTRY_QUEUE: Arc<ArrayQueue<DriverRegistryCommand>> =
+        Arc::new(ArrayQueue::new(8));
+    static ref LAST_GEMINI_PROMPT: Mutex<Option<String>> = Mutex::new(None);
+    static ref LAST_GEMINI_TEXT: Mutex<Option<String>> = Mutex::new(None);
+    static ref LAST_GEMINI_MODEL: Mutex<Option<String>> = Mutex::new(None);
 }
 
 pub fn build_node_register_request(profile: &NodeProfile) -> String {
@@ -157,6 +176,33 @@ pub fn queue_gemini_prompt(prompt: String) -> Result<(), String> {
     GEMINI_PROMPT_QUEUE.push(prompt)
 }
 
+pub fn queue_driver_registry_command(
+    command: DriverRegistryCommand,
+) -> Result<(), DriverRegistryCommand> {
+    DRIVER_REGISTRY_QUEUE.push(command)
+}
+
+pub fn record_last_gemini_prompt(prompt: &str) {
+    *LAST_GEMINI_PROMPT.lock() = Some(String::from(prompt));
+}
+
+pub fn record_last_gemini_response(model: &str, text: &str) {
+    *LAST_GEMINI_MODEL.lock() = Some(String::from(model));
+    *LAST_GEMINI_TEXT.lock() = Some(String::from(text));
+}
+
+pub fn last_gemini_text() -> Option<String> {
+    LAST_GEMINI_TEXT.lock().clone()
+}
+
+pub fn last_gemini_prompt() -> Option<String> {
+    LAST_GEMINI_PROMPT.lock().clone()
+}
+
+pub fn last_gemini_model() -> Option<String> {
+    LAST_GEMINI_MODEL.lock().clone()
+}
+
 pub fn openrhiza_host() -> &'static str {
     OPENRHIZA_HOST
 }
@@ -185,6 +231,68 @@ pub fn build_gemini_generate_request(prompt: &str) -> String {
     )
 }
 
+pub fn build_driver_generation_prompt(match_key: &str) -> Option<String> {
+    let profile = crate::identity::current_profile()?;
+    let hardware = driver_hardware_label(&profile, match_key);
+    Some(format!(
+        "Generate a concise Rust no_std driver candidate for OpenRhiza.\nTarget match key: {}\nHardware: {}\nConstraints: text-first OS, kernel-adjacent environment, no_std, incremental validation.\nReturn: 1) driver summary, 2) init path, 3) MMIO/PIO or protocol assumptions, 4) interrupt/polling model, 5) sandbox smoke tests, 6) minimal candidate code or pseudocode that OpenRhiza can refine.",
+        match_key,
+        hardware
+    ))
+}
+
+pub fn build_driver_upload_request(
+    profile: &NodeProfile,
+    match_key: &str,
+    payload_text: &str,
+) -> String {
+    let prompt = last_gemini_prompt().unwrap_or_default();
+    let model = last_gemini_model().unwrap_or_else(|| String::from(gemini_models()[0]));
+    format!(
+        "{{\"protocol_version\":\"{}\",\"node_id\":\"{}\",\"match_key\":\"{}\",\"display_name\":\"{}\",\"hardware\":\"{}\",\"source_type\":\"gemini_generated\",\"model\":\"{}\",\"prompt_hash\":\"sha256:{}\",\"payload_text\":\"{}\"}}",
+        PROTOCOL_VERSION,
+        profile.node_id_hex(),
+        json_escape(match_key),
+        json_escape(&display_name_from_match_key(match_key)),
+        json_escape(&driver_hardware_label(profile, match_key)),
+        json_escape(&model),
+        crate::identity::sha256_hex(prompt.as_bytes()),
+        json_escape(payload_text)
+    )
+}
+
+pub fn build_driver_comment_request(
+    profile: &NodeProfile,
+    driver_id: &str,
+    comment: &str,
+) -> String {
+    format!(
+        "{{\"protocol_version\":\"{}\",\"node_id\":\"{}\",\"driver_id\":\"{}\",\"comment\":\"{}\"}}",
+        PROTOCOL_VERSION,
+        profile.node_id_hex(),
+        json_escape(driver_id),
+        json_escape(comment)
+    )
+}
+
+pub fn build_driver_vote_request(
+    profile: &NodeProfile,
+    driver_id: &str,
+    vote: DriverVote,
+) -> String {
+    let vote = match vote {
+        DriverVote::Up => "up",
+        DriverVote::Down => "down",
+    };
+    format!(
+        "{{\"protocol_version\":\"{}\",\"node_id\":\"{}\",\"driver_id\":\"{}\",\"vote\":\"{}\"}}",
+        PROTOCOL_VERSION,
+        profile.node_id_hex(),
+        json_escape(driver_id),
+        vote
+    )
+}
+
 fn device_json(device: &HardwareDeviceSummary, include_topology: bool) -> String {
     if include_topology {
         format!(
@@ -209,6 +317,25 @@ fn device_json(device: &HardwareDeviceSummary, include_topology: bool) -> String
             device.prog_if
         )
     }
+}
+
+fn display_name_from_match_key(match_key: &str) -> String {
+    format!("Generated Driver {}", match_key)
+}
+
+fn driver_hardware_label(profile: &NodeProfile, match_key: &str) -> String {
+    if let Some(device) = profile
+        .machine_profile
+        .pci_devices
+        .iter()
+        .find(|device| crate::identity::stable_device_match_key(device) == match_key)
+    {
+        return format!(
+            "PCI {:04x}:{:04x} class {:02x}:{:02x}",
+            device.vendor_id, device.device_id, device.class_code, device.subclass
+        );
+    }
+    String::from(match_key)
 }
 
 fn json_escape(input: &str) -> String {

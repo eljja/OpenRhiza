@@ -10,16 +10,36 @@ const VGA_HEIGHT: usize = 25;
 const LOG_START_ROW: usize = 2;
 const LOG_END_ROW: usize = VGA_HEIGHT - 2;
 const INPUT_ROW: usize = VGA_HEIGHT - 1;
+const STATUS_ROW: usize = 0;
 const INPUT_PROMPT: &[u8] = b"cli> ";
 const INPUT_CAPACITY: usize = VGA_WIDTH - INPUT_PROMPT.len();
+const LOG_VISIBLE_ROWS: usize = LOG_END_ROW - LOG_START_ROW + 1;
+const MAX_LOG_LINES: usize = 2048;
+const MAX_COMMAND_HISTORY: usize = 64;
+const PROMPT_COLOR: u8 = 0x0A;
+const LOG_COLOR: u8 = 0x08;
+const USER_ECHO_COLOR: u8 = 0x0A;
+const RESULT_COLOR: u8 = 0x0E;
 
 lazy_static! {
     pub static ref WRITER: Mutex<VgaWriter> = Mutex::new(VgaWriter {
         column_position: 0,
         row_position: LOG_START_ROW,
-        color_code: 0x0A,
+        color_code: PROMPT_COLOR,
         input_buffer: [b' '; INPUT_CAPACITY],
         input_len: 0,
+        log_lines: [[b' '; VGA_WIDTH]; MAX_LOG_LINES],
+        log_line_colors: [LOG_COLOR; MAX_LOG_LINES],
+        log_line_count: 1,
+        log_current_line: 0,
+        scroll_offset: 0,
+        command_history: [[b' '; INPUT_CAPACITY]; MAX_COMMAND_HISTORY],
+        command_history_lens: [0; MAX_COMMAND_HISTORY],
+        command_history_count: 0,
+        command_history_write: 0,
+        history_index: None,
+        history_snapshot: [b' '; INPUT_CAPACITY],
+        history_snapshot_len: 0,
         buffer: unsafe {
             let offset = crate::arch::x86_64::discovery::PHYS_MEM_OFFSET;
             &mut *((offset + VGA_BUFFER_ADDR as u64) as *mut Buffer)
@@ -45,52 +65,74 @@ pub struct VgaWriter {
     color_code: u8,
     input_buffer: [u8; INPUT_CAPACITY],
     input_len: usize,
+    log_lines: [[u8; VGA_WIDTH]; MAX_LOG_LINES],
+    log_line_colors: [u8; MAX_LOG_LINES],
+    log_line_count: usize,
+    log_current_line: usize,
+    scroll_offset: usize,
+    command_history: [[u8; INPUT_CAPACITY]; MAX_COMMAND_HISTORY],
+    command_history_lens: [usize; MAX_COMMAND_HISTORY],
+    command_history_count: usize,
+    command_history_write: usize,
+    history_index: Option<usize>,
+    history_snapshot: [u8; INPUT_CAPACITY],
+    history_snapshot_len: usize,
     buffer: &'static mut Buffer,
 }
 
 impl VgaWriter {
-    pub fn write_byte(&mut self, byte: u8) {
-        match byte {
-            b'\n' => self.new_line(),
-            byte => {
-                if self.column_position >= VGA_WIDTH {
-                    self.new_line();
-                }
+    fn write_fmt_with_color(&mut self, args: fmt::Arguments, color: u8) -> fmt::Result {
+        struct ColorAdapter<'a> {
+            writer: &'a mut VgaWriter,
+            color: u8,
+        }
 
-                let row = self.row_position;
-                let col = self.column_position;
-                let color_code = self.color_code;
-
-                self.buffer.chars[row][col] = ScreenChar {
-                    ascii_character: byte,
-                    color_code,
-                };
-                self.column_position += 1;
+        impl fmt::Write for ColorAdapter<'_> {
+            fn write_str(&mut self, s: &str) -> fmt::Result {
+                self.writer.write_string_with_color(s, self.color);
+                Ok(())
             }
         }
+
+        let mut adapter = ColorAdapter {
+            writer: self,
+            color,
+        };
+        fmt::Write::write_fmt(&mut adapter, args)
+    }
+
+    pub fn write_byte(&mut self, byte: u8) {
+        self.push_log_byte(byte, LOG_COLOR);
+        self.render_log_view();
     }
 
     pub fn write_string(&mut self, s: &str) {
+        self.write_string_with_color(s, LOG_COLOR);
+    }
+
+    pub fn write_string_with_color(&mut self, s: &str, color: u8) {
         for byte in s.bytes() {
             match byte {
-                0x20..=0x7e | b'\n' => self.write_byte(byte),
-                _ => self.write_byte(0xfe),
+                0x20..=0x7e | b'\n' => self.push_log_byte(byte, color),
+                _ => self.push_log_byte(0xfe, color),
             }
         }
+        self.render_log_view();
     }
 
     fn new_line(&mut self) {
-        if self.row_position < LOG_END_ROW {
-            self.row_position += 1;
-        } else {
-            for row in LOG_START_ROW + 1..=LOG_END_ROW {
-                for col in 0..VGA_WIDTH {
-                    let character = self.buffer.chars[row][col];
-                    self.buffer.chars[row - 1][col] = character;
-                }
-            }
-            self.clear_row(LOG_END_ROW);
+        if self.scroll_offset > 0 {
+            self.scroll_offset = (self.scroll_offset + 1).min(self.max_scroll_offset().saturating_add(1));
         }
+        if self.log_line_count < MAX_LOG_LINES {
+            self.log_current_line = self.log_line_count;
+            self.log_line_count += 1;
+        } else {
+            self.log_current_line = (self.log_current_line + 1) % MAX_LOG_LINES;
+        }
+        self.log_lines[self.log_current_line] = blank_line();
+        self.log_line_colors[self.log_current_line] = LOG_COLOR;
+        self.row_position = LOG_END_ROW;
         self.column_position = 0;
     }
 
@@ -117,6 +159,8 @@ impl VgaWriter {
     }
 
     pub fn init_cli(&mut self) {
+        self.render_runtime(0);
+        self.render_log_view();
         self.render_input_line();
     }
 
@@ -141,18 +185,30 @@ impl VgaWriter {
     pub fn submit_input(&mut self) -> Option<String> {
         let line = core::str::from_utf8(&self.input_buffer[..self.input_len]).ok()?.trim();
         let command = String::from(line);
+        if !command.is_empty() {
+            let should_push = !self.last_history_entry_equals(command.as_bytes());
+            if should_push {
+                self.push_history_entry(command.as_bytes());
+            }
+        }
         self.input_buffer[..self.input_len].fill(b' ');
         self.input_len = 0;
+        self.history_index = None;
+        self.history_snapshot.fill(b' ');
+        self.history_snapshot_len = 0;
         self.render_input_line();
         Some(command)
     }
 
     pub fn clear_log_area(&mut self) {
-        for row in LOG_START_ROW..=LOG_END_ROW {
-            self.clear_row(row);
-        }
+        self.log_lines = [[b' '; VGA_WIDTH]; MAX_LOG_LINES];
+        self.log_line_colors = [LOG_COLOR; MAX_LOG_LINES];
+        self.log_line_count = 1;
+        self.log_current_line = 0;
+        self.scroll_offset = 0;
         self.row_position = LOG_START_ROW;
         self.column_position = 0;
+        self.render_log_view();
         self.render_input_line();
     }
 
@@ -164,9 +220,51 @@ impl VgaWriter {
 
     pub fn cursor_right(&mut self) {}
 
-    pub fn history_up(&mut self) {}
+    pub fn history_up(&mut self) {
+        if self.command_history_count == 0 {
+            return;
+        }
 
-    pub fn history_down(&mut self) {}
+        let next_index = match self.history_index {
+            Some(0) => 0,
+            Some(index) => index.saturating_sub(1),
+            None => {
+                self.history_snapshot.fill(b' ');
+                self.history_snapshot[..self.input_len]
+                    .copy_from_slice(&self.input_buffer[..self.input_len]);
+                self.history_snapshot_len = self.input_len;
+                self.command_history_count - 1
+            }
+        };
+
+        self.history_index = Some(next_index);
+        if let Some((entry, len)) = self.history_entry(next_index) {
+            let mut snapshot = [b' '; INPUT_CAPACITY];
+            snapshot[..len].copy_from_slice(&entry[..len]);
+            self.set_input_from_bytes(&snapshot, len);
+        }
+    }
+
+    pub fn history_down(&mut self) {
+        let Some(index) = self.history_index else {
+            return;
+        };
+
+        if index + 1 < self.command_history_count {
+            let next_index = index + 1;
+            self.history_index = Some(next_index);
+            if let Some((entry, len)) = self.history_entry(next_index) {
+                let mut snapshot = [b' '; INPUT_CAPACITY];
+                snapshot[..len].copy_from_slice(&entry[..len]);
+                self.set_input_from_bytes(&snapshot, len);
+            }
+        } else {
+            self.history_index = None;
+            let snapshot = self.history_snapshot;
+            let len = self.history_snapshot_len;
+            self.set_input_from_bytes(&snapshot, len);
+        }
+    }
 
     pub fn home(&mut self) {}
 
@@ -193,11 +291,21 @@ impl VgaWriter {
         }
     }
 
-    pub fn snap_to_bottom(&mut self) {}
+    pub fn snap_to_bottom(&mut self) {
+        self.scroll_offset = 0;
+        self.render_log_view();
+    }
 
-    pub fn scroll_up(&mut self, _lines: usize) {}
+    pub fn scroll_up(&mut self, lines: usize) {
+        let max_offset = self.max_scroll_offset();
+        self.scroll_offset = (self.scroll_offset + lines).min(max_offset);
+        self.render_log_view();
+    }
 
-    pub fn scroll_down(&mut self, _lines: usize) {}
+    pub fn scroll_down(&mut self, lines: usize) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(lines);
+        self.render_log_view();
+    }
 
     fn render_input_line(&mut self) {
         self.clear_row(INPUT_ROW);
@@ -228,6 +336,151 @@ impl VgaWriter {
             };
         }
     }
+
+    pub fn render_runtime(&mut self, total_seconds: u64) {
+        let hours = total_seconds / 3600;
+        let minutes = (total_seconds % 3600) / 60;
+        let seconds = total_seconds % 60;
+        let label = alloc::format!("running {:02}:{:02}:{:02}", hours, minutes, seconds);
+        let bytes = label.as_bytes();
+        let start_col = VGA_WIDTH.saturating_sub(bytes.len());
+
+        for col in 0..VGA_WIDTH {
+            self.buffer.chars[STATUS_ROW][col] = ScreenChar {
+                ascii_character: b' ',
+                color_code: self.color_code,
+            };
+        }
+
+        for (idx, byte) in bytes.iter().enumerate() {
+            let col = start_col + idx;
+            if col < VGA_WIDTH {
+                self.buffer.chars[STATUS_ROW][col] = ScreenChar {
+                    ascii_character: *byte,
+                    color_code: self.color_code,
+                };
+            }
+        }
+    }
+
+    fn push_log_byte(&mut self, byte: u8, color: u8) {
+        match byte {
+            b'\n' => self.new_line(),
+            byte => {
+                if self.column_position >= VGA_WIDTH {
+                    self.new_line();
+                }
+
+                self.log_line_colors[self.log_current_line] = color;
+                self.log_lines[self.log_current_line][self.column_position] = byte;
+                self.column_position += 1;
+            }
+        }
+    }
+
+    fn render_log_view(&mut self) {
+        for row in LOG_START_ROW..=LOG_END_ROW {
+            self.clear_row(row);
+        }
+
+        let total_lines = self.log_line_count;
+        let start_idx = if total_lines > LOG_VISIBLE_ROWS {
+            total_lines - LOG_VISIBLE_ROWS - self.scroll_offset.min(self.max_scroll_offset())
+        } else {
+            0
+        };
+
+        for row_offset in 0..LOG_VISIBLE_ROWS {
+            let row = LOG_START_ROW + row_offset;
+            let Some(line) = self.log_line_by_logical_index(start_idx + row_offset) else {
+                continue;
+            };
+            let line = *line;
+            let color = self
+                .log_line_color_by_logical_index(start_idx + row_offset)
+                .unwrap_or(LOG_COLOR);
+
+            for (col, byte) in line.iter().enumerate() {
+                self.buffer.chars[row][col] = ScreenChar {
+                    ascii_character: *byte,
+                    color_code: color,
+                };
+            }
+        }
+    }
+
+    fn max_scroll_offset(&self) -> usize {
+        self.log_line_count.saturating_sub(LOG_VISIBLE_ROWS)
+    }
+
+    fn set_input_from_bytes(&mut self, value: &[u8], value_len: usize) {
+        self.input_buffer.fill(b' ');
+        let copy_len = value_len.min(INPUT_CAPACITY).min(value.len());
+        self.input_buffer[..copy_len].copy_from_slice(&value[..copy_len]);
+        self.input_len = copy_len;
+        self.render_input_line();
+    }
+
+    fn history_entry(&self, logical_index: usize) -> Option<(&[u8], usize)> {
+        if logical_index >= self.command_history_count {
+            return None;
+        }
+        let physical = self.history_physical_index(logical_index);
+        Some((&self.command_history[physical], self.command_history_lens[physical]))
+    }
+
+    fn history_physical_index(&self, logical_index: usize) -> usize {
+        let oldest = if self.command_history_count < MAX_COMMAND_HISTORY {
+            0
+        } else {
+            self.command_history_write
+        };
+        (oldest + logical_index) % MAX_COMMAND_HISTORY
+    }
+
+    fn push_history_entry(&mut self, value: &[u8]) {
+        let physical = self.command_history_write;
+        self.command_history[physical].fill(b' ');
+        let copy_len = value.len().min(INPUT_CAPACITY);
+        self.command_history[physical][..copy_len].copy_from_slice(&value[..copy_len]);
+        self.command_history_lens[physical] = copy_len;
+
+        if self.command_history_count < MAX_COMMAND_HISTORY {
+            self.command_history_count += 1;
+        }
+        self.command_history_write = (self.command_history_write + 1) % MAX_COMMAND_HISTORY;
+    }
+
+    fn last_history_entry_equals(&self, value: &[u8]) -> bool {
+        if self.command_history_count == 0 {
+            return false;
+        }
+
+        let logical = self.command_history_count - 1;
+        let physical = self.history_physical_index(logical);
+        let len = self.command_history_lens[physical];
+        len == value.len() && &self.command_history[physical][..len] == value
+    }
+
+    fn log_line_by_logical_index(&self, logical_index: usize) -> Option<&[u8; VGA_WIDTH]> {
+        if logical_index >= self.log_line_count {
+            return None;
+        }
+
+        let oldest = (self.log_current_line + MAX_LOG_LINES + 1 - self.log_line_count) % MAX_LOG_LINES;
+        let physical = (oldest + logical_index) % MAX_LOG_LINES;
+        Some(&self.log_lines[physical])
+    }
+
+    fn log_line_color_by_logical_index(&self, logical_index: usize) -> Option<u8> {
+        if logical_index >= self.log_line_count {
+            return None;
+        }
+
+        let oldest = (self.log_current_line + MAX_LOG_LINES + 1 - self.log_line_count) % MAX_LOG_LINES;
+        let physical = (oldest + logical_index) % MAX_LOG_LINES;
+        Some(self.log_line_colors[physical])
+    }
 }
 
 impl fmt::Write for VgaWriter {
@@ -248,13 +501,46 @@ macro_rules! println {
     ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
 }
 
+#[macro_export]
+macro_rules! user_println {
+    ($($arg:tt)*) => ($crate::vga::_print_with_color(format_args!("{}\n", format_args!($($arg)*)), $crate::vga::user_echo_color()));
+}
+
+#[macro_export]
+macro_rules! result_println {
+    ($($arg:tt)*) => ($crate::vga::_print_with_color(format_args!("{}\n", format_args!($($arg)*)), $crate::vga::result_color()));
+}
+
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
-    use core::fmt::Write;
-    WRITER.lock().write_fmt(args).unwrap();
+    _print_with_color(args, LOG_COLOR);
+}
+
+#[doc(hidden)]
+pub fn _print_with_color(args: fmt::Arguments, color: u8) {
+    {
+        let mut writer = WRITER.lock();
+        writer.write_fmt_with_color(args, color).unwrap();
+    }
     crate::arch::x86_64::serial::_print(args);
 }
 
 pub fn init_cli() {
     WRITER.lock().init_cli();
+}
+
+pub fn render_runtime(total_seconds: u64) {
+    WRITER.lock().render_runtime(total_seconds);
+}
+
+pub const fn user_echo_color() -> u8 {
+    USER_ECHO_COLOR
+}
+
+pub const fn result_color() -> u8 {
+    RESULT_COLOR
+}
+
+fn blank_line() -> [u8; VGA_WIDTH] {
+    [b' '; VGA_WIDTH]
 }

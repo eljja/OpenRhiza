@@ -3,7 +3,10 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import type {
+  DriverCommentRequest,
   DriverQueryRequest,
+  DriverUploadRequest,
+  DriverVoteRequest,
   EvaluationUploadRequest,
   HardwareDevice,
   HardwareReportRequest,
@@ -27,6 +30,20 @@ export interface DriverRecord {
   status: "verified" | "testing" | "proposed";
   improvements: string[];
   updated_at: string;
+}
+
+export interface DriverCommentRecord {
+  comment_id: string;
+  driver_id: string;
+  node_id: string;
+  comment: string;
+  created_at: string;
+}
+
+export interface DriverVoteSummary {
+  upvotes: number;
+  downvotes: number;
+  score: number;
 }
 
 export interface SoftwareRecord {
@@ -112,6 +129,16 @@ function mapDriver(row: Record<string, unknown>): DriverRecord {
   };
 }
 
+function mapDriverComment(row: Record<string, unknown>): DriverCommentRecord {
+  return {
+    comment_id: String(row.comment_id),
+    driver_id: String(row.driver_id),
+    node_id: String(row.node_id),
+    comment: String(row.comment_text),
+    created_at: String(row.created_at),
+  };
+}
+
 function mapSoftware(row: Record<string, unknown>): SoftwareRecord {
   return {
     package_id: String(row.package_id),
@@ -168,32 +195,56 @@ function mapEvaluation(row: Record<string, unknown>): EvaluationRecord {
   };
 }
 
-function seedIfEmpty(db: DatabaseSync) {
-  const count = db.prepare("SELECT COUNT(*) AS count FROM drivers").get() as { count: number };
-  if (count.count > 0) {
-    return;
+function normalizeMatchKey(device: HardwareDevice) {
+  return `${device.bus_type}:${device.vendor_id}:${device.device_id}`;
+}
+
+function lookupMatchingDrivers(device: HardwareDevice) {
+  const db = openDb();
+  const exactKey = normalizeMatchKey(device);
+  const rows = db.prepare("SELECT * FROM drivers WHERE match_key = ?").all(exactKey);
+  const exactMatches = rows.map((row) => mapDriver(row as Record<string, unknown>));
+  if (exactMatches.length > 0) {
+    return exactMatches;
   }
 
+  if (!device.class_code) {
+    return [];
+  }
+
+  const classKey = `${device.bus_type}:class:${device.class_code}${device.subclass ?? ""}`;
+  return db
+    .prepare("SELECT * FROM drivers WHERE match_key = ?")
+    .all(classKey)
+    .map((row) => mapDriver(row as Record<string, unknown>));
+}
+
+function seedIfEmpty(db: DatabaseSync) {
   db.exec(`
-    INSERT INTO drivers VALUES
+    INSERT OR IGNORE INTO drivers VALUES
     ('drv_e1000_native_v1','Intel e1000 Native Driver','pci:8086:100e','Intel 82540EM / e1000','builtin_reference',92,88,'Stable baseline network driver for the standard QEMU e1000 adapter.','verified','["Validate RX ring starvation under sustained burst traffic."]','2026-04-18'),
     ('drv_xhci_native_v1','xHCI Native USB Driver','pci:8086:1e31','Generic xHCI USB Host Controller','builtin_reference',85,80,'Native USB host driver used for keyboard input and future HID expansion.','testing','["Add mouse support.","Expand multi-device handling.","Harden long-run polling stability."]','2026-04-18'),
-    ('drv_ahci_candidate_v1','AHCI Storage Candidate','pci:class:0106','Generic AHCI SATA Controller','sandbox_candidate',71,69,'Candidate storage path intended for wider bare-metal validation before promotion.','proposed','["Add write-path validation.","Improve timeout recovery.","Test mixed disk geometries."]','2026-04-17');
+    ('drv_ahci_candidate_v1','AHCI Storage Candidate','pci:class:0106','Generic AHCI SATA Controller','sandbox_candidate',71,69,'Candidate storage path intended for wider bare-metal validation before promotion.','proposed','["Add write-path validation.","Improve timeout recovery.","Test mixed disk geometries."]','2026-04-17'),
+    ('drv_pci_hostbridge_qemu_v1','PCI Host Bridge Baseline','pci:class:0600','Generic PCI host bridge baseline for QEMU and early bare-metal boot paths.','builtin_reference',90,76,'Baseline chipset support record for PCI host bridge discovery and stable enumeration.','verified','["Capture more chipset-specific notes for real hardware."]','2026-04-19'),
+    ('drv_piix_isa_bridge_v1','ISA Bridge Baseline','pci:class:0601','Generic ISA bridge baseline for QEMU PIIX/legacy compatibility paths.','builtin_reference',89,74,'Baseline compatibility record for ISA bridge presence on legacy-compatible virtual hardware.','verified','["Track interrupt routing notes for additional southbridge variants."]','2026-04-19'),
+    ('drv_piix_ide_v1','PIIX IDE Baseline','pci:class:0101','Generic IDE controller baseline for QEMU PIIX storage paths.','builtin_reference',88,78,'Reference IDE controller support record for current OpenRhiza ATA read path.','verified','["Add write-path validation and wider disk geometry coverage."]','2026-04-19'),
+    ('drv_stdvga_qemu_v1','Standard VGA Baseline','pci:class:0300','Generic VGA/display adapter baseline for QEMU standard VGA style adapters.','builtin_reference',87,72,'Display adapter support record for text-first OpenRhiza environments and future framebuffer work.','testing','["Expand beyond text mode and document framebuffer capabilities."]','2026-04-19'),
+    ('drv_xhci_class_baseline_v1','USB xHCI Class Baseline','pci:class:0c03','Generic xHCI class baseline for USB host controller discovery and matching.','builtin_reference',85,80,'Class-based baseline for xHCI host controllers used by keyboard input and future HID devices.','testing','["Confirm exact controller variants and add mouse/HID composite coverage."]','2026-04-19');
 
-    INSERT INTO software_packages VALUES
+    INSERT OR IGNORE INTO software_packages VALUES
     ('pkg_terminal_tools_v1','Terminal Starter Tools','system','text_bundle','Basic CLI-first package set for networked OpenRhiza systems.','available','2026-04-18'),
     ('pkg_diag_console_v1','Diagnostic Console','debugging','text_bundle','Operator-oriented inspection tools for hardware inventory and service API state.','testing','2026-04-18'),
     ('pkg_driver_lab_v1','Driver Lab','development','sandbox_package','Utilities for generating, validating, and promoting driver candidates from the sandbox.','planned','2026-04-16');
 
-    INSERT INTO llm_models VALUES
+    INSERT OR IGNORE INTO llm_models VALUES
     ('llm_remote_general_v1','OpenRhiza Remote General Model','OpenRhiza','remote_api','General-purpose remote inference endpoint for early OpenRhiza nodes.','["driver planning","software generation","registry lookups"]','online'),
     ('llm_google_gateway_candidate','Google API Gateway Candidate','Google','remote_api','Planned external LLM integration for code generation and structured reasoning tasks.','["driver generation","program synthesis","analysis"]','planned');
 
-    INSERT INTO nodes VALUES
+    INSERT OR IGNORE INTO nodes VALUES
     ('orhiza_node_qemu_01','software','seed_public_key_demo','sha256:4fe9...b8a1','online','QEMU test node with e1000 and xHCI keyboard path.','2026-04-18T12:30:00Z',0,'0.1.0','["tls","http_json","signed_wasm"]','{}','[]'),
     ('orhiza_node_lab_02','software','seed_public_key_lab','sha256:ab12...9fd0','testing','Long-run stability validation for input and service API tasks.','2026-04-18T10:05:00Z',0,'0.1.0','["tls","http_json"]','{}','[]');
 
-    INSERT INTO evaluations VALUES
+    INSERT OR IGNORE INTO evaluations VALUES
     ('eval_orhiza_node_qemu_01_drv_e1000_native_v1','Intel e1000 Native Driver','orhiza_node_qemu_01','drv_e1000_native_v1','pci:8086:100e',92,88,'Strong baseline in QEMU. Continue stress testing under repeated API fetch and long uptime.','["Strong baseline in QEMU. Continue stress testing under repeated API fetch and long uptime."]','2026-04-18'),
     ('eval_orhiza_node_lab_02_drv_xhci_native_v1','xHCI Native USB Driver','orhiza_node_lab_02','drv_xhci_native_v1','pci:8086:1e31',85,80,'Good boot and input behavior. Continue checking long-duration keyboard responsiveness.','["Good boot and input behavior. Continue checking long-duration keyboard responsiveness."]','2026-04-18');
   `);
@@ -223,6 +274,33 @@ function openDb() {
       status TEXT NOT NULL,
       improvements_json TEXT NOT NULL,
       updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS driver_artifacts (
+      artifact_id TEXT PRIMARY KEY,
+      driver_id TEXT NOT NULL,
+      node_id TEXT NOT NULL,
+      source_type TEXT NOT NULL,
+      model TEXT NOT NULL,
+      prompt_hash TEXT NOT NULL,
+      payload_text TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS driver_comments (
+      comment_id TEXT PRIMARY KEY,
+      driver_id TEXT NOT NULL,
+      node_id TEXT NOT NULL,
+      comment_text TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS driver_votes (
+      vote_id TEXT PRIMARY KEY,
+      driver_id TEXT NOT NULL,
+      node_id TEXT NOT NULL,
+      vote_value INTEGER NOT NULL,
+      created_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS software_packages (
@@ -278,26 +356,6 @@ function openDb() {
   return database;
 }
 
-function lookupMatchingDrivers(device: HardwareDevice) {
-  const db = openDb();
-  const exactKey = `${device.bus_type}:${device.vendor_id}:${device.device_id}`;
-  const rows = db.prepare("SELECT * FROM drivers WHERE match_key = ?").all(exactKey);
-  const exactMatches = rows.map((row) => mapDriver(row as Record<string, unknown>));
-  if (exactMatches.length > 0) {
-    return exactMatches;
-  }
-
-  if (!device.class_code) {
-    return [];
-  }
-
-  const classKey = `${device.bus_type}:class:${device.class_code}${device.subclass ?? ""}`;
-  return db
-    .prepare("SELECT * FROM drivers WHERE match_key = ?")
-    .all(classKey)
-    .map((row) => mapDriver(row as Record<string, unknown>));
-}
-
 export function listDrivers() {
   return openDb()
     .prepare("SELECT * FROM drivers ORDER BY updated_at DESC, driver_id ASC")
@@ -310,6 +368,36 @@ export function getDriver(driverId: string) {
     | Record<string, unknown>
     | undefined;
   return row ? mapDriver(row) : null;
+}
+
+export function getDriverByMatchKey(matchKey: string) {
+  const row = openDb().prepare("SELECT * FROM drivers WHERE match_key = ?").get(matchKey) as
+    | Record<string, unknown>
+    | undefined;
+  return row ? mapDriver(row) : null;
+}
+
+export function listDriverCommentsForDriver(driverId: string) {
+  return openDb()
+    .prepare("SELECT * FROM driver_comments WHERE driver_id = ? ORDER BY created_at DESC")
+    .all(driverId)
+    .map((row) => mapDriverComment(row as Record<string, unknown>));
+}
+
+export function getDriverVoteSummary(driverId: string): DriverVoteSummary {
+  const row = openDb()
+    .prepare(`
+      SELECT
+        SUM(CASE WHEN vote_value > 0 THEN 1 ELSE 0 END) AS upvotes,
+        SUM(CASE WHEN vote_value < 0 THEN 1 ELSE 0 END) AS downvotes
+      FROM driver_votes
+      WHERE driver_id = ?
+    `)
+    .get(driverId) as Record<string, unknown> | undefined;
+
+  const upvotes = Number(row?.upvotes ?? 0);
+  const downvotes = Number(row?.downvotes ?? 0);
+  return { upvotes, downvotes, score: upvotes - downvotes };
 }
 
 export function listSoftwarePackages() {
@@ -464,15 +552,111 @@ export function recordHardwareReport(input: HardwareReportRequest) {
 
 export function queryDrivers(input: DriverQueryRequest) {
   const deduped = new Map<string, DriverRecord>();
+  let matchedDevices = 0;
+
   for (const device of input.devices) {
-    for (const match of lookupMatchingDrivers(device)) {
+    const matches = lookupMatchingDrivers(device);
+    if (matches.length > 0) {
+      matchedDevices += 1;
+    }
+    for (const match of matches) {
       deduped.set(match.driver_id, match);
     }
   }
 
   return {
-    recommendations: [...deduped.values()],
+    requested_devices: input.devices.length,
+    matched_devices: matchedDevices,
+    unmatched_devices: input.devices.length - matchedDevices,
+    recommendations: [...deduped.values()].map((driver) => ({
+      ...driver,
+      vote_summary: getDriverVoteSummary(driver.driver_id),
+    })),
   };
+}
+
+export function uploadGeneratedDriver(input: DriverUploadRequest) {
+  const db = openDb();
+  const now = new Date().toISOString();
+  const existing = getDriverByMatchKey(input.match_key);
+  const driverId = existing?.driver_id ?? `drv_generated_${input.match_key.replace(/[^a-z0-9]+/gi, "_").toLowerCase()}`;
+  const artifactId = `artifact_${driverId}_${Date.now()}`;
+
+  if (!existing) {
+    db.prepare(`
+      INSERT INTO drivers (
+        driver_id, display_name, match_key, hardware, delivery_type, stability_score,
+        performance_score, summary, status, improvements_json, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      driverId,
+      input.display_name,
+      input.match_key,
+      input.hardware,
+      input.source_type,
+      55,
+      55,
+      `Gemini-generated candidate uploaded by ${input.node_id}. Pending sandbox validation and field feedback.`,
+      "proposed",
+      JSON.stringify(["Run sandbox smoke tests.", "Validate on matching hardware.", "Collect comments and votes before promotion."]),
+      now,
+    );
+  }
+
+  db.prepare(`
+    INSERT INTO driver_artifacts (
+      artifact_id, driver_id, node_id, source_type, model, prompt_hash, payload_text, created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    artifactId,
+    driverId,
+    input.node_id,
+    input.source_type,
+    input.model,
+    input.prompt_hash,
+    input.payload_text,
+    now,
+  );
+
+  db.prepare("UPDATE drivers SET updated_at = ?, status = 'testing' WHERE driver_id = ?").run(now, driverId);
+
+  return {
+    driver_id: driverId,
+    artifact_id: artifactId,
+    reused_existing_driver: Boolean(existing),
+  };
+}
+
+export function addDriverComment(input: DriverCommentRequest) {
+  const commentId = `comment_${input.driver_id}_${Date.now()}`;
+  const now = new Date().toISOString();
+
+  openDb()
+    .prepare(`
+      INSERT INTO driver_comments (comment_id, driver_id, node_id, comment_text, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `)
+    .run(commentId, input.driver_id, input.node_id, input.comment, now);
+
+  return {
+    comment_id: commentId,
+    driver_id: input.driver_id,
+  };
+}
+
+export function addDriverVote(input: DriverVoteRequest) {
+  const voteId = `vote_${input.driver_id}_${input.node_id}_${Date.now()}`;
+  const now = new Date().toISOString();
+  const voteValue = input.vote === "up" ? 1 : -1;
+
+  openDb()
+    .prepare(`
+      INSERT INTO driver_votes (vote_id, driver_id, node_id, vote_value, created_at)
+      VALUES (?, ?, ?, ?, ?)
+    `)
+    .run(voteId, input.driver_id, input.node_id, voteValue, now);
+
+  return getDriverVoteSummary(input.driver_id);
 }
 
 export function querySoftware(_input: SoftwareQueryRequest) {
@@ -532,36 +716,30 @@ export function archiveUploadedDriver(input: {
   code_snippet?: string;
   warnings?: string;
 }) {
-  const db = openDb();
-  const now = new Date().toISOString();
-  const hardwareId = (input.hardware_id ?? "custom:unknown").toLowerCase();
-  const driverId = `drv_uploaded_${hardwareId.replace(/[^a-z0-9]+/g, "_")}_${Date.now()}`;
-  const displayName = input.display_name ?? input.hardware_name ?? `Uploaded Driver ${hardwareId}`;
-  const summary = input.warnings
-    ? `Uploaded candidate driver. Notes: ${input.warnings}`
-    : "Uploaded candidate driver from an OpenRhiza node.";
+  const normalizedHardwareId = (input.hardware_id ?? "custom:unknown").toLowerCase();
+  const uploaded = uploadGeneratedDriver({
+    protocol_version: "v1",
+    node_id: input.node_id ?? "legacy_upload",
+    match_key: `pci:${normalizedHardwareId}`,
+    display_name: input.display_name ?? input.hardware_name ?? `Uploaded Driver ${normalizedHardwareId}`,
+    hardware: input.hardware_name ?? normalizedHardwareId,
+    source_type: "gemini_generated",
+    model: "legacy_upload",
+    prompt_hash: "legacy_upload",
+    payload_text: input.code_snippet ?? "",
+  });
 
-  db.prepare(`
-    INSERT INTO drivers (
-      driver_id, display_name, match_key, hardware, delivery_type, stability_score,
-      performance_score, summary, status, improvements_json, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    driverId,
-    displayName,
-    `pci:${hardwareId}`,
-    input.hardware_name ?? hardwareId,
-    "uploaded_candidate",
-    60,
-    60,
-    summary,
-    "proposed",
-    JSON.stringify(input.code_snippet ? ["Review uploaded code snippet before promotion."] : []),
-    now,
-  );
+  if (input.warnings) {
+    addDriverComment({
+      protocol_version: "v1",
+      node_id: input.node_id ?? "legacy_upload",
+      driver_id: uploaded.driver_id,
+      comment: input.warnings,
+    });
+  }
 
   return {
-    id: driverId,
+    id: uploaded.driver_id,
     message: "Driver payload archived in Nexus.",
   };
 }

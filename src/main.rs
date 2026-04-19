@@ -55,7 +55,17 @@ enum ServiceApiPhase {
     RootHttps,
     HardwareReport,
     DriverQuery,
+    DriverUpload,
+    DriverComment,
+    DriverVote,
     Done,
+}
+
+#[derive(Clone)]
+struct ServiceRequestSpec {
+    phase: ServiceApiPhase,
+    path: String,
+    body: String,
 }
 
 enum PendingDnsAction {
@@ -63,6 +73,7 @@ enum PendingDnsAction {
         phase: ServiceApiPhase,
         chain_active: bool,
     },
+    CustomService(ServiceRequestSpec),
     PlainHttp(PlainHttpAction),
     Gemini(GeminiRequest),
 }
@@ -169,20 +180,9 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
     let mut executor = task::executor::Executor::new();
     executor.spawn(task::Task::new(task::keyboard::keyboard_task()));
     executor.spawn(task::Task::new(usb_input_task()));
+    executor.spawn(task::Task::new(runtime_status_task()));
     executor.spawn(task::Task::new(core_os_task(rhiza)));
-    executor.spawn(task::Task::new(background_llm_worker()));
     executor.run();
-}
-
-async fn background_llm_worker() {
-    crate::println!("[Task] background_llm_worker started");
-    loop {
-        if let Some(_prompt) = crate::task::keyboard::PROMPT_QUEUE.pop() {
-            crate::task::timer::sleep_ticks(10).await;
-        } else {
-            crate::task::timer::sleep_ticks(100).await;
-        }
-    }
 }
 
 async fn usb_input_task() {
@@ -191,6 +191,15 @@ async fn usb_input_task() {
         crate::task::timer::sleep_ticks(1).await;
         crate::arch::x86_64::usb::poll_usb_keyboard();
         crate::arch::x86_64::usb::tick_usb_keyboard();
+    }
+}
+
+async fn runtime_status_task() {
+    loop {
+        let ticks = crate::task::timer::TICKS.load(core::sync::atomic::Ordering::Relaxed);
+        let seconds = ticks / crate::task::timer::TICKS_PER_SECOND;
+        crate::vga::render_runtime(seconds);
+        crate::task::timer::sleep_ticks(crate::task::timer::TICKS_PER_SECOND).await;
     }
 }
 
@@ -401,6 +410,28 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
 
         if nexus_client.is_none()
             && service_api_client.is_none()
+            && plain_http_client.is_none()
+            && gemini_client.is_none()
+            && dns_client.is_none()
+            && service_api_phase == ServiceApiPhase::Idle
+        {
+            if let Some(command) = crate::api_v1::DRIVER_REGISTRY_QUEUE.pop() {
+                if let Some(spec) = build_custom_service_request_from_driver_command(&command) {
+                    if let Some(ip) = openrhiza_ip {
+                        service_api_client = spawn_service_api_client_from_spec(&spec, ip);
+                        if service_api_client.is_some() {
+                            service_api_phase = spec.phase;
+                        }
+                    } else {
+                        dns_client = Some(spawn_dns_client(crate::api_v1::openrhiza_host()));
+                        pending_dns_action = Some(PendingDnsAction::CustomService(spec));
+                    }
+                }
+            }
+        }
+
+        if nexus_client.is_none()
+            && service_api_client.is_none()
             && gemini_client.is_none()
             && dns_client.is_none()
             && service_api_phase == ServiceApiPhase::Idle
@@ -440,6 +471,15 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
                             service_api_phase = phase;
                         } else {
                             service_api_chain_active = false;
+                            service_api_phase = ServiceApiPhase::Idle;
+                        }
+                    }
+                    Some(PendingDnsAction::CustomService(spec)) => {
+                        openrhiza_ip = Some(resolved_ip);
+                        service_api_client = spawn_service_api_client_from_spec(&spec, resolved_ip);
+                        if service_api_client.is_some() {
+                            service_api_phase = spec.phase;
+                        } else {
                             service_api_phase = ServiceApiPhase::Idle;
                         }
                     }
@@ -545,6 +585,14 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
             if let Some(response) = client.take_response() {
                 crate::net::destroy_socket(client.handle());
                 if (200..300).contains(&response.status_code) {
+                    if let Some(text) = extract_first_text_field(&response.body) {
+                        if let Some(request) = &gemini_request {
+                            crate::api_v1::record_last_gemini_response(
+                                gemini_model_name(request.model_index),
+                                text.as_str(),
+                            );
+                        }
+                    }
                     log_gemini_response(&response);
                     gemini_client = None;
                     gemini_request = None;
@@ -669,6 +717,28 @@ fn spawn_dns_client(hostname: &'static str) -> crate::dns::DnsClient {
     crate::dns::DnsClient::new(socket_handle, crate::dns::DEFAULT_DNS_SERVER, hostname)
 }
 
+fn spawn_service_api_client_from_spec(
+    spec: &ServiceRequestSpec,
+    target_ip: Ipv4Address,
+) -> Option<crate::https::ApiClient> {
+    let socket_handle = crate::net::create_tcp_socket();
+    crate::println!(
+        "[API v1] Starting {} -> {}",
+        service_api_phase_name(spec.phase),
+        spec.path
+    );
+
+    Some(crate::https::ApiClient::new(
+        socket_handle,
+        smoltcp::wire::IpAddress::Ipv4(target_ip),
+        443,
+        crate::api_v1::openrhiza_host(),
+        crate::https::ApiMethod::Post,
+        spec.path.as_str(),
+        spec.body.as_bytes().to_vec(),
+    ))
+}
+
 fn spawn_service_api_client(
     phase: ServiceApiPhase,
     target_ip: Ipv4Address,
@@ -719,6 +789,38 @@ fn spawn_service_api_client(
         path,
         body,
     ))
+}
+
+fn build_custom_service_request_from_driver_command(
+    command: &crate::api_v1::DriverRegistryCommand,
+) -> Option<ServiceRequestSpec> {
+    let profile = crate::identity::current_profile()?;
+    match command {
+        crate::api_v1::DriverRegistryCommand::UploadGenerated { match_key } => {
+            let payload = match crate::api_v1::last_gemini_text() {
+                Some(payload) if !payload.is_empty() => payload,
+                _ => {
+                    crate::result_println!("[Driver] No generated Gemini text is available to upload.");
+                    return None;
+                }
+            };
+            Some(ServiceRequestSpec {
+                phase: ServiceApiPhase::DriverUpload,
+                path: String::from("/api/v1/driver/upload"),
+                body: crate::api_v1::build_driver_upload_request(&profile, match_key, payload.as_str()),
+            })
+        }
+        crate::api_v1::DriverRegistryCommand::Comment { driver_id, comment } => Some(ServiceRequestSpec {
+            phase: ServiceApiPhase::DriverComment,
+            path: String::from("/api/v1/driver/comment"),
+            body: crate::api_v1::build_driver_comment_request(&profile, driver_id, comment),
+        }),
+        crate::api_v1::DriverRegistryCommand::Vote { driver_id, vote } => Some(ServiceRequestSpec {
+            phase: ServiceApiPhase::DriverVote,
+            path: String::from("/api/v1/driver/vote"),
+            body: crate::api_v1::build_driver_vote_request(&profile, driver_id, *vote),
+        }),
+    }
 }
 
 fn spawn_gemini_client(
@@ -818,11 +920,13 @@ fn gemini_model_name(index: usize) -> &'static str {
 }
 
 fn log_service_api_response(phase: ServiceApiPhase, response: &crate::https::ApiResponse) {
-    crate::println!(
+    crate::result_println!(
         "[API v1] {} response status: {}",
         service_api_phase_name(phase),
         response.status_code
     );
+
+    log_service_api_summary(phase, &response.body);
 
     match core::str::from_utf8(&response.body) {
         Ok(body) => crate::println!("[API v1] {} response body: {}", service_api_phase_name(phase), body),
@@ -834,11 +938,174 @@ fn log_service_api_response(phase: ServiceApiPhase, response: &crate::https::Api
     }
 }
 
+fn log_service_api_summary(phase: ServiceApiPhase, body: &[u8]) {
+    let Some(body_text) = core::str::from_utf8(body).ok() else {
+        return;
+    };
+
+    match phase {
+        ServiceApiPhase::Register => {
+            if let Some(node_id) = extract_json_string(body_text, "node_id") {
+                crate::result_println!("[API v1] register node_id: {}", node_id);
+            }
+            if let Some(trust_tier) = extract_json_string(body_text, "trust_tier") {
+                crate::result_println!("[API v1] register trust_tier: {}", trust_tier);
+            }
+        }
+        ServiceApiPhase::HardwareReport => {
+            if let Some(profile_id) = extract_json_string(body_text, "profile_id") {
+                crate::result_println!("[API v1] hardware profile_id: {}", profile_id);
+            }
+            if let Some(recognized) = extract_json_number(body_text, "recognized_devices") {
+                crate::result_println!("[API v1] hardware recognized_devices: {}", recognized);
+            }
+            if let Some(unknown) = extract_json_number(body_text, "unknown_devices") {
+                crate::result_println!("[API v1] hardware unknown_devices: {}", unknown);
+            }
+        }
+        ServiceApiPhase::DriverQuery => {
+            if let Some(requested) = extract_json_number(body_text, "requested_devices") {
+                crate::result_println!("[API v1] driver requested_devices: {}", requested);
+            }
+            if let Some(matched) = extract_json_number(body_text, "matched_devices") {
+                crate::result_println!("[API v1] driver matched_devices: {}", matched);
+            }
+            if let Some(unmatched) = extract_json_number(body_text, "unmatched_devices") {
+                crate::result_println!("[API v1] driver unmatched_devices: {}", unmatched);
+            }
+
+            let recommendation_count = body_text.matches("\"driver_id\":\"").count();
+            crate::result_println!(
+                "[API v1] driver recommendations: {}",
+                recommendation_count
+            );
+
+            let match_keys = extract_json_string_list(body_text, "match_key");
+            for driver_id in extract_json_string_list(body_text, "driver_id").iter().take(3) {
+                crate::result_println!("[API v1] driver candidate: {}", driver_id);
+            }
+            log_unmatched_local_devices(&match_keys);
+        }
+        ServiceApiPhase::DriverUpload => {
+            if let Some(driver_id) = extract_json_string(body_text, "driver_id") {
+                crate::result_println!("[API v1] uploaded driver_id: {}", driver_id);
+            }
+            if let Some(artifact_id) = extract_json_string(body_text, "artifact_id") {
+                crate::result_println!("[API v1] uploaded artifact_id: {}", artifact_id);
+            }
+        }
+        ServiceApiPhase::DriverComment => {
+            if let Some(comment_id) = extract_json_string(body_text, "comment_id") {
+                crate::result_println!("[API v1] driver comment_id: {}", comment_id);
+            }
+        }
+        ServiceApiPhase::DriverVote => {
+            if let Some(upvotes) = extract_json_number(body_text, "upvotes") {
+                crate::result_println!("[API v1] driver upvotes: {}", upvotes);
+            }
+            if let Some(downvotes) = extract_json_number(body_text, "downvotes") {
+                crate::result_println!("[API v1] driver downvotes: {}", downvotes);
+            }
+            if let Some(score) = extract_json_signed_number(body_text, "score") {
+                crate::result_println!("[API v1] driver vote score: {}", score);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn log_unmatched_local_devices(match_keys: &[String]) {
+    let Some(profile) = crate::identity::current_profile() else {
+        return;
+    };
+
+    let mut unmatched_count = 0;
+    for device in &profile.machine_profile.pci_devices {
+        let exact_key = crate::identity::stable_device_match_key(device);
+        let class_key = class_device_match_key(device);
+        let matched = match_keys.iter().any(|key| key == &exact_key || key == &class_key);
+        if !matched {
+            unmatched_count += 1;
+            crate::result_println!(
+                "[API v1] unmatched local device: {} (class {:02x}:{:02x})",
+                exact_key,
+                device.class_code,
+                device.subclass
+            );
+        }
+    }
+
+    if unmatched_count == 0 {
+        crate::result_println!("[API v1] all local PCI devices matched a driver baseline");
+    }
+}
+
+fn class_device_match_key(device: &crate::identity::HardwareDeviceSummary) -> String {
+    format!(
+        "{}:class:{:02x}{:02x}",
+        device.bus_type, device.class_code, device.subclass
+    )
+}
+
+fn extract_json_string<'a>(body: &'a str, key: &str) -> Option<&'a str> {
+    let pattern = alloc::format!("\"{}\":\"", key);
+    let start = body.find(pattern.as_str())? + pattern.len();
+    let rest = &body[start..];
+    let end = rest.find('"')?;
+    Some(&rest[..end])
+}
+
+fn extract_json_number(body: &str, key: &str) -> Option<u64> {
+    let pattern = alloc::format!("\"{}\":", key);
+    let start = body.find(pattern.as_str())? + pattern.len();
+    let rest = &body[start..];
+    let digits_len = rest
+        .bytes()
+        .take_while(|byte| byte.is_ascii_digit())
+        .count();
+    if digits_len == 0 {
+        return None;
+    }
+    rest[..digits_len].parse::<u64>().ok()
+}
+
+fn extract_json_signed_number(body: &str, key: &str) -> Option<i64> {
+    let pattern = alloc::format!("\"{}\":", key);
+    let start = body.find(pattern.as_str())? + pattern.len();
+    let rest = &body[start..];
+    let digits_len = rest
+        .bytes()
+        .take_while(|byte| byte.is_ascii_digit() || *byte == b'-')
+        .count();
+    if digits_len == 0 {
+        return None;
+    }
+    rest[..digits_len].parse::<i64>().ok()
+}
+
+fn extract_json_string_list(body: &str, key: &str) -> alloc::vec::Vec<String> {
+    let pattern = alloc::format!("\"{}\":\"", key);
+    let mut values = alloc::vec::Vec::new();
+    let mut search_start = 0;
+
+    while let Some(found) = body[search_start..].find(pattern.as_str()) {
+        let value_start = search_start + found + pattern.len();
+        let rest = &body[value_start..];
+        let Some(end) = rest.find('"') else {
+            break;
+        };
+        values.push(String::from(&rest[..end]));
+        search_start = value_start + end + 1;
+    }
+
+    values
+}
+
 fn log_gemini_response(response: &crate::https::ApiResponse) {
-    crate::println!("[Gemini] response status: {}", response.status_code);
+    crate::result_println!("[Gemini] response status: {}", response.status_code);
 
     if let Some(text) = extract_first_text_field(&response.body) {
-        crate::println!("[Gemini] text: {}", text);
+        crate::result_println!("[Gemini] {}", text);
         return;
     }
 
@@ -863,11 +1130,37 @@ fn log_plain_http_response(response: &crate::https::ApiResponse) {
 }
 
 fn extract_first_text_field(body: &[u8]) -> Option<String> {
-    let start = find_subsequence(body, b"\"text\":\"")? + 8;
+    let key_start = find_subsequence(body, b"\"text\"")?;
+    let mut cursor = key_start + 6;
+
+    while let Some(byte) = body.get(cursor) {
+        if !byte.is_ascii_whitespace() {
+            break;
+        }
+        cursor += 1;
+    }
+
+    if body.get(cursor)? != &b':' {
+        return None;
+    }
+    cursor += 1;
+
+    while let Some(byte) = body.get(cursor) {
+        if !byte.is_ascii_whitespace() {
+            break;
+        }
+        cursor += 1;
+    }
+
+    if body.get(cursor)? != &b'"' {
+        return None;
+    }
+    cursor += 1;
+
     let mut out = String::new();
     let mut escaped = false;
 
-    for &byte in &body[start..] {
+    for &byte in &body[cursor..] {
         if escaped {
             match byte {
                 b'n' => out.push('\n'),
@@ -905,6 +1198,9 @@ fn service_api_phase_name(phase: ServiceApiPhase) -> &'static str {
         ServiceApiPhase::RootHttps => "root_https",
         ServiceApiPhase::HardwareReport => "hardware_report",
         ServiceApiPhase::DriverQuery => "driver_query",
+        ServiceApiPhase::DriverUpload => "driver_upload",
+        ServiceApiPhase::DriverComment => "driver_comment",
+        ServiceApiPhase::DriverVote => "driver_vote",
         ServiceApiPhase::Done => "done",
     }
 }

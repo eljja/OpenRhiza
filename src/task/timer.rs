@@ -1,13 +1,15 @@
 use alloc::vec::Vec;
 use core::{
     pin::Pin,
+    sync::atomic::{AtomicU64, Ordering},
     task::{Context, Poll, Waker},
 };
 use spin::Mutex;
+use x86_64::instructions::interrupts;
 
 pub const TICKS_PER_SECOND: u64 = 1_000;
 pub static TIMER_WAKERS: Mutex<Vec<Waker>> = Mutex::new(Vec::new());
-pub static TICKS: Mutex<u64> = Mutex::new(0);
+pub static TICKS: AtomicU64 = AtomicU64::new(0);
 
 pub const fn ms_to_ticks(ms: u64) -> u64 {
     let ticks = (ms * TICKS_PER_SECOND + (TICKS_PER_SECOND - 1)) / TICKS_PER_SECOND;
@@ -15,8 +17,7 @@ pub const fn ms_to_ticks(ms: u64) -> u64 {
 }
 
 pub fn timer_tick() {
-    let mut ticks = TICKS.lock();
-    *ticks += 1;
+    TICKS.fetch_add(1, Ordering::Relaxed);
     for waker in TIMER_WAKERS.lock().drain(..) {
         waker.wake();
     }
@@ -28,7 +29,7 @@ pub struct TimerFuture {
 
 impl TimerFuture {
     pub fn new(delay_ticks: u64) -> Self {
-        let current = *TICKS.lock();
+        let current = TICKS.load(Ordering::Relaxed);
         TimerFuture { target_tick: current + delay_ticks }
     }
 }
@@ -37,14 +38,16 @@ impl core::future::Future for TimerFuture {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Self::Output> {
-        let current = *TICKS.lock();
+        let current = TICKS.load(Ordering::Relaxed);
         if current >= self.target_tick {
             Poll::Ready(())
         } else {
-            let mut wakers = TIMER_WAKERS.lock();
-            if !wakers.iter().any(|waker| waker.will_wake(cx.waker())) {
-                wakers.push(cx.waker().clone());
-            }
+            interrupts::without_interrupts(|| {
+                let mut wakers = TIMER_WAKERS.lock();
+                if !wakers.iter().any(|waker| waker.will_wake(cx.waker())) {
+                    wakers.push(cx.waker().clone());
+                }
+            });
             Poll::Pending
         }
     }

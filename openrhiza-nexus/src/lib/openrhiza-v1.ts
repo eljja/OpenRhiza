@@ -74,6 +74,32 @@ export interface DriverQueryRequest {
   devices: HardwareDevice[];
 }
 
+export interface DriverUploadRequest {
+  protocol_version: "v1";
+  node_id: string;
+  match_key: string;
+  display_name: string;
+  hardware: string;
+  source_type: "gemini_generated";
+  model: string;
+  prompt_hash: string;
+  payload_text: string;
+}
+
+export interface DriverCommentRequest {
+  protocol_version: "v1";
+  node_id: string;
+  driver_id: string;
+  comment: string;
+}
+
+export interface DriverVoteRequest {
+  protocol_version: "v1";
+  node_id: string;
+  driver_id: string;
+  vote: "up" | "down";
+}
+
 export interface SoftwareQueryRequest {
   protocol_version: "v1";
   node_id: string;

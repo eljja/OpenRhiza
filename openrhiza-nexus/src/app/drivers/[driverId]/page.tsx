@@ -1,6 +1,11 @@
 import { notFound } from "next/navigation";
 
-import { getDriver, listEvaluationsForDriver } from "@/app/registry-data";
+import {
+  getDriver,
+  getDriverVoteSummary,
+  listDriverCommentsForDriver,
+  listEvaluationsForDriver,
+} from "@/app/registry-data";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +22,8 @@ export default async function DriverDetailPage({
   }
 
   const evaluations = listEvaluationsForDriver(driverId);
+  const comments = listDriverCommentsForDriver(driverId);
+  const voteSummary = getDriverVoteSummary(driverId);
 
   return (
     <main className="min-h-screen bg-[linear-gradient(180deg,#07111f_0%,#08172a_50%,#040913_100%)] text-slate-100">
@@ -33,10 +40,10 @@ export default async function DriverDetailPage({
           <p className="mt-5 text-sm leading-7 text-slate-300">{driver.summary}</p>
         </header>
 
-        <section className="grid gap-4 md:grid-cols-2">
-          <div className="rounded-[24px] border border-white/10 bg-slate-950/45 p-6">
+        <section className="grid gap-4 md:grid-cols-3">
+          <div className="rounded-[24px] border border-white/10 bg-slate-950/45 p-6 md:col-span-2">
             <h2 className="text-xl font-semibold text-white">Scores</h2>
-            <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
               <div className="rounded-2xl border border-white/8 bg-white/5 px-4 py-4">
                 <div className="text-xs uppercase tracking-[0.22em] text-slate-400">Stability</div>
                 <div className="mt-2 text-3xl font-semibold text-white">{driver.stability_score}</div>
@@ -44,6 +51,14 @@ export default async function DriverDetailPage({
               <div className="rounded-2xl border border-white/8 bg-white/5 px-4 py-4">
                 <div className="text-xs uppercase tracking-[0.22em] text-slate-400">Performance</div>
                 <div className="mt-2 text-3xl font-semibold text-white">{driver.performance_score}</div>
+              </div>
+              <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 px-4 py-4">
+                <div className="text-xs uppercase tracking-[0.22em] text-emerald-200/80">Upvotes</div>
+                <div className="mt-2 text-3xl font-semibold text-white">{voteSummary.upvotes}</div>
+              </div>
+              <div className="rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-4">
+                <div className="text-xs uppercase tracking-[0.22em] text-rose-200/80">Downvotes</div>
+                <div className="mt-2 text-3xl font-semibold text-white">{voteSummary.downvotes}</div>
               </div>
             </div>
           </div>
@@ -57,6 +72,25 @@ export default async function DriverDetailPage({
                 </li>
               ))}
             </ul>
+          </div>
+        </section>
+
+        <section className="rounded-[24px] border border-white/10 bg-slate-950/45 p-6">
+          <h2 className="text-xl font-semibold text-white">Recent Comments</h2>
+          <div className="mt-4 space-y-4">
+            {comments.length === 0 ? (
+              <p className="text-sm text-slate-400">No comments recorded yet.</p>
+            ) : (
+              comments.map((comment) => (
+                <article key={comment.comment_id} className="rounded-2xl border border-white/8 bg-white/5 p-4">
+                  <div className="flex flex-wrap justify-between gap-3 text-sm text-slate-300">
+                    <div>{comment.node_id}</div>
+                    <div>{comment.created_at}</div>
+                  </div>
+                  <p className="mt-3 text-sm leading-7 text-slate-300">{comment.comment}</p>
+                </article>
+              ))
+            )}
           </div>
         </section>
 
