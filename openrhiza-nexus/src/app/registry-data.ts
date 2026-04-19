@@ -628,6 +628,11 @@ export function uploadGeneratedDriver(input: DriverUploadRequest) {
 }
 
 export function addDriverComment(input: DriverCommentRequest) {
+  const driver = getDriver(input.driver_id);
+  if (!driver) {
+    throw new Error(`Driver not found: ${input.driver_id}`);
+  }
+
   const commentId = `comment_${input.driver_id}_${Date.now()}`;
   const now = new Date().toISOString();
 
@@ -645,6 +650,11 @@ export function addDriverComment(input: DriverCommentRequest) {
 }
 
 export function addDriverVote(input: DriverVoteRequest) {
+  const driver = getDriver(input.driver_id);
+  if (!driver) {
+    throw new Error(`Driver not found: ${input.driver_id}`);
+  }
+
   const voteId = `vote_${input.driver_id}_${input.node_id}_${Date.now()}`;
   const now = new Date().toISOString();
   const voteValue = input.vote === "up" ? 1 : -1;
@@ -743,3 +753,4 @@ export function archiveUploadedDriver(input: {
     message: "Driver payload archived in Nexus.",
   };
 }
+

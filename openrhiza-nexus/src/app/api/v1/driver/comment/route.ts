@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { addDriverComment } from "@/app/registry-data";
+import { addDriverComment, getDriver } from "@/app/registry-data";
 import { fail, isV1Protocol, ok, type DriverCommentRequest } from "@/lib/openrhiza-v1";
 
 export async function POST(req: Request) {
@@ -12,6 +12,10 @@ export async function POST(req: Request) {
 
     if (!body.node_id || !body.driver_id || !body.comment) {
       return NextResponse.json(fail("node_id, driver_id, and comment are required."), { status: 400 });
+    }
+
+    if (!getDriver(body.driver_id)) {
+      return NextResponse.json(fail(`Driver not found: ${body.driver_id}`), { status: 404 });
     }
 
     return NextResponse.json(ok(addDriverComment(body)));
