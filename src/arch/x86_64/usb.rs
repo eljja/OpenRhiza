@@ -15,6 +15,7 @@ use xhci::context::{self, InputHandler, EndpointType};
 use xhci::ring::trb::command as cmd_trb;
 use xhci::ring::trb::event as evt_trb;
 use core::convert::TryFrom;
+use crate::input_handoff;
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Memory Mapper: Translates physical DMA addresses to kernel virtual addresses.
@@ -75,6 +76,64 @@ const COMMAND_RING_LEN: usize = 32;   // 32 TRBs in the Command Ring
 const EVENT_RING_LEN: usize = 32;     // 32 TRBs in the Event Ring
 const TRANSFER_RING_LEN: usize = 32;  // 32 TRBs per Transfer Ring
 const TRB_SIZE: usize = 16;           // Each TRB is 16 bytes
+const MAX_HID_DEVICES: usize = 2;
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HidDeviceKind {
+    Keyboard,
+    Mouse,
+}
+
+#[derive(Clone, Copy)]
+struct HidDeviceState {
+    active: bool,
+    kind: HidDeviceKind,
+    port_id: u8,
+    slot_id: u8,
+    endpoint_dci: u8,
+    report_len: u32,
+    device_context_ptr: *mut u8,
+    device_context_phys: u64,
+    input_context_ptr: *mut u8,
+    input_context_phys: u64,
+    xfer_ring_ptr: *mut [u32; 4],
+    xfer_ring_phys: u64,
+    xfer_ring_enqueue: usize,
+    xfer_ring_cycle: bool,
+    hid_report_buf: *mut u8,
+    hid_report_phys: u64,
+    prev_modifiers: u8,
+    prev_keys: [u8; 6],
+    repeat_timer: u32,
+    repeat_hid_key: u8,
+}
+
+impl HidDeviceState {
+    const fn empty(kind: HidDeviceKind) -> Self {
+        Self {
+            active: false,
+            kind,
+            port_id: 0,
+            slot_id: 0,
+            endpoint_dci: 0,
+            report_len: 0,
+            device_context_ptr: core::ptr::null_mut(),
+            device_context_phys: 0,
+            input_context_ptr: core::ptr::null_mut(),
+            input_context_phys: 0,
+            xfer_ring_ptr: core::ptr::null_mut(),
+            xfer_ring_phys: 0,
+            xfer_ring_enqueue: 0,
+            xfer_ring_cycle: true,
+            hid_report_buf: core::ptr::null_mut(),
+            hid_report_phys: 0,
+            prev_modifiers: 0,
+            prev_keys: [0; 6],
+            repeat_timer: 0,
+            repeat_hid_key: 0,
+        }
+    }
+}
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Static State
@@ -98,34 +157,223 @@ static mut EVT_RING_CYCLE: bool = true;
 static mut DCBAA_PTR: *mut u64 = core::ptr::null_mut();
 static mut DCBAA_PHYS: u64 = 0;
 
-// Device Context Storage (we support slot 1 for one keyboard)
-static mut DEVICE_CONTEXT_PTR: *mut u8 = core::ptr::null_mut();
-static mut DEVICE_CONTEXT_PHYS: u64 = 0;
-
-// Input Context for Address Device / Configure Endpoint
-static mut INPUT_CONTEXT_PTR: *mut u8 = core::ptr::null_mut();
-static mut INPUT_CONTEXT_PHYS: u64 = 0;
-
-// Transfer Ring for the Interrupt IN endpoint
-static mut XFER_RING_PTR: *mut [u32; 4] = core::ptr::null_mut();
-static mut XFER_RING_PHYS: u64 = 0;
-static mut XFER_RING_ENQUEUE: usize = 0;
-static mut XFER_RING_CYCLE: bool = true;
-
-// HID Report Buffer
-static mut HID_REPORT_BUF: *mut u8 = core::ptr::null_mut();
-static mut HID_REPORT_PHYS: u64 = 0;
-
-// Keyboard slot tracking
-static mut KB_SLOT_ID: u8 = 0;
-static mut KB_ENDPOINT_DCI: u8 = 0;
-static mut PREV_HID_MODIFIERS: u8 = 0;
-static mut PREV_HID_KEYS: [u8; 6] = [0; 6];
+static mut HID_DEVICES: [HidDeviceState; MAX_HID_DEVICES] = [
+    HidDeviceState::empty(HidDeviceKind::Keyboard),
+    HidDeviceState::empty(HidDeviceKind::Mouse),
+];
+static mut USB_INIT_CALLED: bool = false;
+static mut USB_PORTS_SEEN: u8 = 0;
+static mut USB_SUPPORTED_FOUND: u8 = 0;
+static mut HID_REENUMERATE_AFTER_TICK: [u64; MAX_HID_DEVICES] = [0; MAX_HID_DEVICES];
 
 unsafe fn xhci_regs_mut() -> Option<&'static mut Registers<UsbMemoryMapper>> {
     match &mut *core::ptr::addr_of_mut!(XHCI_REGS) {
         Some(regs) => Some(regs),
         None => None,
+    }
+}
+
+fn hid_device_index(kind: HidDeviceKind) -> usize {
+    match kind {
+        HidDeviceKind::Keyboard => 0,
+        HidDeviceKind::Mouse => 1,
+    }
+}
+
+unsafe fn hid_device_state(kind: HidDeviceKind) -> &'static mut HidDeviceState {
+    &mut HID_DEVICES[hid_device_index(kind)]
+}
+
+unsafe fn hid_device_by_slot(slot_id: u8) -> Option<&'static mut HidDeviceState> {
+    for index in 0..MAX_HID_DEVICES {
+        let device = &mut HID_DEVICES[index];
+        if device.active && device.slot_id == slot_id {
+            return Some(device);
+        }
+    }
+    None
+}
+
+unsafe fn keyboard_device() -> Option<&'static mut HidDeviceState> {
+    let device = hid_device_state(HidDeviceKind::Keyboard);
+    if device.active { Some(device) } else { None }
+}
+
+fn reset_keyboard_bootstrap_state() {
+    unsafe {
+        let device = hid_device_state(HidDeviceKind::Keyboard);
+        device.prev_modifiers = 0;
+        device.prev_keys = [0; 6];
+        device.repeat_timer = 0;
+        device.repeat_hid_key = 0;
+    }
+}
+
+fn hid_kind_label(kind: HidDeviceKind) -> &'static str {
+    match kind {
+        HidDeviceKind::Keyboard => "keyboard",
+        HidDeviceKind::Mouse => "mouse",
+    }
+}
+
+fn handoff_kind(kind: HidDeviceKind) -> input_handoff::HidDeviceKind {
+    match kind {
+        HidDeviceKind::Keyboard => input_handoff::HidDeviceKind::Keyboard,
+        HidDeviceKind::Mouse => input_handoff::HidDeviceKind::Mouse,
+    }
+}
+
+unsafe fn reset_hid_device_after_disconnect(kind: HidDeviceKind) {
+    let device = hid_device_state(kind);
+    device.active = false;
+    device.slot_id = 0;
+    device.endpoint_dci = 0;
+    device.xfer_ring_enqueue = 0;
+    device.xfer_ring_cycle = true;
+    if matches!(kind, HidDeviceKind::Keyboard) {
+        reset_keyboard_bootstrap_state();
+    }
+}
+
+fn port_connected(port_id: u8) -> Option<(bool, u8)> {
+    if port_id == 0 {
+        return None;
+    }
+
+    unsafe {
+        let regs = xhci_regs_mut()?;
+        let portsc = regs
+            .port_register_set
+            .read_volatile_at((port_id - 1) as usize)
+            .portsc;
+        Some((portsc.current_connect_status(), portsc.port_speed()))
+    }
+}
+
+pub fn maintain_hid_hotplug() {
+    unsafe {
+        if xhci_regs_mut().is_none() {
+            return;
+        }
+
+        let now = crate::task::timer::TICKS.load(core::sync::atomic::Ordering::Relaxed);
+        for kind in [HidDeviceKind::Keyboard, HidDeviceKind::Mouse] {
+            let index = hid_device_index(kind);
+            let device = hid_device_state(kind);
+            let port_id = device.port_id;
+            if port_id == 0 {
+                continue;
+            }
+
+            let Some((connected, speed)) = port_connected(port_id) else {
+                continue;
+            };
+
+            if device.active && !connected {
+                crate::println!("[USB] {} detached from port {}", hid_kind_label(kind), port_id);
+                if let Some(driver_id) = crate::input_runtime::handle_hardware_loss(handoff_kind(kind), "USB device detached") {
+                    crate::result_println!(
+                        "[Input Runtime] Auto-rollback {} from {} due to USB detach.",
+                        hid_kind_label(kind),
+                        driver_id
+                    );
+                }
+                reset_hid_device_after_disconnect(kind);
+                HID_REENUMERATE_AFTER_TICK[index] = now + 500;
+                continue;
+            }
+
+            if !device.active && connected && now >= HID_REENUMERATE_AFTER_TICK[index] {
+                crate::println!(
+                    "[USB] {} detected again on port {}; attempting re-enumeration.",
+                    hid_kind_label(kind),
+                    port_id
+                );
+                HID_REENUMERATE_AFTER_TICK[index] = now + 2_000;
+                enumerate_device(kind, port_id, speed);
+
+                let restored = hid_device_state(kind).active;
+                if restored {
+                    crate::println!(
+                        "[USB] {} re-enumerated on port {}.",
+                        hid_kind_label(kind),
+                        port_id
+                    );
+                    match crate::input_runtime::queue_restore_if_persisted(handoff_kind(kind)) {
+                        Ok(Some(driver_id)) => crate::result_println!(
+                            "[Input Runtime] Queued persisted {} driver restore: {}",
+                            hid_kind_label(kind),
+                            driver_id
+                        ),
+                        Ok(None) => {}
+                        Err(error) => crate::result_println!(
+                            "[Input Runtime] Could not restore persisted {} driver: {}",
+                            hid_kind_label(kind),
+                            error
+                        ),
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn ensure_hid_device_resources(kind: HidDeviceKind) {
+    unsafe {
+        let device = hid_device_state(kind);
+        if !device.device_context_ptr.is_null() {
+            return;
+        }
+
+        let dev_ctx_size = core::mem::size_of::<context::Device32Byte>();
+        let (dev_ctx_buf, dev_ctx_phys) = dma_alloc_zeroed(dev_ctx_size, 64);
+        device.device_context_ptr = dev_ctx_buf;
+        device.device_context_phys = dev_ctx_phys;
+
+        let input_ctx_size = core::mem::size_of::<context::Input32Byte>();
+        let (input_ctx_buf, input_ctx_phys) = dma_alloc_zeroed(input_ctx_size, 64);
+        device.input_context_ptr = input_ctx_buf;
+        device.input_context_phys = input_ctx_phys;
+
+        let (xfer_ring_buf, xfer_ring_phys) = dma_alloc_zeroed(TRANSFER_RING_LEN * TRB_SIZE, 64);
+        device.xfer_ring_ptr = xfer_ring_buf as *mut [u32; 4];
+        device.xfer_ring_phys = xfer_ring_phys;
+        device.xfer_ring_enqueue = 0;
+        device.xfer_ring_cycle = true;
+
+        let link = &mut *device.xfer_ring_ptr.add(TRANSFER_RING_LEN - 1);
+        link[0] = (xfer_ring_phys & 0xFFFF_FFFF) as u32;
+        link[1] = (xfer_ring_phys >> 32) as u32;
+        link[2] = 0;
+        link[3] = (6 << 10) | (1 << 1);
+
+        let report_bytes = match kind {
+            HidDeviceKind::Keyboard => 8,
+            HidDeviceKind::Mouse => 8,
+        };
+        let (hid_buf, hid_phys) = dma_alloc_zeroed(report_bytes, 64);
+        device.hid_report_buf = hid_buf;
+        device.hid_report_phys = hid_phys;
+    }
+}
+
+fn start_active_hid_polling() {
+    unsafe {
+        for index in 0..MAX_HID_DEVICES {
+            let device = &mut HID_DEVICES[index];
+            if !device.active {
+                continue;
+            }
+            queue_hid_transfer(device.kind);
+            crate::serial_println!(
+                "[xHCI] Started HID polling for {} on slot {}",
+                match device.kind {
+                    HidDeviceKind::Keyboard => "keyboard",
+                    HidDeviceKind::Mouse => "mouse",
+                },
+                device.slot_id
+            );
+        }
     }
 }
 
@@ -144,6 +392,12 @@ struct ErstEntry {
 // ──────────────────────────────────────────────────────────────────────────────
 pub fn init_xhci(bar0_physical: u32, offset: u64, pci_bus: u8, pci_device: u8) {
     crate::serial_println!("[USB] Initializing xHCI Host Controller at BAR0: {:#X}", bar0_physical);
+    crate::println!("[USB] xHCI init start");
+    unsafe {
+        USB_INIT_CALLED = true;
+        USB_PORTS_SEEN = 0;
+        USB_SUPPORTED_FOUND = 0;
+    }
     
     unsafe { PHYS_OFFSET = offset; }
 
@@ -157,6 +411,7 @@ pub fn init_xhci(bar0_physical: u32, offset: u64, pci_bus: u8, pci_device: u8) {
     let max_slots = regs.capability.hcsparams1.read_volatile().number_of_device_slots();
     let max_ports = regs.capability.hcsparams1.read_volatile().number_of_ports();
     crate::serial_println!("[xHCI] Max Slots: {}, Max Ports: {}", max_slots, max_ports);
+    crate::println!("[USB] xHCI ports: {}", max_ports);
 
     // ── Step 1: Halt the controller ──
     regs.operational.usbcmd.update_volatile(|c| { c.clear_run_stop(); });
@@ -273,49 +528,11 @@ pub fn init_xhci(bar0_physical: u32, offset: u64, pci_bus: u8, pci_device: u8) {
     });
     crate::serial_println!("[xHCI] Event Ring at phys {:#X}, ERST at {:#X}", unsafe { EVT_RING_PHYS }, erst_phys);
 
-    // ── Step 7: Allocate Device Context for slot 1 ──
-    let dev_ctx_size = core::mem::size_of::<context::Device32Byte>();
-    let (dev_ctx_buf, dev_ctx_phys) = dma_alloc_zeroed(dev_ctx_size, 64);
-    unsafe {
-        DEVICE_CONTEXT_PTR = dev_ctx_buf;
-        DEVICE_CONTEXT_PHYS = dev_ctx_phys;
-    }
+    // ── Step 7: Prepare per-device resource pools for keyboard + mouse ──
+    ensure_hid_device_resources(HidDeviceKind::Keyboard);
+    ensure_hid_device_resources(HidDeviceKind::Mouse);
 
-    // ── Step 8: Allocate Input Context ──
-    let input_ctx_size = core::mem::size_of::<context::Input32Byte>();
-    let (input_ctx_buf, input_ctx_phys) = dma_alloc_zeroed(input_ctx_size, 64);
-    unsafe {
-        INPUT_CONTEXT_PTR = input_ctx_buf;
-        INPUT_CONTEXT_PHYS = input_ctx_phys;
-    }
-
-    // ── Step 9: Allocate Transfer Ring for HID endpoint ──
-    let (xfer_ring_buf, xfer_ring_phys) = dma_alloc_zeroed(TRANSFER_RING_LEN * TRB_SIZE, 64);
-    unsafe {
-        XFER_RING_PTR = xfer_ring_buf as *mut [u32; 4];
-        XFER_RING_PHYS = xfer_ring_phys;
-        XFER_RING_ENQUEUE = 0;
-        XFER_RING_CYCLE = true;
-    }
-
-    // Write Link TRB at last slot of Transfer Ring
-    unsafe {
-        let link = &mut *XFER_RING_PTR.add(TRANSFER_RING_LEN - 1);
-        let phys = XFER_RING_PHYS;
-        link[0] = (phys & 0xFFFFFFFF) as u32;
-        link[1] = (phys >> 32) as u32;
-        link[2] = 0;
-        link[3] = (6 << 10) | (1 << 1); // Type=Link, ToggleCycle=1
-    }
-
-    // ── Step 10: Allocate HID Report Buffer (8 bytes for Boot Protocol) ──
-    let (hid_buf, hid_phys) = dma_alloc_zeroed(8, 64);
-    unsafe {
-        HID_REPORT_BUF = hid_buf;
-        HID_REPORT_PHYS = hid_phys;
-    }
-
-    // ── Step 11: Start the controller! ──
+    // ── Step 8: Start the controller! ──
     regs.operational.usbcmd.update_volatile(|c| {
         c.set_run_stop();
         c.set_interrupter_enable();
@@ -323,29 +540,67 @@ pub fn init_xhci(bar0_physical: u32, offset: u64, pci_bus: u8, pci_device: u8) {
     wait_until(|| !regs.operational.usbsts.read_volatile().hc_halted(), 100);
     crate::serial_println!("[xHCI] Controller Running! Scanning ports...");
 
-    // ── Step 12: Scan ports for connected devices ──
+    unsafe { *core::ptr::addr_of_mut!(XHCI_REGS) = Some(regs); }
+
+    // ── Step 9: Scan ports for connected devices ──
+    let mut found_supported = 0usize;
+    let mut next_kind_index = 0usize;
     for port_idx in 0..max_ports {
+        let Some(regs) = (unsafe { xhci_regs_mut() }) else { break };
         let portsc = regs.port_register_set.read_volatile_at(port_idx as usize).portsc;
         let ccs = portsc.current_connect_status();
         let speed = portsc.port_speed();
         if ccs {
-            crate::serial_println!("[xHCI] Port {} Connected! Speed: {}", port_idx + 1, speed);
-            // Store regs globally, then enumerate this port
-            unsafe { *core::ptr::addr_of_mut!(XHCI_REGS) = Some(regs); }
-            enumerate_device(port_idx as u8 + 1, speed);
-            return;
+            let port_id = port_idx as u8 + 1;
+            unsafe { USB_PORTS_SEEN = USB_PORTS_SEEN.saturating_add(1); }
+            crate::serial_println!("[xHCI] Port {} Connected! Speed: {}", port_id, speed);
+            crate::println!("[USB] port {} connected", port_id);
+            let kind = match next_kind_index {
+                0 => Some(HidDeviceKind::Keyboard),
+                1 => Some(HidDeviceKind::Mouse),
+                _ => None,
+            };
+            if let Some(kind) = kind {
+                enumerate_device(kind, port_id, speed);
+                found_supported += 1;
+                next_kind_index += 1;
+                unsafe { USB_SUPPORTED_FOUND = found_supported as u8; }
+            } else {
+                crate::serial_println!("[xHCI] Port {} connected, but no built-in handler is assigned.", port_id);
+                crate::println!("[USB] port {} ignored", port_id);
+            }
         }
     }
 
-    crate::serial_println!("[xHCI] No USB devices found on any port.");
-    unsafe { *core::ptr::addr_of_mut!(XHCI_REGS) = Some(regs); }
+    if found_supported == 0 {
+        crate::serial_println!("[xHCI] No supported USB HID devices found on the configured ports.");
+        crate::println!("[USB] no HID devices");
+    } else {
+        start_active_hid_polling();
+        crate::println!("[USB] HID polling started");
+    }
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
 // Phase 2: Device Enumeration (Enable Slot -> Address Device -> Configure EP)
 // ──────────────────────────────────────────────────────────────────────────────
-fn enumerate_device(port_id: u8, speed: u8) {
-    crate::serial_println!("[xHCI] Enumerating device on Port {}...", port_id);
+fn enumerate_device(kind: HidDeviceKind, port_id: u8, speed: u8) {
+    crate::serial_println!(
+        "[xHCI] Enumerating {} on Port {}...",
+        match kind {
+            HidDeviceKind::Keyboard => "keyboard",
+            HidDeviceKind::Mouse => "mouse",
+        },
+        port_id
+    );
+    crate::println!(
+        "[USB] enum {} p{}",
+        match kind {
+            HidDeviceKind::Keyboard => "kbd",
+            HidDeviceKind::Mouse => "mouse",
+        },
+        port_id
+    );
     
     // Step 1: Issue Port Reset on this port FIRST. The xHCI spec requires a
     // port reset before the controller will allow device addressing.
@@ -393,8 +648,8 @@ fn enumerate_device(port_id: u8, speed: u8) {
                     Ok(evt_trb::CompletionCode::Success) => {
                         let slot_id = cc.slot_id();
                         crate::serial_println!("[xHCI] Slot {} Enabled!", slot_id);
-                        unsafe { KB_SLOT_ID = slot_id; }
-                        address_and_configure_device(slot_id, port_id, speed);
+                        crate::println!("[USB] slot {} enabled", slot_id);
+                        address_and_configure_device(kind, slot_id, port_id, speed);
                     }
                     other => {
                         crate::serial_println!("[xHCI] Enable Slot failed: {:?}", other);
@@ -410,10 +665,13 @@ fn enumerate_device(port_id: u8, speed: u8) {
     }
 }
 
-fn address_and_configure_device(slot_id: u8, port_id: u8, speed: u8) {
+fn address_and_configure_device(kind: HidDeviceKind, slot_id: u8, port_id: u8, speed: u8) {
+    ensure_hid_device_resources(kind);
+
     // Prepare Input Context for Address Device
     unsafe {
-        let input = &mut *(INPUT_CONTEXT_PTR as *mut context::Input32Byte);
+        let device_state = hid_device_state(kind);
+        let input = &mut *(device_state.input_context_ptr as *mut context::Input32Byte);
         
         // Set Add Context flags: A0 (Slot) and A1 (EP0 Control)
         input.control_mut().set_add_context_flag(0);
@@ -438,18 +696,21 @@ fn address_and_configure_device(slot_id: u8, port_id: u8, speed: u8) {
         });
         ep0.set_max_burst_size(0);
         ep0.set_error_count(3);
-        ep0.set_tr_dequeue_pointer(XFER_RING_PHYS & !0xF); // Must be 16-byte aligned
+        ep0.set_tr_dequeue_pointer(device_state.xfer_ring_phys & !0xF); // Must be 16-byte aligned
         ep0.set_dequeue_cycle_state();
         ep0.set_average_trb_length(8);
 
         // Set DCBAA[slot_id] = physical address of device context
         let dcbaa = core::slice::from_raw_parts_mut(DCBAA_PTR, 8);
-        dcbaa[slot_id as usize] = DEVICE_CONTEXT_PHYS;
+        dcbaa[slot_id as usize] = device_state.device_context_phys;
+
+        device_state.port_id = port_id;
+        device_state.slot_id = slot_id;
     }
 
     // Issue Address Device Command (BSR=0, full SET_ADDRESS)
     let mut addr_cmd = cmd_trb::AddressDevice::new();
-    addr_cmd.set_input_context_pointer(unsafe { INPUT_CONTEXT_PHYS });
+    addr_cmd.set_input_context_pointer(unsafe { hid_device_state(kind).input_context_phys });
     addr_cmd.set_slot_id(slot_id);
     push_command_trb(&addr_cmd.into_raw());
     ring_doorbell(0, 0);
@@ -461,8 +722,9 @@ fn address_and_configure_device(slot_id: u8, port_id: u8, speed: u8) {
                 match cc.completion_code() {
                     Ok(evt_trb::CompletionCode::Success) => {
                         crate::serial_println!("[xHCI] Slot {} Addressed!", slot_id);
+                        crate::println!("[USB] slot {} addressed", slot_id);
                         // Now configure the interrupt endpoint for HID Boot Protocol
-                        configure_hid_boot_endpoint(slot_id, port_id, speed);
+                        configure_hid_boot_endpoint(kind, slot_id, port_id, speed);
                     }
                     other => {
                         crate::serial_println!("[xHCI] Address Device failed: {:?}", other);
@@ -476,21 +738,25 @@ fn address_and_configure_device(slot_id: u8, port_id: u8, speed: u8) {
     }
 }
 
-fn configure_hid_boot_endpoint(slot_id: u8, port_id: u8, speed: u8) {
+fn configure_hid_boot_endpoint(kind: HidDeviceKind, slot_id: u8, port_id: u8, speed: u8) {
     // For HID Boot Protocol keyboard:
     // - Interrupt IN endpoint, typically EP address 0x81 -> DCI = 3
     //   DCI formula: (endpoint_number * 2) + direction_bit
     //   EP1 IN: DCI = (1*2) + 1 = 3
     let dci: u8 = 3;
-    unsafe { KB_ENDPOINT_DCI = dci; }
+    let report_len: u32 = match kind {
+        HidDeviceKind::Keyboard => 8,
+        HidDeviceKind::Mouse => 4,
+    };
 
     // Re-allocate a dedicated Transfer Ring for the Interrupt IN endpoint
     // (we reuse the pre-allocated one)
     unsafe {
+        let device_state = hid_device_state(kind);
         // Clear and prepare Input Context
-        let input = &mut *(INPUT_CONTEXT_PTR as *mut context::Input32Byte);
+        let input = &mut *(device_state.input_context_ptr as *mut context::Input32Byte);
         // Zero it out first
-        core::ptr::write_bytes(INPUT_CONTEXT_PTR, 0, core::mem::size_of::<context::Input32Byte>());
+        core::ptr::write_bytes(device_state.input_context_ptr, 0, core::mem::size_of::<context::Input32Byte>());
 
         let ctrl = input.control_mut();
         ctrl.set_add_context_flag(0); // Slot
@@ -505,20 +771,22 @@ fn configure_hid_boot_endpoint(slot_id: u8, port_id: u8, speed: u8) {
         // Configure Interrupt IN Endpoint (DCI=3)
         let ep = device.endpoint_mut(dci as usize);
         ep.set_endpoint_type(EndpointType::InterruptIn);
-        ep.set_max_packet_size(8); // HID Boot Protocol = 8 bytes
+        ep.set_max_packet_size(report_len as u16);
         ep.set_max_burst_size(0);
         ep.set_error_count(3);
         ep.set_interval(match speed {
             1 | 2 => 10,  // Full/Low Speed: 10ms polling
             _ => 6,       // High/Super Speed: 2^(6-1) = 32 microframes = 4ms
         });
-        ep.set_tr_dequeue_pointer(XFER_RING_PHYS & !0xF);
+        ep.set_tr_dequeue_pointer(device_state.xfer_ring_phys & !0xF);
         ep.set_dequeue_cycle_state();
-        ep.set_average_trb_length(8);
+        ep.set_average_trb_length(report_len as u16);
+        device_state.endpoint_dci = dci;
+        device_state.report_len = report_len;
     }
 
     let mut cfg_cmd = cmd_trb::ConfigureEndpoint::new();
-    cfg_cmd.set_input_context_pointer(unsafe { INPUT_CONTEXT_PHYS });
+    cfg_cmd.set_input_context_pointer(unsafe { hid_device_state(kind).input_context_phys });
     cfg_cmd.set_slot_id(slot_id);
     push_command_trb(&cfg_cmd.into_raw());
     ring_doorbell(0, 0);
@@ -530,9 +798,22 @@ fn configure_hid_boot_endpoint(slot_id: u8, port_id: u8, speed: u8) {
                 match cc.completion_code() {
                     Ok(evt_trb::CompletionCode::Success) => {
                         crate::serial_println!("[xHCI] HID Boot Endpoint Configured! DCI={}", dci);
-                        // Queue the first Normal TRB to start receiving HID reports
-                        queue_hid_transfer();
-                        crate::serial_println!("[xHCI] USB Keyboard Active! Polling HID Boot Protocol...");
+                        unsafe { hid_device_state(kind).active = true; }
+                        crate::println!(
+                            "[USB] {} active slot {}",
+                            match kind {
+                                HidDeviceKind::Keyboard => "kbd",
+                                HidDeviceKind::Mouse => "mouse",
+                            },
+                            slot_id
+                        );
+                        crate::serial_println!(
+                            "[xHCI] USB {} Active! Waiting for global HID polling start...",
+                            match kind {
+                                HidDeviceKind::Keyboard => "keyboard",
+                                HidDeviceKind::Mouse => "mouse",
+                            }
+                        );
                     }
                     other => {
                         crate::serial_println!("[xHCI] Configure Endpoint failed: {:?}", other);
@@ -547,35 +828,35 @@ fn configure_hid_boot_endpoint(slot_id: u8, port_id: u8, speed: u8) {
 // ──────────────────────────────────────────────────────────────────────────────
 // Phase 3: HID Boot Protocol Polling
 // ──────────────────────────────────────────────────────────────────────────────
-fn queue_hid_transfer() {
+fn queue_hid_transfer(kind: HidDeviceKind) {
     // Queue a Normal TRB pointing to our 8-byte HID report buffer
     unsafe {
+        let device = hid_device_state(kind);
         // Zero out the report buffer
-        core::ptr::write_bytes(HID_REPORT_BUF, 0, 8);
+        core::ptr::write_bytes(device.hid_report_buf, 0, device.report_len as usize);
 
-        let trb = &mut *XFER_RING_PTR.add(XFER_RING_ENQUEUE);
-        let phys = HID_REPORT_PHYS;
+        let trb = &mut *device.xfer_ring_ptr.add(device.xfer_ring_enqueue);
+        let phys = device.hid_report_phys;
         trb[0] = (phys & 0xFFFFFFFF) as u32;
         trb[1] = (phys >> 32) as u32;
-        trb[2] = 8; // Transfer length = 8 bytes
+        trb[2] = device.report_len;
         // Type = Normal (1), IOC (Interrupt On Completion) = bit 5, Cycle bit = bit 0
-        trb[3] = (1 << 10) | (1 << 5) | if XFER_RING_CYCLE { 1 } else { 0 };
+        trb[3] = (1 << 10) | (1 << 5) | if device.xfer_ring_cycle { 1 } else { 0 };
 
-        XFER_RING_ENQUEUE += 1;
-        if XFER_RING_ENQUEUE >= TRANSFER_RING_LEN - 1 {
+        device.xfer_ring_enqueue += 1;
+        if device.xfer_ring_enqueue >= TRANSFER_RING_LEN - 1 {
             // Hit the Link TRB, wrap around
-            let link = &mut *XFER_RING_PTR.add(TRANSFER_RING_LEN - 1);
-            if XFER_RING_CYCLE {
+            let link = &mut *device.xfer_ring_ptr.add(TRANSFER_RING_LEN - 1);
+            if device.xfer_ring_cycle {
                 link[3] |= 1; // Set cycle bit on Link TRB
             } else {
                 link[3] &= !1; // Clear cycle bit on Link TRB
             }
-            XFER_RING_CYCLE = !XFER_RING_CYCLE;
-            XFER_RING_ENQUEUE = 0;
+            device.xfer_ring_cycle = !device.xfer_ring_cycle;
+            device.xfer_ring_enqueue = 0;
         }
 
-        // Ring the Doorbell for slot KB_SLOT_ID, target = KB_ENDPOINT_DCI
-        ring_doorbell(KB_SLOT_ID, KB_ENDPOINT_DCI);
+        ring_doorbell(device.slot_id, device.endpoint_dci);
     }
 }
 
@@ -584,7 +865,6 @@ fn queue_hid_transfer() {
 pub fn poll_usb_keyboard() -> bool {
     unsafe {
         if xhci_regs_mut().is_none() { return false; }
-        if KB_SLOT_ID == 0 { return false; }
 
         // Check Event Ring for Transfer Events
         let evt_trb_raw = &*EVT_RING_PTR.add(EVT_RING_DEQUEUE);
@@ -616,15 +896,17 @@ pub fn poll_usb_keyboard() -> bool {
         if let Ok(evt) = evt_trb::Allowed::try_from(raw) {
             match evt {
                 evt_trb::Allowed::TransferEvent(te) => {
-                    match te.completion_code() {
-                        Ok(evt_trb::CompletionCode::Success) | Ok(evt_trb::CompletionCode::ShortPacket) => {
-                            process_hid_report();
+                    let slot_id = te.slot_id();
+                    if let Some(device) = hid_device_by_slot(slot_id) {
+                        match te.completion_code() {
+                            Ok(evt_trb::CompletionCode::Success) | Ok(evt_trb::CompletionCode::ShortPacket) => {
+                                process_hid_report(device.kind);
+                            }
+                            _ => {}
                         }
-                        _ => {}
+                        queue_hid_transfer(device.kind);
+                        return true;
                     }
-                    // Re-queue next transfer
-                    queue_hid_transfer();
-                    return true;
                 }
                 evt_trb::Allowed::PortStatusChange(_psc) => {
                     // Port status changed, could be hot-plug, not actionable now
@@ -637,9 +919,6 @@ pub fn poll_usb_keyboard() -> bool {
     }
 }
 
-static mut REPEAT_TIMER: u32 = 0;
-static mut REPEAT_HID_KEY: u8 = 0;
-
 const TYPEMATIC_INITIAL_DELAY_TICKS: u32 = crate::task::timer::ms_to_ticks(500) as u32;
 const TYPEMATIC_REPEAT_INTERVAL_TICKS: u32 = crate::task::timer::ms_to_ticks(40) as u32;
 
@@ -648,22 +927,26 @@ pub fn tick_usb_keyboard() {
         if xhci_regs_mut().is_none() {
             return;
         }
-        if KB_SLOT_ID == 0 {
+        if !input_handoff::should_bootstrap_parse_kind(input_handoff::HidDeviceKind::Keyboard) {
+            reset_keyboard_bootstrap_state();
             return;
         }
+        let Some(device) = keyboard_device() else {
+            return;
+        };
 
-        let current_keys = core::ptr::read(core::ptr::addr_of!(PREV_HID_KEYS));
-        let repeat_key = core::ptr::read(core::ptr::addr_of!(REPEAT_HID_KEY));
+        let current_keys = device.prev_keys;
+        let repeat_key = device.repeat_hid_key;
 
         if repeat_key == 0 || !current_keys.contains(&repeat_key) {
-            REPEAT_TIMER = 0;
-            REPEAT_HID_KEY = 0;
+            device.repeat_timer = 0;
+            device.repeat_hid_key = 0;
             return;
         }
 
-        REPEAT_TIMER += 1;
-        if REPEAT_TIMER >= TYPEMATIC_INITIAL_DELAY_TICKS
-            && (REPEAT_TIMER - TYPEMATIC_INITIAL_DELAY_TICKS) % TYPEMATIC_REPEAT_INTERVAL_TICKS == 0
+        device.repeat_timer += 1;
+        if device.repeat_timer >= TYPEMATIC_INITIAL_DELAY_TICKS
+            && (device.repeat_timer - TYPEMATIC_INITIAL_DELAY_TICKS) % TYPEMATIC_REPEAT_INTERVAL_TICKS == 0
         {
             inject_hid_key(repeat_key, false);
             inject_hid_key(repeat_key, true);
@@ -671,49 +954,98 @@ pub fn tick_usb_keyboard() {
     }
 }
 
-/// Decode 8-byte HID Boot Protocol report and inject scancodes
-fn process_hid_report() {
+pub fn log_hid_status() {
     unsafe {
-        let report = core::slice::from_raw_parts(HID_REPORT_BUF, 8);
-        // HID Boot Protocol Keyboard Report:
-        // Byte 0: Modifier keys (Ctrl, Shift, Alt, GUI)
-        // Byte 1: Reserved
-        // Byte 2-7: Key codes (up to 6 simultaneous keys)
+        let keyboard = hid_device_state(HidDeviceKind::Keyboard);
+        let mouse = hid_device_state(HidDeviceKind::Mouse);
+        let init_called = USB_INIT_CALLED as u8;
+        let ports_seen = USB_PORTS_SEEN;
+        let supported_found = USB_SUPPORTED_FOUND;
+        crate::println!(
+            "[USB] status init={} ports={} found={} kbd(active={},slot={},port={}) mouse(active={},slot={},port={})",
+            init_called,
+            ports_seen,
+            supported_found,
+            keyboard.active as u8,
+            keyboard.slot_id,
+            keyboard.port_id,
+            mouse.active as u8,
+            mouse.slot_id,
+            mouse.port_id
+        );
+    }
+}
 
-        let modifiers = report[0];
-        let current_keys = [report[2], report[3], report[4], report[5], report[6], report[7]];
-        let previous_keys = PREV_HID_KEYS;
-        let keys_changed = current_keys != previous_keys;
+/// Decode 8-byte HID Boot Protocol report and inject scancodes
+fn process_hid_report(kind: HidDeviceKind) {
+    unsafe {
+        let device = hid_device_state(kind);
+        let report = core::slice::from_raw_parts(device.hid_report_buf, device.report_len as usize);
+        input_handoff::queue_hid_packet(
+            match kind {
+                HidDeviceKind::Keyboard => input_handoff::HidDeviceKind::Keyboard,
+                HidDeviceKind::Mouse => input_handoff::HidDeviceKind::Mouse,
+            },
+            device.slot_id,
+            device.port_id,
+            report,
+        );
 
-        process_modifier_changes(PREV_HID_MODIFIERS, modifiers);
-
-        for &keycode in &current_keys {
-            if keycode == 0 || keycode == 1 {
-                continue;
+        let handoff_kind = match kind {
+            HidDeviceKind::Keyboard => input_handoff::HidDeviceKind::Keyboard,
+            HidDeviceKind::Mouse => input_handoff::HidDeviceKind::Mouse,
+        };
+        if !input_handoff::should_bootstrap_parse_kind(handoff_kind) {
+            if matches!(kind, HidDeviceKind::Keyboard) {
+                reset_keyboard_bootstrap_state();
             }
-
-            if !previous_keys.contains(&keycode) {
-                inject_hid_key(keycode, true);
-            }
+            return;
         }
 
-        for &keycode in &previous_keys {
-            if keycode == 0 || keycode == 1 {
-                continue;
-            }
+        match kind {
+            HidDeviceKind::Keyboard => {
+                let modifiers = report[0];
+                let current_keys = [report[2], report[3], report[4], report[5], report[6], report[7]];
+                let previous_keys = device.prev_keys;
+                let keys_changed = current_keys != previous_keys;
 
-            if !current_keys.contains(&keycode) {
-                inject_hid_key(keycode, false);
+                process_modifier_changes(device.prev_modifiers, modifiers);
+
+                for &keycode in &current_keys {
+                    if keycode == 0 || keycode == 1 {
+                        continue;
+                    }
+
+                    if !previous_keys.contains(&keycode) {
+                        inject_hid_key(keycode, true);
+                    }
+                }
+
+                for &keycode in &previous_keys {
+                    if keycode == 0 || keycode == 1 {
+                        continue;
+                    }
+
+                    if !current_keys.contains(&keycode) {
+                        inject_hid_key(keycode, false);
+                    }
+                }
+
+                if keys_changed {
+                    device.repeat_timer = 0;
+                    device.repeat_hid_key = select_repeat_hid_key(current_keys);
+                }
+
+                device.prev_modifiers = modifiers;
+                device.prev_keys = current_keys;
+            }
+            HidDeviceKind::Mouse => {
+                let buttons = report.get(0).copied().unwrap_or(0);
+                let dx = report.get(1).copied().unwrap_or(0) as i8;
+                let dy = report.get(2).copied().unwrap_or(0) as i8;
+                input_handoff::emit_mouse_packet(dx, dy, buttons);
             }
         }
-
-        if keys_changed {
-            REPEAT_TIMER = 0;
-            REPEAT_HID_KEY = select_repeat_hid_key(current_keys);
-        }
-
-        PREV_HID_MODIFIERS = modifiers;
-        PREV_HID_KEYS = current_keys;
     }
 }
 
@@ -784,11 +1116,7 @@ fn inject_hid_key(keycode: u8, pressed: bool) {
 }
 
 fn inject_scancode(scancode: u8, extended: bool, pressed: bool) {
-    if extended {
-        crate::task::keyboard::add_scancode(0xE0);
-    }
-
-    crate::task::keyboard::add_scancode(if pressed { scancode } else { scancode | 0x80 });
+    input_handoff::emit_key_scancode(scancode, extended, pressed);
 }
 
 

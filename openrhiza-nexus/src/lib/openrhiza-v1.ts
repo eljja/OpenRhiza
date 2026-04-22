@@ -86,6 +86,13 @@ export interface DriverUploadRequest {
   payload_text: string;
 }
 
+export interface DriverDownloadRequest {
+  protocol_version: "v1";
+  node_id: string;
+  driver_id?: string;
+  match_key?: string;
+}
+
 export interface DriverCommentRequest {
   protocol_version: "v1";
   node_id: string;
@@ -179,4 +186,5 @@ export function fail(message: string, status = 400) {
     status,
   };
 }
+
 

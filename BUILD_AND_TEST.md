@@ -18,13 +18,23 @@ the async executor, the VGA CLI, the native `e1000` path, and the Nexus signatur
 
 ## Environment
 
-The host AI path uses:
+The host AI path and the kernel Gemini path use:
 
 ```bash
 GEMINI_API_KEY=your_api_key_here
 ```
 
-The script will also try to load the key from a local `.env` file if `python-dotenv` is installed.
+The kernel build now also loads the key from the repository root `.env` automatically.
+It accepts either:
+
+```bash
+GEMINI_API_KEY=your_api_key_here
+OPENRHIZA_GEMINI_API_KEY=your_api_key_here
+```
+
+At build time the value is embedded into the OpenRhiza kernel as `OPENRHIZA_GEMINI_API_KEY`,
+so `cargo build` and `cargo bootimage` use the same Gemini credential path without requiring a
+separate manual export step.
 
 ## Build
 

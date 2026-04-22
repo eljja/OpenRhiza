@@ -32,6 +32,10 @@ pub fn load_active_driver_map() -> Option<Vec<ActiveDriverBinding>> {
     }
 }
 
+pub fn load_active_driver_map_text() -> Option<String> {
+    crate::storage::read_text_file_from_secondary_fat16(&ACTIVE_DRIVER_MAP_FILES)
+}
+
 pub fn parse_active_driver_map(text: &str) -> Vec<ActiveDriverBinding> {
     let mut bindings = Vec::new();
 
@@ -89,7 +93,22 @@ pub fn persist_active_driver_binding(
     }
 
     let serialized = serialize_active_driver_map(&bindings);
-    crate::storage::write_named_file_to_secondary_fat16_existing(
+    crate::storage::write_named_file_to_secondary_fat16_preserve_size(
+        &ACTIVE_DRIVER_MAP_FILES,
+        serialized.as_bytes(),
+    )
+}
+
+pub fn remove_active_driver_binding(match_key: &str) -> Result<(), &'static str> {
+    let mut bindings = load_active_driver_map().unwrap_or_default();
+    let original_len = bindings.len();
+    bindings.retain(|binding| binding.match_key != match_key);
+    if bindings.len() == original_len {
+        return Ok(());
+    }
+
+    let serialized = serialize_active_driver_map(&bindings);
+    crate::storage::write_named_file_to_secondary_fat16_preserve_size(
         &ACTIVE_DRIVER_MAP_FILES,
         serialized.as_bytes(),
     )

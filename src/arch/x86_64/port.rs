@@ -24,3 +24,15 @@ pub fn write_port_u16(port_addr: u16, value: u16) {
     let mut port: Port<u16> = Port::new(port_addr);
     unsafe { port.write(value) }
 }
+
+/// Read a 32-bit I/O port value, used for Virtio legacy access.
+pub fn read_port_u32(port_addr: u16) -> u32 {
+    let mut port: Port<u32> = Port::new(port_addr);
+    unsafe { port.read() }
+}
+
+/// Write a 32-bit I/O port value, used for Virtio legacy access.
+pub fn write_port_u32(port_addr: u16, value: u32) {
+    let mut port: Port<u32> = Port::new(port_addr);
+    unsafe { port.write(value) }
+}

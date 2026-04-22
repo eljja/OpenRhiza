@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import type {
   DriverCommentRequest,
+  DriverDownloadRequest,
   DriverQueryRequest,
   DriverUploadRequest,
   DriverVoteRequest,
@@ -48,6 +49,17 @@ export interface DriverVoteSummary {
   upvotes: number;
   downvotes: number;
   score: number;
+}
+
+export interface DriverArtifactRecord {
+  artifact_id: string;
+  driver_id: string;
+  node_id: string;
+  source_type: string;
+  model: string;
+  prompt_hash: string;
+  payload_text: string;
+  created_at: string;
 }
 
 export interface SoftwareRecord {
@@ -168,6 +180,19 @@ function mapDriverComment(row: Record<string, unknown>): DriverCommentRecord {
     driver_id: String(row.driver_id),
     node_id: String(row.node_id),
     comment: String(row.comment_text),
+    created_at: String(row.created_at),
+  };
+}
+
+function mapDriverArtifact(row: Record<string, unknown>): DriverArtifactRecord {
+  return {
+    artifact_id: String(row.artifact_id),
+    driver_id: String(row.driver_id),
+    node_id: String(row.node_id),
+    source_type: String(row.source_type),
+    model: String(row.model),
+    prompt_hash: String(row.prompt_hash),
+    payload_text: String(row.payload_text),
     created_at: String(row.created_at),
   };
 }
@@ -723,10 +748,68 @@ export function queryDrivers(input: DriverQueryRequest) {
     requested_devices: input.devices.length,
     matched_devices: matchedDevices,
     unmatched_devices: input.devices.length - matchedDevices,
-    recommendations: [...deduped.values()].map((driver) => ({
-      ...driver,
-      vote_summary: getDriverVoteSummary(driver.driver_id),
-    })),
+    recommendations: [...deduped.values()]
+      .map((driver) => ({
+        ...driver,
+        vote_summary: getDriverVoteSummary(driver.driver_id),
+      }))
+      .sort((left, right) => {
+        const voteDelta = right.vote_summary.score - left.vote_summary.score;
+        if (voteDelta !== 0) {
+          return voteDelta;
+        }
+        const stabilityDelta = right.stability_score - left.stability_score;
+        if (stabilityDelta !== 0) {
+          return stabilityDelta;
+        }
+        const performanceDelta = right.performance_score - left.performance_score;
+        if (performanceDelta !== 0) {
+          return performanceDelta;
+        }
+        return left.driver_id.localeCompare(right.driver_id);
+      }),
+  };
+}
+
+function latestDriverArtifact(driverId: string) {
+  const row = openDb()
+    .prepare(`
+      SELECT *
+      FROM driver_artifacts
+      WHERE driver_id = ?
+      ORDER BY datetime(created_at) DESC, artifact_id DESC
+      LIMIT 1
+    `)
+    .get(driverId) as Record<string, unknown> | undefined;
+
+  return row ? mapDriverArtifact(row) : null;
+}
+
+export function downloadDriverArtifact(input: DriverDownloadRequest) {
+  const driver = input.driver_id
+    ? getDriver(input.driver_id)
+    : input.match_key
+      ? getDriverByMatchKey(input.match_key)
+      : null;
+
+  if (!driver) {
+    throw new Error("Driver not found for requested download.");
+  }
+
+  const artifact = latestDriverArtifact(driver.driver_id);
+  if (!artifact) {
+    throw new Error(`No downloadable artifact is available for ${driver.driver_id}.`);
+  }
+
+  return {
+    driver_id: driver.driver_id,
+    match_key: driver.match_key,
+    artifact_id: artifact.artifact_id,
+    payload_kind: "source_text" as const,
+    source_type: artifact.source_type,
+    model: artifact.model,
+    created_at: artifact.created_at,
+    payload_text: artifact.payload_text,
   };
 }
 
@@ -956,6 +1039,8 @@ export function archiveUploadedDriver(input: {
     message: "Driver payload archived in Nexus.",
   };
 }
+
+
 
 
 

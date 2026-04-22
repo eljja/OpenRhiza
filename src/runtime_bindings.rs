@@ -108,6 +108,14 @@ pub fn current_driver(match_key: &str) -> Option<String> {
         .map(|binding| binding.driver_id.clone())
 }
 
+pub fn deactivate_binding(match_key: &str) -> Option<String> {
+    let mut active = ACTIVE_RUNTIME_BINDINGS.lock();
+    let index = active
+        .iter()
+        .position(|binding| binding.match_key == match_key)?;
+    Some(active.remove(index).driver_id)
+}
+
 pub fn snapshot() -> Vec<RuntimeDriverBinding> {
     ACTIVE_RUNTIME_BINDINGS.lock().clone()
 }

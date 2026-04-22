@@ -2,6 +2,7 @@
 name = "OpenRhiza"
 version = "0.1.0"
 edition = "2021"
+build = "build.rs"
 
 [dependencies]
 bootloader = { version = "0.9.34", features = ["map_physical_memory"] }

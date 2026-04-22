@@ -1,6 +1,7 @@
 use alloc::format;
 use alloc::sync::Arc;
 use alloc::string::String;
+use alloc::vec::Vec;
 
 use crossbeam_queue::ArrayQueue;
 use lazy_static::lazy_static;
@@ -32,6 +33,7 @@ pub enum ServiceApiCommand {
     RootHttps,
     HardwareReport,
     DriverQuery,
+    SoftwareQuery,
     SkillQuery,
     WorkflowQuery,
     PolicyQuery,
@@ -42,14 +44,26 @@ pub enum ServiceApiCommand {
 #[derive(Debug, Clone)]
 pub enum DriverRegistryCommand {
     UploadGenerated { match_key: String },
+    DownloadCandidate { driver_id: String, match_key: String },
     Comment { driver_id: String, comment: String },
     Vote { driver_id: String, vote: DriverVote },
+    UploadEvaluation {
+        driver_id: String,
+        match_key: String,
+        note: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DriverVote {
     Up,
     Down,
+}
+
+#[derive(Debug, Clone)]
+pub struct DriverRegistryCandidate {
+    pub driver_id: String,
+    pub match_key: String,
 }
 
 lazy_static! {
@@ -62,14 +76,20 @@ lazy_static! {
     static ref LAST_GEMINI_TEXT: Mutex<Option<String>> = Mutex::new(None);
     static ref LAST_GEMINI_MODEL: Mutex<Option<String>> = Mutex::new(None);
     static ref LAST_DRIVER_UPLOAD_MATCH_KEY: Mutex<Option<String>> = Mutex::new(None);
+    static ref LAST_DRIVER_DOWNLOAD_TARGET: Mutex<Option<(String, String)>> = Mutex::new(None);
+    static ref LAST_DRIVER_REGISTRY_SUMMARY: Mutex<Option<String>> = Mutex::new(None);
+    static ref LAST_DRIVER_REGISTRY_CANDIDATES: Mutex<Vec<DriverRegistryCandidate>> =
+        Mutex::new(Vec::new());
+    static ref LAST_SOFTWARE_REGISTRY_SUMMARY: Mutex<Option<String>> = Mutex::new(None);
     static ref LAST_SKILL_REGISTRY_SUMMARY: Mutex<Option<String>> = Mutex::new(None);
     static ref LAST_WORKFLOW_REGISTRY_SUMMARY: Mutex<Option<String>> = Mutex::new(None);
     static ref LAST_POLICY_REGISTRY_SUMMARY: Mutex<Option<String>> = Mutex::new(None);
+    static ref LAST_EVALUATION_REGISTRY_SUMMARY: Mutex<Option<String>> = Mutex::new(None);
 }
 
 pub fn build_node_register_request(profile: &NodeProfile) -> String {
     format!(
-        "{{\"protocol_version\":\"{}\",\"node_id\":\"{}\",\"public_key\":\"{}\",\"identity_type\":\"software_key\",\"tpm_present\":{},\"os_version\":\"{}\",\"transport_capabilities\":[\"tls\",\"http_json\",\"signed_wasm\"]}}",
+        "{{\"protocol_version\":\"{}\",\"node_id\":\"{}\",\"public_key\":\"{}\",\"identity_type\":\"software_key\",\"tpm_present\":{},\"os_version\":\"{}\",\"transport_capabilities\":[\"tls\",\"http_json\",\"signed_wasm\",\"driver_download\"]}}",
         PROTOCOL_VERSION,
         profile.node_id_hex(),
         profile.identity_key_hex(),
@@ -151,6 +171,14 @@ pub fn build_driver_query_request(profile: &NodeProfile) -> String {
     body
 }
 
+pub fn build_software_query_request(profile: &NodeProfile) -> String {
+    format!(
+        "{{\"protocol_version\":\"{}\",\"node_id\":\"{}\",\"ui_mode\":\"cli\",\"capabilities\":[\"registry\",\"gemini\",\"sandbox\",\"driver_runtime\",\"hot_swap\"]}}",
+        PROTOCOL_VERSION,
+        profile.node_id_hex()
+    )
+}
+
 pub fn build_skill_query_request(profile: &NodeProfile) -> String {
     format!(
         "{{\"protocol_version\":\"{}\",\"node_id\":\"{}\",\"capabilities\":[\"registry\",\"gemini\",\"sandbox\",\"driver_runtime\",\"hot_swap\"],\"preferred_domains\":[\"driver\",\"skill\",\"workflow\",\"policy\"]}}",
@@ -183,10 +211,29 @@ pub fn build_evaluation_query_request(profile: &NodeProfile) -> String {
     )
 }
 
+pub fn build_driver_evaluation_upload_request(
+    profile: &NodeProfile,
+    driver_id: &str,
+    match_key: &str,
+    note: &str,
+) -> String {
+    format!(
+        "{{\"protocol_version\":\"{}\",\"node_id\":\"{}\",\"subject_type\":\"driver\",\"subject_id\":\"{}\",\"subject_label\":\"{}\",\"driver_id\":\"{}\",\"hardware_match_key\":\"{}\",\"stability_score\":70,\"performance_score\":60,\"notes\":[\"{}\"]}}",
+        PROTOCOL_VERSION,
+        profile.node_id_hex(),
+        json_escape(driver_id),
+        json_escape(driver_id),
+        json_escape(driver_id),
+        json_escape(match_key),
+        json_escape(note)
+    )
+}
+
 pub fn log_request_previews(profile: &NodeProfile) {
     let register = build_node_register_request(profile);
     let hardware = build_hardware_report_request(profile);
     let driver_query = build_driver_query_request(profile);
+    let software_query = build_software_query_request(profile);
     let skill_query = build_skill_query_request(profile);
     let workflow_query = build_workflow_query_request(profile);
     let policy_query = build_policy_query_request(profile);
@@ -203,6 +250,10 @@ pub fn log_request_previews(profile: &NodeProfile) {
     crate::println!(
         "[API v1] Prepared driver query: {} bytes",
         driver_query.len()
+    );
+    crate::println!(
+        "[API v1] Prepared software query: {} bytes",
+        software_query.len()
     );
     crate::println!(
         "[API v1] Prepared skill query: {} bytes",
@@ -272,28 +323,132 @@ pub fn take_pending_driver_upload_match_key() -> Option<String> {
     LAST_DRIVER_UPLOAD_MATCH_KEY.lock().take()
 }
 
+pub fn record_pending_driver_download(driver_id: &str, match_key: &str) {
+    *LAST_DRIVER_DOWNLOAD_TARGET.lock() = Some((String::from(driver_id), String::from(match_key)));
+}
+
+pub fn take_pending_driver_download() -> Option<(String, String)> {
+    LAST_DRIVER_DOWNLOAD_TARGET.lock().take()
+}
+
+pub fn clear_registry_context() {
+    *LAST_DRIVER_REGISTRY_SUMMARY.lock() = None;
+    LAST_DRIVER_REGISTRY_CANDIDATES.lock().clear();
+    *LAST_SOFTWARE_REGISTRY_SUMMARY.lock() = None;
+    *LAST_SKILL_REGISTRY_SUMMARY.lock() = None;
+    *LAST_WORKFLOW_REGISTRY_SUMMARY.lock() = None;
+    *LAST_POLICY_REGISTRY_SUMMARY.lock() = None;
+    *LAST_EVALUATION_REGISTRY_SUMMARY.lock() = None;
+}
+
+pub fn record_driver_registry_summary(summary: &str) {
+    *LAST_DRIVER_REGISTRY_SUMMARY.lock() = Some(String::from(summary));
+}
+
+pub fn record_driver_registry_candidates(candidates: &[DriverRegistryCandidate]) {
+    *LAST_DRIVER_REGISTRY_CANDIDATES.lock() = candidates.to_vec();
+}
+
+pub fn find_driver_registry_match_key(driver_id: &str) -> Option<String> {
+    LAST_DRIVER_REGISTRY_CANDIDATES
+        .lock()
+        .iter()
+        .find(|candidate| candidate.driver_id == driver_id)
+        .map(|candidate| candidate.match_key.clone())
+}
+
+pub fn record_software_registry_summary(summary: &str) {
+    *LAST_SOFTWARE_REGISTRY_SUMMARY.lock() = Some(String::from(summary));
+    let _ = crate::capability_cache::persist_registry_summary(
+        crate::capability_cache::RegistryDomain::Software,
+        summary,
+    );
+}
+
 pub fn record_skill_registry_summary(summary: &str) {
     *LAST_SKILL_REGISTRY_SUMMARY.lock() = Some(String::from(summary));
+    let _ = crate::capability_cache::persist_registry_summary(
+        crate::capability_cache::RegistryDomain::Skill,
+        summary,
+    );
 }
 
 pub fn record_workflow_registry_summary(summary: &str) {
     *LAST_WORKFLOW_REGISTRY_SUMMARY.lock() = Some(String::from(summary));
+    let _ = crate::capability_cache::persist_registry_summary(
+        crate::capability_cache::RegistryDomain::Workflow,
+        summary,
+    );
 }
 
 pub fn record_policy_registry_summary(summary: &str) {
     *LAST_POLICY_REGISTRY_SUMMARY.lock() = Some(String::from(summary));
+    let _ = crate::capability_cache::persist_registry_summary(
+        crate::capability_cache::RegistryDomain::Policy,
+        summary,
+    );
+}
+
+pub fn record_evaluation_registry_summary(summary: &str) {
+    *LAST_EVALUATION_REGISTRY_SUMMARY.lock() = Some(String::from(summary));
+    let _ = crate::capability_cache::persist_registry_summary(
+        crate::capability_cache::RegistryDomain::Evaluation,
+        summary,
+    );
 }
 
 pub fn current_registry_context_block() -> Option<String> {
+    let driver = LAST_DRIVER_REGISTRY_SUMMARY.lock().clone();
+    let software = LAST_SOFTWARE_REGISTRY_SUMMARY.lock().clone();
     let skill = LAST_SKILL_REGISTRY_SUMMARY.lock().clone();
     let workflow = LAST_WORKFLOW_REGISTRY_SUMMARY.lock().clone();
     let policy = LAST_POLICY_REGISTRY_SUMMARY.lock().clone();
+    let evaluation = LAST_EVALUATION_REGISTRY_SUMMARY.lock().clone();
+    let software = software.or_else(|| {
+        crate::capability_cache::load_registry_summary(
+            crate::capability_cache::RegistryDomain::Software,
+        )
+    });
+    let skill = skill.or_else(|| {
+        crate::capability_cache::load_registry_summary(crate::capability_cache::RegistryDomain::Skill)
+    });
+    let workflow = workflow.or_else(|| {
+        crate::capability_cache::load_registry_summary(
+            crate::capability_cache::RegistryDomain::Workflow,
+        )
+    });
+    let policy = policy.or_else(|| {
+        crate::capability_cache::load_registry_summary(
+            crate::capability_cache::RegistryDomain::Policy,
+        )
+    });
+    let evaluation = evaluation.or_else(|| {
+        crate::capability_cache::load_registry_summary(
+            crate::capability_cache::RegistryDomain::Evaluation,
+        )
+    });
 
-    if skill.is_none() && workflow.is_none() && policy.is_none() {
+    if driver.is_none()
+        && software.is_none()
+        && skill.is_none()
+        && workflow.is_none()
+        && policy.is_none()
+        && evaluation.is_none()
+    {
         return None;
     }
 
     let mut out = String::from("Recent capability registry context:\n");
+    if let Some(driver) = driver {
+        out.push_str("- drivers: ");
+        out.push_str(driver.as_str());
+        out.push('\n');
+    }
+    if let Some(software) = software {
+        out.push_str("- software: ");
+        out.push_str(software.as_str());
+        out.push('\n');
+    }
     if let Some(skill) = skill {
         out.push_str("- skills: ");
         out.push_str(skill.as_str());
@@ -307,6 +462,11 @@ pub fn current_registry_context_block() -> Option<String> {
     if let Some(policy) = policy {
         out.push_str("- policies: ");
         out.push_str(policy.as_str());
+        out.push('\n');
+    }
+    if let Some(evaluation) = evaluation {
+        out.push_str("- evaluations: ");
+        out.push_str(evaluation.as_str());
         out.push('\n');
     }
 
@@ -334,12 +494,26 @@ pub fn build_gemini_generate_path(model: &str) -> String {
 }
 
 pub fn build_gemini_generate_request(prompt: &str) -> String {
+    build_gemini_generate_request_with_context(prompt, None)
+}
+
+pub fn build_gemini_generate_request_with_context(
+    prompt: &str,
+    extra_context: Option<&str>,
+) -> String {
     let mut system_instruction = String::from(OPENRHIZA_SYSTEM_INSTRUCTION_HEADER);
     system_instruction.push_str("\n\n");
     system_instruction.push_str(OPENRHIZA_OS_BASELINE_MD.trim());
     if let Some(context) = current_registry_context_block() {
         system_instruction.push_str("\n\n");
         system_instruction.push_str(context.trim());
+    }
+    if let Some(extra_context) = extra_context {
+        let trimmed = extra_context.trim();
+        if !trimmed.is_empty() {
+            system_instruction.push_str("\n\n");
+            system_instruction.push_str(trimmed);
+        }
     }
 
     format!(
@@ -376,6 +550,20 @@ pub fn build_driver_upload_request(
         json_escape(&model),
         crate::identity::sha256_hex(prompt.as_bytes()),
         json_escape(payload_text)
+    )
+}
+
+pub fn build_driver_download_request(
+    profile: &NodeProfile,
+    driver_id: &str,
+    match_key: &str,
+) -> String {
+    format!(
+        "{{\"protocol_version\":\"{}\",\"node_id\":\"{}\",\"driver_id\":\"{}\",\"match_key\":\"{}\"}}",
+        PROTOCOL_VERSION,
+        profile.node_id_hex(),
+        json_escape(driver_id),
+        json_escape(match_key)
     )
 }
 
@@ -474,3 +662,5 @@ fn json_escape(input: &str) -> String {
 fn json_bool(value: bool) -> &'static str {
     if value { "true" } else { "false" }
 }
+
+

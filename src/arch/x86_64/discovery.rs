@@ -7,6 +7,7 @@ use bootloader::bootinfo::{BootInfo, MemoryRegionType};
 pub struct PciDevice {
     pub bus: u8,
     pub device: u8,
+    pub func: u8,
     pub vendor_id: u16,
     pub device_id: u16,
     pub bar0: u32,
@@ -103,25 +104,43 @@ impl SystemIdentity {
     // --- PCI bus enumeration ---
     fn enumerate_pci() -> Vec<PciDevice> {
         let mut devices = Vec::new();
-        // Walk buses 0..255 and devices/slots 0..31.
+        // Walk buses 0..255, devices/slots 0..31, and all 8 functions.
         for bus in 0..=255 {
             for device in 0..=31 {
-                let vendor_id = Self::pci_read_word(bus, device, 0, 0);
-                // Vendor ID 0xFFFF means the slot is empty.
-                if vendor_id != 0xFFFF {
-                    let device_id = Self::pci_read_word(bus, device, 0, 2);
-                    let bar0 = Self::pci_read_dword(bus, device, 0, 0x10); // BAR0 is located at offset 0x10
-                    
-                    let class_info = Self::pci_read_dword(bus, device, 0, 0x08);
+                for func in 0..=7 {
+                    let vendor_id = Self::pci_read_word(bus, device, func, 0);
+                    if vendor_id == 0xFFFF {
+                        if func == 0 {
+                            break;
+                        }
+                        continue;
+                    }
+
+                    let device_id = Self::pci_read_word(bus, device, func, 2);
+                    let bar0 = Self::pci_read_dword(bus, device, func, 0x10);
+                    let class_info = Self::pci_read_dword(bus, device, func, 0x08);
                     let prog_if = ((class_info >> 8) & 0xFF) as u8;
                     let subclass = ((class_info >> 16) & 0xFF) as u8;
                     let class_code = ((class_info >> 24) & 0xFF) as u8;
-                    
-                    if class_code == 0x0C && subclass == 0x03 && prog_if == 0x30 {
-                        crate::serial_println!("xHCI BAR: {:#010X}", bar0);
+
+                    if class_code == 0x0C && subclass == 0x03 {
+                        crate::serial_println!(
+                            "[PCI] USB controller bus {} dev {} func {} prog_if={:#04X} BAR0={:#010X}",
+                            bus, device, func, prog_if, bar0
+                        );
                     }
-                    
-                    devices.push(PciDevice { bus, device, vendor_id, device_id, bar0, class_code, subclass, prog_if });
+
+                    devices.push(PciDevice {
+                        bus,
+                        device,
+                        func,
+                        vendor_id,
+                        device_id,
+                        bar0,
+                        class_code,
+                        subclass,
+                        prog_if,
+                    });
                 }
             }
         }

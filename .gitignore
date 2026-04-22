@@ -1,5 +1,6 @@
-/target
+target/
 *.bin
 *.img
 mock_server*.log
 openrhiza-nexus/data/
+target-*/

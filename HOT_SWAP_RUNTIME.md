@@ -12,6 +12,12 @@ The goal is:
 
 Only a very small core should require reboot-level trust.
 
+This must remain a hard architectural rule, not a temporary preference:
+
+- the core is for survival and isolation only
+- heavy device-specific logic must not creep back into the core
+- the first answer to new hardware support should be a sandbox component, not a new built-in kernel driver
+
 Everything else should move toward:
 
 - sandbox-first execution
@@ -35,11 +41,14 @@ The immutable or near-immutable core should stay minimal:
 
 If a component is not part of basic system survival, it should be a candidate for hot-swap.
 
+If a new feature can be expressed as a sandbox component with a stable host ABI, that path should be preferred over enlarging the core.
+
 ## What Should Become Hot-Swappable
 
 OpenRhiza should eventually treat these as runtime-loadable modules:
 
 - hardware drivers
+- input parser drivers
 - storage policy modules
 - filesystem adapters
 - registry sync logic
@@ -108,11 +117,40 @@ When a driver candidate becomes available:
 6. if the system remains stable, persist the preferred binding for later boots
 7. upload evaluation and comments to OpenRhiza.com
 
+OpenRhiza should increasingly represent drivers as generic runtime components with:
+
+- a match key
+- a component key
+- a sandbox lifecycle state
+- a live binding state
+- a persisted preferred binding state
+
+That is the preferred long-term model for non-core hardware support.
+
 The running system should also support:
 
 - inspecting current live bindings
 - manually activating a different candidate for a match key
 - immediate rollback to the previous live binding if the new one is unsafe
+
+Input drivers should follow the same policy.
+
+For keyboard and mouse support, the preferred sequence is:
+
+1. raw HID handoff from core
+2. sandbox parser activation in mirrored mode
+3. sandbox-preferred runtime ownership
+4. rollback to bootstrap fallback if regression is detected
+
+Current operator commands:
+
+- `/sandbox-mouse-load`
+- `/sandbox-keyboard-load`
+- `/input-routing-status`
+- `/input-activate <keyboard|mouse>`
+- `/input-rollback <keyboard|mouse>`
+
+The current implementation also supports persisted `input:keyboard` and `input:mouse` bindings, which are restored automatically on the next boot when the local driver artifact is available.
 
 ## Filesystem and Storage Hot-Swap Policy
 

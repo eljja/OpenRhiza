@@ -244,13 +244,34 @@ pub fn read_named_file_from_secondary_fat16(target_names: &[[u8; 11]]) -> Option
 }
 
 pub fn read_text_file_from_secondary_fat16(target_names: &[[u8; 11]]) -> Option<String> {
-    let data = read_named_file_from_secondary_fat16(target_names)?;
+    let mut data = read_named_file_from_secondary_fat16(target_names)?;
+    if let Some(first_nul) = data.iter().position(|byte| *byte == 0) {
+        data.truncate(first_nul);
+    }
+    while matches!(data.last(), Some(b' ' | b'\r' | b'\n' | b'\t')) {
+        data.pop();
+    }
     String::from_utf8(data).ok()
 }
 
 pub fn write_named_file_to_secondary_fat16_existing(
     target_names: &[[u8; 11]],
     data: &[u8],
+) -> Result<(), &'static str> {
+    write_named_file_to_secondary_fat16_internal(target_names, data, true)
+}
+
+pub fn write_named_file_to_secondary_fat16_preserve_size(
+    target_names: &[[u8; 11]],
+    data: &[u8],
+) -> Result<(), &'static str> {
+    write_named_file_to_secondary_fat16_internal(target_names, data, false)
+}
+
+fn write_named_file_to_secondary_fat16_internal(
+    target_names: &[[u8; 11]],
+    data: &[u8],
+    update_directory_size: bool,
 ) -> Result<(), &'static str> {
     let (layout, file) = find_named_file_in_secondary_fat16(target_names)
         .ok_or("Target file not found in FAT16 root directory")?;
@@ -275,10 +296,21 @@ pub fn write_named_file_to_secondary_fat16_existing(
                 written += bytes;
             }
 
-            if !write_sector_ata_secondary(cluster_lba + sector_offset, &sector) {
+            let mut write_ok = false;
+            for _ in 0..3 {
+                if write_sector_ata_secondary(cluster_lba + sector_offset, &sector) {
+                    write_ok = true;
+                    break;
+                }
+            }
+            if !write_ok {
                 return Err("ATA sector write failed");
             }
         }
+    }
+
+    if !update_directory_size {
+        return Ok(());
     }
 
     let mut dir_sector = [0u8; 512];
@@ -286,7 +318,15 @@ pub fn write_named_file_to_secondary_fat16_existing(
     let size_bytes = (data.len() as u32).to_le_bytes();
     let size_offset = file.dir_entry_offset + 28;
     dir_sector[size_offset..size_offset + 4].copy_from_slice(&size_bytes);
-    if !write_sector_ata_secondary(file.dir_sector_lba, &dir_sector) {
+
+    let mut write_ok = false;
+    for _ in 0..3 {
+        if write_sector_ata_secondary(file.dir_sector_lba, &dir_sector) {
+            write_ok = true;
+            break;
+        }
+    }
+    if !write_ok {
         return Err("Failed to update FAT16 directory entry");
     }
 

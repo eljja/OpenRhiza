@@ -8,18 +8,19 @@ const VGA_BUFFER_ADDR: usize = 0xb8000;
 const VGA_WIDTH: usize = 80;
 const VGA_HEIGHT: usize = 25;
 const LOG_START_ROW: usize = 2;
-const LOG_END_ROW: usize = VGA_HEIGHT - 2;
-const INPUT_ROW: usize = VGA_HEIGHT - 1;
 const STATUS_ROW: usize = 0;
-const INPUT_PROMPT: &[u8] = b"cli> ";
-const INPUT_CAPACITY: usize = VGA_WIDTH - INPUT_PROMPT.len();
-const LOG_VISIBLE_ROWS: usize = LOG_END_ROW - LOG_START_ROW + 1;
+const INPUT_PROMPT: &[u8] = b"input> ";
+const MAX_INPUT_ROWS: usize = VGA_HEIGHT - LOG_START_ROW - 1;
+const INPUT_REGION_MIN_START: usize = VGA_HEIGHT - MAX_INPUT_ROWS;
+const INPUT_CAPACITY: usize = VGA_WIDTH * MAX_INPUT_ROWS - INPUT_PROMPT.len();
 const MAX_LOG_LINES: usize = 2048;
 const MAX_COMMAND_HISTORY: usize = 64;
 const PROMPT_COLOR: u8 = 0x0A;
 const LOG_COLOR: u8 = 0x08;
 const USER_ECHO_COLOR: u8 = 0x0A;
 const RESULT_COLOR: u8 = 0x0E;
+const MOUSE_POINTER_COLOR: u8 = 0x70;
+const MOUSE_SENSITIVITY_DIVISOR: i16 = 4;
 
 lazy_static! {
     pub static ref WRITER: Mutex<VgaWriter> = Mutex::new(VgaWriter {
@@ -40,6 +41,13 @@ lazy_static! {
         history_index: None,
         history_snapshot: [b' '; INPUT_CAPACITY],
         history_snapshot_len: 0,
+        runtime_seconds: 0,
+        mouse_enabled: false,
+        mouse_col: 0,
+        mouse_row: LOG_START_ROW,
+        mouse_buttons: 0,
+        mouse_dx_accum: 0,
+        mouse_dy_accum: 0,
         buffer: unsafe {
             let offset = crate::arch::x86_64::discovery::PHYS_MEM_OFFSET;
             &mut *((offset + VGA_BUFFER_ADDR as u64) as *mut Buffer)
@@ -77,10 +85,46 @@ pub struct VgaWriter {
     history_index: Option<usize>,
     history_snapshot: [u8; INPUT_CAPACITY],
     history_snapshot_len: usize,
+    runtime_seconds: u64,
+    mouse_enabled: bool,
+    mouse_col: usize,
+    mouse_row: usize,
+    mouse_buttons: u8,
+    mouse_dx_accum: i16,
+    mouse_dy_accum: i16,
     buffer: &'static mut Buffer,
 }
 
 impl VgaWriter {
+    fn active_input_rows(&self) -> usize {
+        let total_cells = INPUT_PROMPT.len()
+            .saturating_add(self.input_len)
+            .saturating_add(1);
+        ((total_cells.saturating_add(VGA_WIDTH - 1)) / VGA_WIDTH)
+            .clamp(1, MAX_INPUT_ROWS)
+    }
+
+    fn input_start_row(&self) -> usize {
+        VGA_HEIGHT - self.active_input_rows()
+    }
+
+    fn log_end_row(&self) -> usize {
+        self.input_start_row().saturating_sub(1)
+    }
+
+    fn log_visible_rows(&self) -> usize {
+        self.log_end_row().saturating_sub(LOG_START_ROW) + 1
+    }
+
+    fn clamp_mouse_to_log_area(&mut self) {
+        let log_end_row = self.log_end_row();
+        if self.mouse_row < LOG_START_ROW {
+            self.mouse_row = LOG_START_ROW;
+        } else if self.mouse_row > log_end_row {
+            self.mouse_row = log_end_row;
+        }
+    }
+
     fn write_fmt_with_color(&mut self, args: fmt::Arguments, color: u8) -> fmt::Result {
         struct ColorAdapter<'a> {
             writer: &'a mut VgaWriter,
@@ -132,7 +176,7 @@ impl VgaWriter {
         }
         self.log_lines[self.log_current_line] = blank_line();
         self.log_line_colors[self.log_current_line] = LOG_COLOR;
-        self.row_position = LOG_END_ROW;
+        self.row_position = self.log_end_row();
         self.column_position = 0;
     }
 
@@ -159,6 +203,7 @@ impl VgaWriter {
     }
 
     pub fn init_cli(&mut self) {
+        self.runtime_seconds = 0;
         self.render_runtime(0);
         self.render_log_view();
         self.render_input_line();
@@ -308,36 +353,55 @@ impl VgaWriter {
     }
 
     fn render_input_line(&mut self) {
-        self.clear_row(INPUT_ROW);
+        let input_start_row = self.input_start_row();
+        let active_input_rows = self.active_input_rows();
+        let total_cells = VGA_WIDTH * active_input_rows;
+
+        self.render_log_view();
+
+        for row in INPUT_REGION_MIN_START..VGA_HEIGHT {
+            self.clear_row(row);
+        }
 
         for (idx, byte) in INPUT_PROMPT.iter().enumerate() {
-            self.buffer.chars[INPUT_ROW][idx] = ScreenChar {
+            let absolute = idx;
+            let row = input_start_row + absolute / VGA_WIDTH;
+            let col = absolute % VGA_WIDTH;
+            self.buffer.chars[row][col] = ScreenChar {
                 ascii_character: *byte,
                 color_code: self.color_code,
             };
         }
 
-        for idx in 0..INPUT_CAPACITY {
-            let ch = if idx < self.input_len {
-                self.input_buffer[idx]
-            } else {
-                b' '
-            };
-            self.buffer.chars[INPUT_ROW][INPUT_PROMPT.len() + idx] = ScreenChar {
-                ascii_character: ch,
+        for idx in 0..self.input_len {
+            let absolute = INPUT_PROMPT.len() + idx;
+            if absolute >= total_cells {
+                break;
+            }
+
+            let row = input_start_row + absolute / VGA_WIDTH;
+            let col = absolute % VGA_WIDTH;
+            self.buffer.chars[row][col] = ScreenChar {
+                ascii_character: self.input_buffer[idx],
                 color_code: self.color_code,
             };
         }
 
         if self.input_len < INPUT_CAPACITY {
-            self.buffer.chars[INPUT_ROW][INPUT_PROMPT.len() + self.input_len] = ScreenChar {
-                ascii_character: b'_',
-                color_code: self.color_code,
-            };
+            let absolute = INPUT_PROMPT.len() + self.input_len;
+            if absolute < total_cells {
+                let row = input_start_row + absolute / VGA_WIDTH;
+                let col = absolute % VGA_WIDTH;
+                self.buffer.chars[row][col] = ScreenChar {
+                    ascii_character: b'_',
+                    color_code: self.color_code,
+                };
+            }
         }
     }
 
     pub fn render_runtime(&mut self, total_seconds: u64) {
+        self.runtime_seconds = total_seconds;
         let hours = total_seconds / 3600;
         let minutes = (total_seconds % 3600) / 60;
         let seconds = total_seconds % 60;
@@ -361,6 +425,24 @@ impl VgaWriter {
                 };
             }
         }
+
+        let mouse_label = alloc::format!(
+            "mouse {:03},{:02} {:03b}",
+            self.mouse_col,
+            self.mouse_row.saturating_sub(LOG_START_ROW),
+            self.mouse_buttons & 0x07
+        );
+        for (idx, byte) in mouse_label.as_bytes().iter().enumerate() {
+            if idx >= start_col.saturating_sub(1) {
+                break;
+            }
+            self.buffer.chars[STATUS_ROW][idx] = ScreenChar {
+                ascii_character: *byte,
+                color_code: self.color_code,
+            };
+        }
+
+        self.render_mouse_overlay();
     }
 
     fn push_log_byte(&mut self, byte: u8, color: u8) {
@@ -379,18 +461,23 @@ impl VgaWriter {
     }
 
     fn render_log_view(&mut self) {
-        for row in LOG_START_ROW..=LOG_END_ROW {
+        let log_end_row = self.log_end_row();
+        let log_visible_rows = self.log_visible_rows();
+
+        self.clamp_mouse_to_log_area();
+
+        for row in LOG_START_ROW..=log_end_row {
             self.clear_row(row);
         }
 
         let total_lines = self.log_line_count;
-        let start_idx = if total_lines > LOG_VISIBLE_ROWS {
-            total_lines - LOG_VISIBLE_ROWS - self.scroll_offset.min(self.max_scroll_offset())
+        let start_idx = if total_lines > log_visible_rows {
+            total_lines - log_visible_rows - self.scroll_offset.min(self.max_scroll_offset())
         } else {
             0
         };
 
-        for row_offset in 0..LOG_VISIBLE_ROWS {
+        for row_offset in 0..log_visible_rows {
             let row = LOG_START_ROW + row_offset;
             let Some(line) = self.log_line_by_logical_index(start_idx + row_offset) else {
                 continue;
@@ -407,10 +494,12 @@ impl VgaWriter {
                 };
             }
         }
+
+        self.render_mouse_overlay();
     }
 
     fn max_scroll_offset(&self) -> usize {
-        self.log_line_count.saturating_sub(LOG_VISIBLE_ROWS)
+        self.log_line_count.saturating_sub(self.log_visible_rows())
     }
 
     fn set_input_from_bytes(&mut self, value: &[u8], value_len: usize) {
@@ -419,6 +508,57 @@ impl VgaWriter {
         self.input_buffer[..copy_len].copy_from_slice(&value[..copy_len]);
         self.input_len = copy_len;
         self.render_input_line();
+    }
+
+    pub fn update_mouse_state(&mut self, dx: i8, dy: i8, buttons: u8) {
+        self.mouse_enabled = true;
+        self.mouse_dx_accum += dx as i16;
+        self.mouse_dy_accum += dy as i16;
+
+        let mut step_x = 0isize;
+        let mut step_y = 0isize;
+
+        while self.mouse_dx_accum >= MOUSE_SENSITIVITY_DIVISOR {
+            self.mouse_dx_accum -= MOUSE_SENSITIVITY_DIVISOR;
+            step_x += 1;
+        }
+        while self.mouse_dx_accum <= -MOUSE_SENSITIVITY_DIVISOR {
+            self.mouse_dx_accum += MOUSE_SENSITIVITY_DIVISOR;
+            step_x -= 1;
+        }
+        while self.mouse_dy_accum >= MOUSE_SENSITIVITY_DIVISOR {
+            self.mouse_dy_accum -= MOUSE_SENSITIVITY_DIVISOR;
+            step_y += 1;
+        }
+        while self.mouse_dy_accum <= -MOUSE_SENSITIVITY_DIVISOR {
+            self.mouse_dy_accum += MOUSE_SENSITIVITY_DIVISOR;
+            step_y -= 1;
+        }
+
+        let next_col = self.mouse_col as isize + step_x;
+        let next_row = self.mouse_row as isize + step_y;
+        let log_end_row = self.log_end_row();
+        self.mouse_col = next_col.clamp(0, (VGA_WIDTH - 1) as isize) as usize;
+        self.mouse_row = next_row.clamp(LOG_START_ROW as isize, log_end_row as isize) as usize;
+        self.mouse_buttons = buttons & 0x07;
+
+        self.render_runtime(self.runtime_seconds);
+        self.render_log_view();
+        self.render_input_line();
+    }
+
+    fn render_mouse_overlay(&mut self) {
+        if !self.mouse_enabled {
+            return;
+        }
+        if self.mouse_row >= VGA_HEIGHT || self.mouse_col >= VGA_WIDTH {
+            return;
+        }
+
+        self.buffer.chars[self.mouse_row][self.mouse_col] = ScreenChar {
+            ascii_character: b'X',
+            color_code: MOUSE_POINTER_COLOR,
+        };
     }
 
     fn history_entry(&self, logical_index: usize) -> Option<(&[u8], usize)> {
@@ -513,12 +653,12 @@ macro_rules! result_println {
 
 #[doc(hidden)]
 pub fn _print(args: fmt::Arguments) {
-    _print_with_color(args, LOG_COLOR);
+    crate::arch::x86_64::serial::_print(args);
 }
 
 #[doc(hidden)]
 pub fn _print_with_color(args: fmt::Arguments, color: u8) {
-    {
+    if color != LOG_COLOR {
         let mut writer = WRITER.lock();
         writer.write_fmt_with_color(args, color).unwrap();
     }
