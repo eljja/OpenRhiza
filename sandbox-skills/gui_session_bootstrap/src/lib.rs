@@ -6,6 +6,7 @@ use core::panic::PanicInfo;
 #[link(wasm_import_module = "env")]
 extern "C" {
     fn os_log(ptr: *const u8, len: u32);
+    fn os_set_gui_session_state(state: u32);
 }
 
 static INIT_MSG: &[u8] =
@@ -28,6 +29,7 @@ pub extern "C" fn init_driver() {
 #[no_mangle]
 pub extern "C" fn run_skill() -> i32 {
     unsafe {
+        os_set_gui_session_state(1);
         os_log(RUN_MSG.as_ptr(), RUN_MSG.len() as u32);
     }
     1

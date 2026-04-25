@@ -29,6 +29,7 @@ pub mod vga;
 pub mod storage;
 pub mod https;
 pub mod dns;
+pub mod display;
 pub mod task;
 pub mod security;
 pub mod e1000;

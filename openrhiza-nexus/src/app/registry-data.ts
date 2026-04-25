@@ -382,8 +382,8 @@ function seedIfEmpty(db: DatabaseSync) {
   `);
 
   seedSkillArtifactIfPresent(db, "skill_registry_lookup_v1", "artifact_skill_registry_lookup_v1_seed", "SKREG.WAS");
-  seedSkillArtifactIfPresent(db, "skill_display_console_mode_v1", "artifact_skill_display_console_mode_v1_seed", "SKDSP.WAS");
-  seedSkillArtifactIfPresent(db, "skill_gui_session_bootstrap_v1", "artifact_skill_gui_session_bootstrap_v1_seed", "SKGUI.WAS");
+  seedSkillArtifactIfPresent(db, "skill_display_console_mode_v1", "artifact_skill_display_console_mode_v1_seed2", "SKDSP.WAS");
+  seedSkillArtifactIfPresent(db, "skill_gui_session_bootstrap_v1", "artifact_skill_gui_session_bootstrap_v1_seed2", "SKGUI.WAS");
   seedSkillArtifactIfPresent(db, "skill_display_framebuffer_mode_v1", "artifact_skill_display_framebuffer_mode_v1_seed", "SKFBUF.WAS");
   seedSkillArtifactIfPresent(db, "skill_gui_compositor_seed_v1", "artifact_skill_gui_compositor_seed_v1_seed", "SKCOMP.WAS");
 }

@@ -184,13 +184,14 @@ fn handle_cli_command(command: &str) {
 
     if let Some(local_command) = command.strip_prefix('/') {
         match local_command {
-            "help" => crate::result_println!("[CLI] Local commands: /help, /clear, /status, /nexus-fetch, /api-register, /api-register-http, /http-health, /https-health, /https-root, /api-hw, /api-driver, /api-software, /api-skill, /api-workflow, /api-policy, /api-eval, /api-all, /gemini-test, /driver-map, /driver-runtime-status, /driver-promote <match_key>, /skill-cache, /skill-download <skill_id>, /skill-load <skill_id>, /skill-run <skill_id>, /skill-unload <skill_id>, /skill-activate <skill_id>, /driver-generate <match_key>, /driver-upload <match_key>, /driver-download <driver_id> [match_key], /driver-comment <driver_id> <text>, /driver-vote <driver_id> up|down, /driver-bindings, /driver-activate <match_key> <driver_id>, /driver-rollback <match_key>, /sandbox-mouse-load, /sandbox-keyboard-load, /input-routing-status, /input-activate <keyboard|mouse>, /input-rollback <keyboard|mouse>"),
+            "help" => crate::result_println!("[CLI] Local commands: /help, /clear, /status, /display-status, /nexus-fetch, /api-register, /api-register-http, /http-health, /https-health, /https-root, /api-hw, /api-driver, /api-software, /api-skill, /api-workflow, /api-policy, /api-eval, /api-all, /gemini-test, /driver-map, /driver-runtime-status, /driver-promote <match_key>, /skill-cache, /skill-download <skill_id>, /skill-load <skill_id>, /skill-run <skill_id>, /skill-unload <skill_id>, /skill-activate <skill_id>, /driver-generate <match_key>, /driver-upload <match_key>, /driver-download <driver_id> [match_key], /driver-comment <driver_id> <text>, /driver-vote <driver_id> up|down, /driver-bindings, /driver-activate <match_key> <driver_id>, /driver-rollback <match_key>, /sandbox-mouse-load, /sandbox-keyboard-load, /input-routing-status, /input-activate <keyboard|mouse>, /input-rollback <keyboard|mouse>"),
             "clear" => WRITER.lock().clear_log_area(),
             "status" => {
                 crate::result_println!("[CLI] Keyboard input ready.");
                 crate::result_println!("[CLI] Serial debug logs remain on COM1 only.");
                 crate::result_println!("[CLI] Plain text without '/' is sent to Gemini.");
             }
+            "display-status" => show_display_status(),
             "nexus-fetch" => queue_api_command(crate::api_v1::ServiceApiCommand::NexusFetch, "nexus_fetch"),
             "api-register" => queue_api_command(crate::api_v1::ServiceApiCommand::Register, "register"),
             "api-register-http" => queue_api_command(crate::api_v1::ServiceApiCommand::RegisterHttp, "register_http"),
@@ -541,6 +542,12 @@ fn show_skill_cache() {
             state.persisted_artifact_id.as_deref().unwrap_or("none"),
             state.fat_name_text
         );
+    }
+}
+
+fn show_display_status() {
+    for line in crate::display::status_block().lines() {
+        crate::result_println!("{}", line);
     }
 }
 
