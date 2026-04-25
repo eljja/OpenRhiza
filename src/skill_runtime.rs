@@ -46,6 +46,7 @@ lazy_static! {
     pub static ref SKILL_RUNTIME_COMMAND_QUEUE: Arc<ArrayQueue<SkillRuntimeCommand>> =
         Arc::new(ArrayQueue::new(16));
     static ref SKILL_RUNTIME_STATE: Mutex<Vec<SkillRuntimeEntry>> = Mutex::new(Vec::new());
+    static ref AUTO_RUN_SKILL_IDS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 }
 
 fn module_key(skill_id: &str) -> String {
@@ -173,6 +174,23 @@ pub fn queue_run(skill_id: &str) -> Result<(), &'static str> {
             skill_id: String::from(skill_id),
         })
         .map_err(|_| "skill runtime command queue full")
+}
+
+pub fn schedule_auto_run(skill_id: &str) {
+    let mut pending = AUTO_RUN_SKILL_IDS.lock();
+    if pending.iter().all(|value| value != skill_id) {
+        pending.push(String::from(skill_id));
+    }
+}
+
+pub fn take_auto_run(skill_id: &str) -> bool {
+    let mut pending = AUTO_RUN_SKILL_IDS.lock();
+    if let Some(index) = pending.iter().position(|value| value == skill_id) {
+        pending.remove(index);
+        true
+    } else {
+        false
+    }
 }
 
 pub fn queue_unload(skill_id: &str) -> Result<(), &'static str> {

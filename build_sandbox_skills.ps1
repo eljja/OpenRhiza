@@ -23,6 +23,18 @@ $targets = @(
         Root = Join-Path $repoRoot "sandbox-skills\gui_session_bootstrap"
         Artifact = "gui_session_bootstrap.wasm"
         FatName = "SKGUI.WAS"
+    },
+    @{
+        Name = "display_framebuffer_mode"
+        Root = Join-Path $repoRoot "sandbox-skills\display_framebuffer_mode"
+        Artifact = "display_framebuffer_mode.wasm"
+        FatName = "SKFBUF.WAS"
+    },
+    @{
+        Name = "gui_compositor_seed"
+        Root = Join-Path $repoRoot "sandbox-skills\gui_compositor_seed"
+        Artifact = "gui_compositor_seed.wasm"
+        FatName = "SKCOMP.WAS"
     }
 )
 

@@ -56,7 +56,17 @@ pub enum DriverRegistryCommand {
 
 #[derive(Debug, Clone)]
 pub enum SkillRegistryCommand {
-    DownloadCandidate { skill_id: String, auto_load: bool },
+    DownloadCandidate {
+        skill_id: String,
+        auto_load: bool,
+        auto_run: bool,
+    },
+}
+
+#[derive(Debug, Clone)]
+pub struct PendingWorkflowQuery {
+    pub goal: String,
+    pub available_skills: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,6 +93,7 @@ pub struct PendingDriverDownload {
 pub struct PendingSkillDownload {
     pub skill_id: String,
     pub auto_load: bool,
+    pub auto_run: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -117,6 +128,7 @@ lazy_static! {
     static ref LAST_POLICY_REGISTRY_SUMMARY: Mutex<Option<String>> = Mutex::new(None);
     static ref LAST_EVALUATION_REGISTRY_SUMMARY: Mutex<Option<String>> = Mutex::new(None);
     static ref LAST_PENDING_SKILL_DOWNLOAD: Mutex<Option<PendingSkillDownload>> = Mutex::new(None);
+    static ref PENDING_WORKFLOW_QUERY: Mutex<Option<PendingWorkflowQuery>> = Mutex::new(None);
 }
 
 pub fn build_node_register_request(profile: &NodeProfile) -> String {
@@ -220,11 +232,40 @@ pub fn build_skill_query_request(profile: &NodeProfile) -> String {
 }
 
 pub fn build_workflow_query_request(profile: &NodeProfile) -> String {
-    format!(
-        "{{\"protocol_version\":\"{}\",\"node_id\":\"{}\",\"goal\":\"capability_registry_lookup\",\"available_skills\":[\"registry_lookup\",\"sandbox\",\"gemini\"]}}",
-        PROTOCOL_VERSION,
-        profile.node_id_hex()
-    )
+    let pending = PENDING_WORKFLOW_QUERY.lock().take();
+    let goal = pending
+        .as_ref()
+        .map(|query| query.goal.as_str())
+        .unwrap_or("capability_registry_lookup");
+    let available_skills = pending
+        .as_ref()
+        .map(|query| query.available_skills.clone())
+        .unwrap_or_else(|| {
+            Vec::from([
+                String::from("registry_lookup"),
+                String::from("sandbox"),
+                String::from("gemini"),
+            ])
+        });
+
+    let mut body = String::new();
+    body.push_str("{\"protocol_version\":\"");
+    body.push_str(PROTOCOL_VERSION);
+    body.push_str("\",\"node_id\":\"");
+    body.push_str(&profile.node_id_hex());
+    body.push_str("\",\"goal\":\"");
+    body.push_str(json_escape(goal).as_str());
+    body.push_str("\",\"available_skills\":[");
+    for (index, skill) in available_skills.iter().enumerate() {
+        if index > 0 {
+            body.push(',');
+        }
+        body.push('"');
+        body.push_str(json_escape(skill.as_str()).as_str());
+        body.push('"');
+    }
+    body.push_str("]}");
+    body
 }
 
 pub fn build_policy_query_request(profile: &NodeProfile) -> String {
@@ -366,6 +407,20 @@ pub fn queue_skill_registry_command(
     SKILL_REGISTRY_QUEUE.push(command)
 }
 
+pub fn queue_custom_workflow_query(
+    goal: &str,
+    available_skills: &[&str],
+) -> Result<(), ServiceApiCommand> {
+    *PENDING_WORKFLOW_QUERY.lock() = Some(PendingWorkflowQuery {
+        goal: String::from(goal),
+        available_skills: available_skills
+            .iter()
+            .map(|value| String::from(*value))
+            .collect(),
+    });
+    SERVICE_API_QUEUE.push(ServiceApiCommand::WorkflowQuery)
+}
+
 pub fn record_last_gemini_prompt(prompt: &str) {
     *LAST_GEMINI_PROMPT.lock() = Some(String::from(prompt));
 }
@@ -413,10 +468,11 @@ pub fn take_pending_driver_download() -> Option<PendingDriverDownload> {
     LAST_DRIVER_DOWNLOAD_TARGET.lock().take()
 }
 
-pub fn record_pending_skill_download(skill_id: &str, auto_load: bool) {
+pub fn record_pending_skill_download(skill_id: &str, auto_load: bool, auto_run: bool) {
     *LAST_PENDING_SKILL_DOWNLOAD.lock() = Some(PendingSkillDownload {
         skill_id: String::from(skill_id),
         auto_load,
+        auto_run,
     });
 }
 

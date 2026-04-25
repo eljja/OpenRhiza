@@ -37,6 +37,7 @@ pub mod crypto;
 pub mod tls;
 pub mod identity;
 pub mod api_v1;
+pub mod boot_automation;
 pub mod capability_cache;
 pub mod driver_cache;
 pub mod driver_runtime;
@@ -282,6 +283,7 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
     executor.spawn(task::Task::new(task::keyboard::keyboard_task()));
     executor.spawn(task::Task::new(usb_input_task()));
     executor.spawn(task::Task::new(runtime_status_task()));
+    executor.spawn(task::Task::new(crate::boot_automation::boot_autorun_task()));
     executor.spawn(task::Task::new(core_os_task(rhiza)));
     executor.run();
 }
@@ -537,6 +539,19 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
                                                 state.stage,
                                                 state.current_artifact_id.as_deref().unwrap_or("none")
                                             );
+                                            if crate::skill_runtime::take_auto_run(skill_id.as_str()) {
+                                                match crate::skill_runtime::queue_run(skill_id.as_str()) {
+                                                    Ok(()) => crate::result_println!(
+                                                        "[Skill Runtime] Queued autorun for {}.",
+                                                        skill_id
+                                                    ),
+                                                    Err(error) => crate::result_println!(
+                                                        "[Skill Runtime] Autorun for {} failed: {}",
+                                                        skill_id,
+                                                        error
+                                                    ),
+                                                }
+                                            }
                                         }
                                     }
                                     crate::os_core_seed::ExecutionResult::Panic(err) => {
@@ -569,11 +584,14 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
                     crate::skill_runtime::SkillRuntimeCommand::Run { skill_id } => {
                         let module_key = crate::skill_runtime::module_key_for_skill(skill_id.as_str());
                         match rhiza.invoke_named_wasm_entry(module_key.as_str(), "run_skill") {
-                            Ok(Some(code)) => crate::result_println!(
-                                "[Skill Runtime] {} returned {}.",
-                                skill_id,
-                                code
-                            ),
+                            Ok(Some(code)) => {
+                                crate::result_println!(
+                                    "[Skill Runtime] {} returned {}.",
+                                    skill_id,
+                                    code
+                                );
+                                maybe_queue_followup_workflow_for_skill(skill_id.as_str());
+                            }
                             Ok(None) => crate::result_println!(
                                 "[Skill Runtime] {} executed.",
                                 skill_id
@@ -1342,6 +1360,51 @@ fn start_next_prompt_orchestration_step(
     }
 }
 
+fn maybe_queue_followup_workflow_for_skill(skill_id: &str) {
+    match skill_id {
+        "skill_display_console_mode_v1" => {
+            match crate::api_v1::queue_custom_workflow_query(
+                "display console expansion framebuffer transition gui bootstrap",
+                &["display_console", "gui_session", "registry_lookup", "sandbox", "gemini"],
+            ) {
+                Ok(()) => crate::result_println!(
+                    "[Display Workflow] Queued workflow query for console expansion."
+                ),
+                Err(_) => crate::result_println!(
+                    "[Display Workflow] Workflow query queue full."
+                ),
+            }
+        }
+        "skill_gui_session_bootstrap_v1" => {
+            match crate::api_v1::queue_custom_workflow_query(
+                "gui session bootstrap compositor input orchestration",
+                &["gui_session", "display_console", "registry_lookup", "sandbox", "gemini"],
+            ) {
+                Ok(()) => crate::result_println!(
+                    "[Display Workflow] Queued workflow query for GUI bootstrap."
+                ),
+                Err(_) => crate::result_println!(
+                    "[Display Workflow] Workflow query queue full."
+                ),
+            }
+        }
+        "skill_display_framebuffer_mode_v1" => {
+            match crate::api_v1::queue_custom_workflow_query(
+                "gui session bootstrap compositor input orchestration",
+                &["display_framebuffer", "gui_session", "registry_lookup", "sandbox", "gemini"],
+            ) {
+                Ok(()) => crate::result_println!(
+                    "[Display Workflow] Queued GUI bootstrap workflow after framebuffer mode."
+                ),
+                Err(_) => crate::result_println!(
+                    "[Display Workflow] Workflow query queue full."
+                ),
+            }
+        }
+        _ => {}
+    }
+}
+
 fn map_registry_query_phase_to_service_phase(
     phase: crate::prompt_orchestrator::RegistryQueryPhase,
 ) -> ServiceApiPhase {
@@ -1532,8 +1595,12 @@ fn build_custom_service_request_from_skill_command(
 ) -> Option<ServiceRequestSpec> {
     let profile = crate::identity::current_profile()?;
     match command {
-        crate::api_v1::SkillRegistryCommand::DownloadCandidate { skill_id, auto_load } => {
-            crate::api_v1::record_pending_skill_download(skill_id.as_str(), *auto_load);
+        crate::api_v1::SkillRegistryCommand::DownloadCandidate {
+            skill_id,
+            auto_load,
+            auto_run,
+        } => {
+            crate::api_v1::record_pending_skill_download(skill_id.as_str(), *auto_load, *auto_run);
             Some(ServiceRequestSpec {
                 phase: ServiceApiPhase::SkillDownload,
                 path: String::from("/api/v1/skill/download"),
@@ -1766,6 +1833,66 @@ fn log_service_api_summary(phase: ServiceApiPhase, body: &[u8]) {
                     crate::capability_cache::RegistryDomain::Workflow,
                     summary.as_str(),
                 );
+                if workflow_ids
+                    .iter()
+                    .any(|workflow_id| workflow_id == "workflow_display_expand_v1")
+                    && crate::skill_cache::find_cached_skill("skill_display_framebuffer_mode_v1").is_none()
+                {
+                    match crate::api_v1::queue_skill_registry_command(
+                        crate::api_v1::SkillRegistryCommand::DownloadCandidate {
+                            skill_id: String::from("skill_display_framebuffer_mode_v1"),
+                            auto_load: true,
+                            auto_run: true,
+                        },
+                    ) {
+                        Ok(()) => crate::result_println!(
+                            "[Display Workflow] Queued framebuffer mode skill download."
+                        ),
+                        Err(_) => crate::result_println!(
+                            "[Display Workflow] Skill registry queue full."
+                        ),
+                    }
+                }
+                if workflow_ids
+                    .iter()
+                    .any(|workflow_id| workflow_id == "workflow_display_expand_v1")
+                    && crate::skill_cache::find_cached_skill("skill_gui_session_bootstrap_v1").is_none()
+                {
+                    match crate::api_v1::queue_skill_registry_command(
+                        crate::api_v1::SkillRegistryCommand::DownloadCandidate {
+                            skill_id: String::from("skill_gui_session_bootstrap_v1"),
+                            auto_load: true,
+                            auto_run: true,
+                        },
+                    ) {
+                        Ok(()) => crate::result_println!(
+                            "[Display Workflow] Queued GUI bootstrap skill download."
+                        ),
+                        Err(_) => crate::result_println!(
+                            "[Display Workflow] Skill registry queue full."
+                        ),
+                    }
+                }
+                if workflow_ids
+                    .iter()
+                    .any(|workflow_id| workflow_id == "workflow_gui_bootstrap_v1")
+                    && crate::skill_cache::find_cached_skill("skill_gui_compositor_seed_v1").is_none()
+                {
+                    match crate::api_v1::queue_skill_registry_command(
+                        crate::api_v1::SkillRegistryCommand::DownloadCandidate {
+                            skill_id: String::from("skill_gui_compositor_seed_v1"),
+                            auto_load: true,
+                            auto_run: true,
+                        },
+                    ) {
+                        Ok(()) => crate::result_println!(
+                            "[Display Workflow] Queued compositor seed skill download."
+                        ),
+                        Err(_) => crate::result_println!(
+                            "[Display Workflow] Skill registry queue full."
+                        ),
+                    }
+                }
             }
         }
         ServiceApiPhase::PolicyQuery => {
@@ -1919,6 +2046,10 @@ fn handle_successful_service_api_side_effects(
                         crate::capability_cache::RegistryDomain::Skill,
                         crate::skill_runtime::local_skill_ids_summary().as_str(),
                     );
+
+                    if pending.as_ref().map(|value| value.auto_run).unwrap_or(false) {
+                        crate::skill_runtime::schedule_auto_run(skill_id.as_str());
+                    }
 
                     if pending.as_ref().map(|value| value.auto_load).unwrap_or(false) {
                         match crate::skill_runtime::queue_load(skill_id.as_str()) {

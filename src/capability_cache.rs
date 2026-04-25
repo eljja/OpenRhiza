@@ -10,7 +10,7 @@ pub enum RegistryDomain {
 }
 
 const SOFTWARE_CACHE_FILES: [[u8; 11]; 1] = [*b"SOFTCCH TXT"];
-const SKILL_CACHE_FILES: [[u8; 11]; 1] = [*b"SKILLCCHTXT"];
+const SKILL_CACHE_FILES: [[u8; 11]; 1] = [*b"SKCAPCHETXT"];
 const WORKFLOW_CACHE_FILES: [[u8; 11]; 1] = [*b"WORKCCH TXT"];
 const POLICY_CACHE_FILES: [[u8; 11]; 1] = [*b"POLICCH TXT"];
 const EVALUATION_CACHE_FILES: [[u8; 11]; 1] = [*b"EVALCCH TXT"];

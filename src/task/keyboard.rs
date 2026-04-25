@@ -282,6 +282,10 @@ fn handle_cli_command(command: &str) {
     crate::vga::init_cli();
 }
 
+pub fn execute_virtual_cli_command(command: &str) {
+    handle_cli_command(command);
+}
+
 fn queue_api_command(command: crate::api_v1::ServiceApiCommand, label: &str) {
     match crate::api_v1::queue_service_api_command(command) {
         Ok(()) => crate::result_println!("[CLI] Queued API command: {}", label),
@@ -566,6 +570,7 @@ fn queue_skill_download(skill_id: &str) {
         crate::api_v1::SkillRegistryCommand::DownloadCandidate {
             skill_id: alloc::string::String::from(skill_id),
             auto_load: false,
+            auto_run: false,
         },
     ) {
         Ok(()) => crate::result_println!("[CLI] Queued skill download for {}", skill_id),

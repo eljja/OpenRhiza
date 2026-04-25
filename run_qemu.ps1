@@ -64,15 +64,42 @@ function Initialize-FixedCacheFile {
     [System.IO.File]::WriteAllBytes($Path, $buffer)
 }
 
+function Initialize-FixedCacheFileFromText {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Text,
+        [Parameter(Mandatory = $true)]
+        [int]$Size
+    )
+
+    $bytes = [System.Text.Encoding]::ASCII.GetBytes($Text)
+    if ($bytes.Length -gt $Size) {
+        throw "Content for $Path exceeds fixed cache size $Size bytes."
+    }
+
+    $buffer = New-Object byte[] $Size
+    [Array]::Copy($bytes, $buffer, $bytes.Length)
+    [System.IO.File]::WriteAllBytes($Path, $buffer)
+}
+
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "DRVMAP.TXT") -Header "# OpenRhiza active driver map`n" -Size 512
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "SKILLCCH.TXT") -Header "# OpenRhiza local skill cache`n" -Size 512
+Initialize-FixedCacheFile -Path (Join-Path $driverDisk "SKCAPCHE.TXT") -Header "# OpenRhiza capability cache`ndomain=skills`nsummary=`n" -Size 512
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "SKLACTV.TXT") -Header "# OpenRhiza active skill map`n" -Size 512
+if (Test-Path -LiteralPath (Join-Path $repoRoot "BOOT_AUTORUN.md")) {
+    $bootAutorunText = Get-Content -LiteralPath (Join-Path $repoRoot "BOOT_AUTORUN.md") -Raw
+    Initialize-FixedCacheFileFromText -Path (Join-Path $driverDisk "BOOTAUTO.MD") -Text $bootAutorunText -Size 2048
+} else {
+    Initialize-FixedCacheFile -Path (Join-Path $driverDisk "BOOTAUTO.MD") -Header "" -Size 2048
+}
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "SOFTCCH.TXT") -Header "# OpenRhiza software cache`n" -Size 512
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "WORKCCH.TXT") -Header "# OpenRhiza workflow cache`n" -Size 512
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "POLICCH.TXT") -Header "# OpenRhiza policy cache`n" -Size 512
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "EVALCCH.TXT") -Header "# OpenRhiza evaluation cache`n" -Size 512
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "SOFTCCH.TXT") -Header "# OpenRhiza capability cache`ndomain=software`nsummary=`n" -Size 512
-Initialize-FixedCacheFile -Path (Join-Path $driverDisk "SKILLCCH.TXT") -Header "# OpenRhiza capability cache`ndomain=skills`nsummary=`n" -Size 512
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "WORKCCH.TXT") -Header "# OpenRhiza capability cache`ndomain=workflows`nsummary=`n" -Size 512
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "POLICCH.TXT") -Header "# OpenRhiza capability cache`ndomain=policies`nsummary=`n" -Size 512
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "EVALCCH.TXT") -Header "# OpenRhiza capability cache`ndomain=evaluations`nsummary=`n" -Size 512
