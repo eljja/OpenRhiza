@@ -1,6 +1,10 @@
 param(
     [Parameter(Mandatory = $true, Position = 0)]
-    [string]$BootImage
+    [string]$BootImage,
+    [ValidateSet("usb", "ps2")]
+    [string]$KeyboardTransport = "usb",
+    [ValidateSet("gtk", "sdl")]
+    [string]$DisplayBackend = "gtk"
 )
 
 $ErrorActionPreference = "Stop"
@@ -35,6 +39,7 @@ function Initialize-FixedCacheFile {
         [Parameter(Mandatory = $true)]
         [string]$Path,
         [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
         [string]$Header,
         [Parameter(Mandatory = $true)]
         [int]$Size
@@ -71,6 +76,10 @@ Initialize-FixedCacheFile -Path (Join-Path $driverDisk "SKILLCCH.TXT") -Header "
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "WORKCCH.TXT") -Header "# OpenRhiza capability cache`ndomain=workflows`nsummary=`n" -Size 512
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "POLICCH.TXT") -Header "# OpenRhiza capability cache`ndomain=policies`nsummary=`n" -Size 512
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "EVALCCH.TXT") -Header "# OpenRhiza capability cache`ndomain=evaluations`nsummary=`n" -Size 512
+
+foreach ($skillSlot in @("SK000.WAS", "SK001.WAS", "SK002.WAS", "SK003.WAS", "SK004.WAS", "SK005.WAS", "SK006.WAS", "SK007.WAS")) {
+    Initialize-FixedCacheFile -Path (Join-Path $driverDisk $skillSlot) -Header "" -Size 65536
+}
 
 function Stop-OpenRhizaSession {
     Get-Process -Name "qemu-system-x86_64" -ErrorAction SilentlyContinue |
@@ -138,15 +147,25 @@ Ensure-SerialLogWindow
 $qemuArgs = @(
     "-no-reboot"
     "-no-shutdown"
+    "-display", $DisplayBackend
+    "-k", "en-us"
     "-drive", "format=raw,file=$bootImagePath"
     "-drive", "file=fat:rw:$driverDisk,format=raw,index=2"
     "-serial", "tcp:127.0.0.1:4444"
+    "-monitor", "tcp:127.0.0.1:55555,server,nowait"
     "-netdev", "user,id=n1"
     "-device", "e1000,netdev=n1"
     "-device", "qemu-xhci,id=xhci"
-    "-device", "usb-kbd,bus=xhci.0,port=1"
-    "-device", "usb-mouse,bus=xhci.0,port=2"
 )
+
+if ($KeyboardTransport -eq "usb") {
+    $qemuArgs += @(
+        "-device", "usb-kbd,bus=xhci.0,port=1"
+        "-device", "usb-mouse,bus=xhci.0,port=2"
+    )
+} else {
+    $qemuArgs += @("-device", "usb-mouse,bus=xhci.0,port=1")
+}
 
 $qemu = Start-Process -FilePath $qemuExe -WorkingDirectory $repoRoot -ArgumentList $qemuArgs -PassThru
 Wait-Process -Id $qemu.Id

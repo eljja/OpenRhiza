@@ -72,6 +72,7 @@ Examples:
 
 Skills are not primarily for the user to run directly.
 They are building blocks the OS can invoke while solving a user request.
+Display expansion and GUI session behavior should also be modeled as skills and workflows before they are modeled as new core kernel features.
 
 ### Workflow
 
@@ -130,6 +131,7 @@ When the user asks for something, OpenRhiza should prefer:
 7. evaluation upload
 
 This applies across drivers, skills, programs, and workflows.
+It also applies to display, compositor, and GUI evolution: registry skill first, sandbox validation second, core promotion last.
 
 ## UI And API Direction
 

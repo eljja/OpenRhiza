@@ -114,6 +114,12 @@ export interface SkillQueryRequest {
   preferred_domains: string[];
 }
 
+export interface SkillDownloadRequest {
+  protocol_version: "v1";
+  node_id: string;
+  skill_id: string;
+}
+
 export interface WorkflowQueryRequest {
   protocol_version: "v1";
   node_id: string;
@@ -186,5 +192,6 @@ export function fail(message: string, status = 400) {
     status,
   };
 }
+
 
 

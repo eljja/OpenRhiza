@@ -16,6 +16,7 @@ import type {
   NodeHeartbeatRequest,
   NodeRegisterRequest,
   PolicyQueryRequest,
+  SkillDownloadRequest,
   SkillQueryRequest,
   SoftwareQueryRequest,
   WorkflowQueryRequest,
@@ -91,6 +92,14 @@ export interface SkillRecord {
   recommended_for: string[];
   status: "available" | "testing" | "planned";
   updated_at: string;
+}
+
+export interface SkillArtifactRecord {
+  artifact_id: string;
+  skill_id: string;
+  source_type: string;
+  payload_hex: string;
+  created_at: string;
 }
 
 export interface WorkflowRecord {
@@ -234,6 +243,16 @@ function mapSkill(row: Record<string, unknown>): SkillRecord {
   };
 }
 
+function mapSkillArtifact(row: Record<string, unknown>): SkillArtifactRecord {
+  return {
+    artifact_id: String(row.artifact_id),
+    skill_id: String(row.skill_id),
+    source_type: String(row.source_type),
+    payload_hex: String(row.payload_hex),
+    created_at: String(row.created_at),
+  };
+}
+
 function mapWorkflow(row: Record<string, unknown>): WorkflowRecord {
   return {
     workflow_id: String(row.workflow_id),
@@ -337,12 +356,16 @@ function seedIfEmpty(db: DatabaseSync) {
     ('skill_web_search_v1','Web Search','network','remote_skill','Text-first web lookup skill for live documentation, registry validation, and external reference checks.','["web research","documentation lookup","capability discovery"]','available','2026-04-19'),
     ('skill_registry_lookup_v1','Registry Lookup','registry','builtin_skill','Searches OpenRhiza capability records before generation or activation.','["driver lookup","program lookup","skill lookup"]','available','2026-04-19'),
     ('skill_python_sandbox_v1','Python Sandbox','validation','sandbox_skill','Runs generated Python snippets or tests inside a constrained validation loop.','["test harness","benchmarking","quick validation"]','testing','2026-04-19'),
-    ('skill_driver_smoke_v1','Driver Smoke Test','driver','sandbox_skill','Performs short-run driver validation before live activation or persistence.','["driver validation","hardware smoke tests","rollback gating"]','available','2026-04-19');
+    ('skill_driver_smoke_v1','Driver Smoke Test','driver','sandbox_skill','Performs short-run driver validation before live activation or persistence.','["driver validation","hardware smoke tests","rollback gating"]','available','2026-04-19'),
+    ('skill_display_console_mode_v1','Display Console Mode','display','sandbox_skill','Expands the text console through skill-driven display negotiation instead of hardcoding a larger console path in the kernel.','["console expansion","display transition","framebuffer planning"]','available','2026-04-25'),
+    ('skill_gui_session_bootstrap_v1','GUI Session Bootstrap','display','sandbox_skill','Coordinates GUI bootstrapping as sandboxed capability loading, keeping rollback to the text shell available.','["gui bootstrap","compositor bring-up","display orchestration"]','testing','2026-04-25');
 
     INSERT OR IGNORE INTO workflows VALUES
     ('workflow_driver_acquire_v1','Driver Acquire And Promote','driver','available','["Inspect local runtime bindings","Query OpenRhiza.com registry","Generate if missing","Sandbox smoke test","Activate live binding","Persist preferred binding","Upload evaluation/comment/vote"]','2026-04-19'),
     ('workflow_program_acquire_v1','Program Acquire And Run','program','available','["Search capability registry","Download or generate program","Validate execution path","Run for user task","Upload evaluation"]','2026-04-19'),
-    ('workflow_skill_load_v1','Skill Load And Execute','skill','available','["Search local and remote skills","Load sandbox-safe skill","Run skill for current task","Record outcome"]','2026-04-19');
+    ('workflow_skill_load_v1','Skill Load And Execute','skill','available','["Search local and remote skills","Load sandbox-safe skill","Run skill for current task","Record outcome"]','2026-04-19'),
+    ('workflow_display_expand_v1','Display Expand And Validate','display','available','["Query display and GUI skills","Download sandbox display skill","Validate wider console or framebuffer path","Promote only after shell rollback remains healthy"]','2026-04-25'),
+    ('workflow_gui_bootstrap_v1','GUI Bootstrap With Rollback','display','testing','["Inspect current display backend","Acquire compositor and input skills","Start sandbox GUI session","Preserve live rollback to text console"]','2026-04-25');
 
     INSERT OR IGNORE INTO policies VALUES
     ('policy_registry_first_v1','workflow','Always query the capability registry before generating new drivers, programs, or skills.','active','["local cache first","registry second","generation third"]','2026-04-19'),
@@ -357,6 +380,36 @@ function seedIfEmpty(db: DatabaseSync) {
     ('eval_orhiza_node_qemu_01_drv_e1000_native_v1','Intel e1000 Native Driver','orhiza_node_qemu_01','drv_e1000_native_v1','pci:8086:100e',92,88,'Strong baseline in QEMU. Continue stress testing under repeated API fetch and long uptime.','["Strong baseline in QEMU. Continue stress testing under repeated API fetch and long uptime."]','2026-04-18'),
     ('eval_orhiza_node_lab_02_drv_xhci_native_v1','xHCI Native USB Driver','orhiza_node_lab_02','drv_xhci_native_v1','pci:8086:1e31',85,80,'Good boot and input behavior. Continue checking long-duration keyboard responsiveness.','["Good boot and input behavior. Continue checking long-duration keyboard responsiveness."]','2026-04-18');
   `);
+
+  seedSkillArtifactIfPresent(db, "skill_registry_lookup_v1", "artifact_skill_registry_lookup_v1_seed", "SKREG.WAS");
+  seedSkillArtifactIfPresent(db, "skill_display_console_mode_v1", "artifact_skill_display_console_mode_v1_seed", "SKDSP.WAS");
+  seedSkillArtifactIfPresent(db, "skill_gui_session_bootstrap_v1", "artifact_skill_gui_session_bootstrap_v1_seed", "SKGUI.WAS");
+}
+
+function seedSkillArtifactIfPresent(
+  db: DatabaseSync,
+  skillId: string,
+  artifactId: string,
+  fileName: string,
+) {
+  const row = db.prepare("SELECT artifact_id FROM skill_artifacts WHERE artifact_id = ?").get(artifactId) as
+    | Record<string, unknown>
+    | undefined;
+  if (row) {
+    return;
+  }
+
+  const artifactPath = path.join(process.cwd(), "..", "rhiza_drivers", fileName);
+  if (!fs.existsSync(artifactPath)) {
+    return;
+  }
+
+  const payloadHex = fs.readFileSync(artifactPath).toString("hex");
+  db.prepare(`
+    INSERT INTO skill_artifacts (
+      artifact_id, skill_id, source_type, payload_hex, created_at
+    ) VALUES (?, ?, ?, ?, ?)
+  `).run(artifactId, skillId, "seed_local_wasm", payloadHex, new Date().toISOString());
 }
 
 function openDb() {
@@ -441,6 +494,14 @@ function openDb() {
       recommended_for_json TEXT NOT NULL,
       status TEXT NOT NULL,
       updated_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS skill_artifacts (
+      artifact_id TEXT PRIMARY KEY,
+      skill_id TEXT NOT NULL,
+      source_type TEXT NOT NULL,
+      payload_hex TEXT NOT NULL,
+      created_at TEXT NOT NULL
     );
 
     CREATE TABLE IF NOT EXISTS workflows (
@@ -605,6 +666,20 @@ export function getSkill(skillId: string) {
     | Record<string, unknown>
     | undefined;
   return row ? mapSkill(row) : null;
+}
+
+function latestSkillArtifact(skillId: string) {
+  const row = openDb()
+    .prepare(`
+      SELECT *
+      FROM skill_artifacts
+      WHERE skill_id = ?
+      ORDER BY datetime(created_at) DESC, artifact_id DESC
+      LIMIT 1
+    `)
+    .get(skillId) as Record<string, unknown> | undefined;
+
+  return row ? mapSkillArtifact(row) : null;
 }
 
 export function getWorkflow(workflowId: string) {
@@ -934,6 +1009,26 @@ export function querySkills(input: SkillQueryRequest) {
   };
 }
 
+export function downloadSkillArtifact(input: SkillDownloadRequest) {
+  const skill = getSkill(input.skill_id);
+  if (!skill) {
+    throw new Error(`Skill not found: ${input.skill_id}`);
+  }
+
+  const artifact = latestSkillArtifact(skill.skill_id);
+  if (!artifact) {
+    throw new Error(`No downloadable artifact is available for ${skill.skill_id}.`);
+  }
+
+  return {
+    skill_id: skill.skill_id,
+    artifact_id: artifact.artifact_id,
+    source_type: artifact.source_type,
+    payload_hex: artifact.payload_hex,
+    created_at: artifact.created_at,
+  };
+}
+
 export function queryWorkflows(input: WorkflowQueryRequest) {
   const workflows = listWorkflows();
   const goal = input.goal.toLowerCase();
@@ -1039,6 +1134,11 @@ export function archiveUploadedDriver(input: {
     message: "Driver payload archived in Nexus.",
   };
 }
+
+
+
+
+
 
 
 

@@ -2,6 +2,16 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 const SKILL_MAP_FILES: [[u8; 11]; 3] = [*b"SKILLCCHTXT", *b"SKILLMAPTXT", *b"SKMAP   TXT"];
+const SKILL_SLOT_TEXT: [&str; 8] = [
+    "SK000.WAS",
+    "SK001.WAS",
+    "SK002.WAS",
+    "SK003.WAS",
+    "SK004.WAS",
+    "SK005.WAS",
+    "SK006.WAS",
+    "SK007.WAS",
+];
 
 #[derive(Clone, Debug)]
 pub struct CachedSkillArtifact {
@@ -99,9 +109,11 @@ pub fn update_cached_skills(skill_ids: &[String]) -> Result<usize, &'static str>
             continue;
         }
 
+        let fat_name_text =
+            allocate_skill_slot_text(&cached).ok_or("no free preallocated skill slot is available")?;
         cached.push(CachedSkillArtifact {
             skill_id: skill_id.clone(),
-            fat_name_text: derive_fat_name_text(skill_id),
+            fat_name_text,
         });
     }
 
@@ -109,10 +121,35 @@ pub fn update_cached_skills(skill_ids: &[String]) -> Result<usize, &'static str>
     Ok(cached.len())
 }
 
-fn derive_fat_name_text(skill_id: &str) -> String {
-    let digest = crate::identity::sha256_hex(skill_id.as_bytes());
-    let mut base = String::from("SK");
-    base.push_str(&digest[..6]);
-    base.push_str(".WAS");
-    base
+fn allocate_skill_slot_text(cached: &[CachedSkillArtifact]) -> Option<String> {
+    for slot in SKILL_SLOT_TEXT {
+        if cached.iter().all(|record| record.fat_name_text != slot) {
+            return Some(String::from(slot));
+        }
+    }
+
+    None
+}
+
+pub fn persist_downloaded_skill(skill_id: &str, payload: &[u8]) -> Result<String, &'static str> {
+    let mut cached = load_cached_skills();
+    let fat_name_text = if let Some(existing) = cached.iter().find(|record| record.skill_id == skill_id) {
+        existing.fat_name_text.clone()
+    } else {
+        allocate_skill_slot_text(&cached).ok_or("no free preallocated skill slot is available")?
+    };
+
+    let fat_name = fat_name_bytes_from_text(fat_name_text.as_str())
+        .ok_or("invalid FAT file name for downloaded skill payload")?;
+    crate::storage::write_named_file_to_secondary_fat16_existing(&[fat_name], payload)?;
+
+    if cached.iter().all(|record| record.skill_id != skill_id) {
+        cached.push(CachedSkillArtifact {
+            skill_id: String::from(skill_id),
+            fat_name_text: fat_name_text.clone(),
+        });
+        persist_cached_skills(&cached)?;
+    }
+
+    Ok(fat_name_text)
 }

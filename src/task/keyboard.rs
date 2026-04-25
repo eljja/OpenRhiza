@@ -87,6 +87,23 @@ pub async fn keyboard_task() {
             let is_break = scancode >= 0x80;
             let real_scancode = scancode & 0x7F;
 
+            // Even if dynamic keymap is active, preserve extended navigation keys.
+            if is_extended && !is_break {
+                is_extended = false;
+                match real_scancode {
+                    0x4B => { WRITER.lock().cursor_left(); continue; } // ArrowLeft
+                    0x4D => { WRITER.lock().cursor_right(); continue; } // ArrowRight
+                    0x48 => { WRITER.lock().history_up(); continue; } // ArrowUp
+                    0x50 => { WRITER.lock().history_down(); continue; } // ArrowDown
+                    0x47 => { WRITER.lock().home(); continue; } // Home
+                    0x4F => { WRITER.lock().end(); continue; } // End
+                    0x49 => { WRITER.lock().scroll_up(10); continue; } // PageUp
+                    0x51 => { WRITER.lock().scroll_down(10); continue; } // PageDown
+                    0x53 => { WRITER.lock().delete_char(); continue; } // Delete
+                    _ => {}
+                }
+            }
+
             match (is_extended, real_scancode) {
                 (false, 0x2A) | (false, 0x36) => {
                     shift_pressed = !is_break;
@@ -117,8 +134,11 @@ pub async fn keyboard_task() {
                 crate::keyboard::KeyEvent::Backspace => WRITER.lock().pop_input_char(),
                 crate::keyboard::KeyEvent::ArrowUp => WRITER.lock().history_up(),
                 crate::keyboard::KeyEvent::ArrowDown => WRITER.lock().history_down(),
+                crate::keyboard::KeyEvent::ArrowLeft => WRITER.lock().cursor_left(),
+                crate::keyboard::KeyEvent::ArrowRight => WRITER.lock().cursor_right(),
                 crate::keyboard::KeyEvent::Home => WRITER.lock().home(),
                 crate::keyboard::KeyEvent::End => WRITER.lock().end(),
+                crate::keyboard::KeyEvent::Delete => WRITER.lock().delete_char(),
                 crate::keyboard::KeyEvent::PageUp => WRITER.lock().scroll_up(10),
                 crate::keyboard::KeyEvent::PageDown => WRITER.lock().scroll_down(10),
                 crate::keyboard::KeyEvent::CtrlC => {
@@ -164,7 +184,7 @@ fn handle_cli_command(command: &str) {
 
     if let Some(local_command) = command.strip_prefix('/') {
         match local_command {
-            "help" => crate::result_println!("[CLI] Local commands: /help, /clear, /status, /nexus-fetch, /api-register, /api-register-http, /http-health, /https-health, /https-root, /api-hw, /api-driver, /api-software, /api-skill, /api-workflow, /api-policy, /api-eval, /api-all, /gemini-test, /driver-map, /driver-runtime-status, /driver-promote <match_key>, /skill-cache, /skill-load <skill_id>, /skill-run <skill_id>, /skill-unload <skill_id>, /skill-activate <skill_id>, /driver-generate <match_key>, /driver-upload <match_key>, /driver-download <driver_id> [match_key], /driver-comment <driver_id> <text>, /driver-vote <driver_id> up|down, /driver-bindings, /driver-activate <match_key> <driver_id>, /driver-rollback <match_key>, /sandbox-mouse-load, /sandbox-keyboard-load, /input-routing-status, /input-activate <keyboard|mouse>, /input-rollback <keyboard|mouse>"),
+            "help" => crate::result_println!("[CLI] Local commands: /help, /clear, /status, /nexus-fetch, /api-register, /api-register-http, /http-health, /https-health, /https-root, /api-hw, /api-driver, /api-software, /api-skill, /api-workflow, /api-policy, /api-eval, /api-all, /gemini-test, /driver-map, /driver-runtime-status, /driver-promote <match_key>, /skill-cache, /skill-download <skill_id>, /skill-load <skill_id>, /skill-run <skill_id>, /skill-unload <skill_id>, /skill-activate <skill_id>, /driver-generate <match_key>, /driver-upload <match_key>, /driver-download <driver_id> [match_key], /driver-comment <driver_id> <text>, /driver-vote <driver_id> up|down, /driver-bindings, /driver-activate <match_key> <driver_id>, /driver-rollback <match_key>, /sandbox-mouse-load, /sandbox-keyboard-load, /input-routing-status, /input-activate <keyboard|mouse>, /input-rollback <keyboard|mouse>"),
             "clear" => WRITER.lock().clear_log_area(),
             "status" => {
                 crate::result_println!("[CLI] Keyboard input ready.");
@@ -189,6 +209,10 @@ fn handle_cli_command(command: &str) {
             "driver-map" => show_driver_map(),
             "driver-runtime-status" => show_driver_runtime_status(),
             "skill-cache" => show_skill_cache(),
+            _ if local_command.starts_with("skill-download ") => {
+                let skill_id = local_command["skill-download ".len()..].trim();
+                queue_skill_download(skill_id);
+            }
             _ if local_command.starts_with("skill-load ") => {
                 let skill_id = local_command["skill-load ".len()..].trim();
                 queue_skill_load(skill_id);
@@ -529,6 +553,23 @@ fn queue_skill_load(skill_id: &str) {
             fat_name
         ),
         Err(error) => crate::result_println!("[CLI] {}", error),
+    }
+}
+
+fn queue_skill_download(skill_id: &str) {
+    if skill_id.is_empty() {
+        crate::result_println!("[CLI] Usage: /skill-download <skill_id>");
+        return;
+    }
+
+    match crate::api_v1::queue_skill_registry_command(
+        crate::api_v1::SkillRegistryCommand::DownloadCandidate {
+            skill_id: alloc::string::String::from(skill_id),
+            auto_load: false,
+        },
+    ) {
+        Ok(()) => crate::result_println!("[CLI] Queued skill download for {}", skill_id),
+        Err(_) => crate::result_println!("[CLI] Skill registry queue full."),
     }
 }
 

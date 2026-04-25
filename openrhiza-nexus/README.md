@@ -14,6 +14,9 @@ It serves two roles:
 - `POST /api/v1/node/heartbeat`
 - `POST /api/v1/hardware/report`
 - `POST /api/v1/driver/query`
+- `POST /api/v1/skill/query`
+- `POST /api/v1/skill/download`
+- `POST /api/v1/workflow/query`
 - `POST /api/v1/software/query`
 - `POST /api/v1/llm/query`
 - `GET /api/v1/llm/google/models`
@@ -134,3 +137,4 @@ docker run --rm -p 3000:3000 --env-file .env openrhiza-nexus
 - This is still an early registry service, not the final production backend.
 - The current API handlers return deterministic mock or reference data.
 - The intended next step is to back these handlers with persistent storage and real artifact delivery.
+

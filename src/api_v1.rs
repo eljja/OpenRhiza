@@ -14,7 +14,7 @@ const OS_VERSION: &str = "0.1.0";
 const OPENRHIZA_HOST: &str = "openrhiza.com";
 const GEMINI_HOST: &str = "generativelanguage.googleapis.com";
 const DEFAULT_GEMINI_MODELS: [&str; 4] = [
-    "gemini-3-flash-preview",
+    "gemini-3.1-pro-preview",
     "gemini-3.1-flash-lite-preview",
     "gemini-2.5-flash",
     "gemini-2.5-flash-lite",
@@ -54,6 +54,11 @@ pub enum DriverRegistryCommand {
     },
 }
 
+#[derive(Debug, Clone)]
+pub enum SkillRegistryCommand {
+    DownloadCandidate { skill_id: String, auto_load: bool },
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DriverVote {
     Up,
@@ -66,17 +71,43 @@ pub struct DriverRegistryCandidate {
     pub match_key: String,
 }
 
+#[derive(Debug, Clone)]
+pub struct PendingDriverDownload {
+    pub driver_id: String,
+    pub match_key: String,
+    pub activate_after_download: bool,
+    pub source: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct PendingSkillDownload {
+    pub skill_id: String,
+    pub auto_load: bool,
+}
+
+#[derive(Debug, Clone)]
+pub struct QueuedGeminiPrompt {
+    pub prompt: String,
+    pub orchestrate: bool,
+    pub auto_upload_match_key: Option<String>,
+}
+
 lazy_static! {
     pub static ref SERVICE_API_QUEUE: Arc<ArrayQueue<ServiceApiCommand>> =
         Arc::new(ArrayQueue::new(8));
-    pub static ref GEMINI_PROMPT_QUEUE: Arc<ArrayQueue<String>> = Arc::new(ArrayQueue::new(4));
+    pub static ref GEMINI_PROMPT_QUEUE: Arc<ArrayQueue<QueuedGeminiPrompt>> =
+        Arc::new(ArrayQueue::new(4));
     pub static ref DRIVER_REGISTRY_QUEUE: Arc<ArrayQueue<DriverRegistryCommand>> =
+        Arc::new(ArrayQueue::new(8));
+    pub static ref SKILL_REGISTRY_QUEUE: Arc<ArrayQueue<SkillRegistryCommand>> =
         Arc::new(ArrayQueue::new(8));
     static ref LAST_GEMINI_PROMPT: Mutex<Option<String>> = Mutex::new(None);
     static ref LAST_GEMINI_TEXT: Mutex<Option<String>> = Mutex::new(None);
     static ref LAST_GEMINI_MODEL: Mutex<Option<String>> = Mutex::new(None);
     static ref LAST_DRIVER_UPLOAD_MATCH_KEY: Mutex<Option<String>> = Mutex::new(None);
-    static ref LAST_DRIVER_DOWNLOAD_TARGET: Mutex<Option<(String, String)>> = Mutex::new(None);
+    static ref LAST_DRIVER_DOWNLOAD_TARGET: Mutex<Option<PendingDriverDownload>> = Mutex::new(None);
+    static ref PENDING_DRIVER_DOWNLOAD_ACTIONS: Mutex<Vec<PendingDriverDownload>> =
+        Mutex::new(Vec::new());
     static ref LAST_DRIVER_REGISTRY_SUMMARY: Mutex<Option<String>> = Mutex::new(None);
     static ref LAST_DRIVER_REGISTRY_CANDIDATES: Mutex<Vec<DriverRegistryCandidate>> =
         Mutex::new(Vec::new());
@@ -85,6 +116,7 @@ lazy_static! {
     static ref LAST_WORKFLOW_REGISTRY_SUMMARY: Mutex<Option<String>> = Mutex::new(None);
     static ref LAST_POLICY_REGISTRY_SUMMARY: Mutex<Option<String>> = Mutex::new(None);
     static ref LAST_EVALUATION_REGISTRY_SUMMARY: Mutex<Option<String>> = Mutex::new(None);
+    static ref LAST_PENDING_SKILL_DOWNLOAD: Mutex<Option<PendingSkillDownload>> = Mutex::new(None);
 }
 
 pub fn build_node_register_request(profile: &NodeProfile) -> String {
@@ -211,6 +243,15 @@ pub fn build_evaluation_query_request(profile: &NodeProfile) -> String {
     )
 }
 
+pub fn build_skill_download_request(profile: &NodeProfile, skill_id: &str) -> String {
+    format!(
+        "{{\"protocol_version\":\"{}\",\"node_id\":\"{}\",\"skill_id\":\"{}\"}}",
+        PROTOCOL_VERSION,
+        profile.node_id_hex(),
+        json_escape(skill_id)
+    )
+}
+
 pub fn build_driver_evaluation_upload_request(
     profile: &NodeProfile,
     driver_id: &str,
@@ -285,13 +326,44 @@ pub fn queue_service_api_command(command: ServiceApiCommand) -> Result<(), Servi
 }
 
 pub fn queue_gemini_prompt(prompt: String) -> Result<(), String> {
-    GEMINI_PROMPT_QUEUE.push(prompt)
+    GEMINI_PROMPT_QUEUE.push(QueuedGeminiPrompt {
+        prompt,
+        orchestrate: true,
+        auto_upload_match_key: None,
+    })
+    .map_err(|queued| queued.prompt)
+}
+
+pub fn queue_direct_gemini_prompt(prompt: String) -> Result<(), String> {
+    GEMINI_PROMPT_QUEUE.push(QueuedGeminiPrompt {
+        prompt,
+        orchestrate: false,
+        auto_upload_match_key: None,
+    })
+    .map_err(|queued| queued.prompt)
+}
+
+pub fn queue_generated_driver_gemini_prompt(
+    match_key: &str,
+    prompt: String,
+) -> Result<(), QueuedGeminiPrompt> {
+    GEMINI_PROMPT_QUEUE.push(QueuedGeminiPrompt {
+        prompt,
+        orchestrate: false,
+        auto_upload_match_key: Some(String::from(match_key)),
+    })
 }
 
 pub fn queue_driver_registry_command(
     command: DriverRegistryCommand,
 ) -> Result<(), DriverRegistryCommand> {
     DRIVER_REGISTRY_QUEUE.push(command)
+}
+
+pub fn queue_skill_registry_command(
+    command: SkillRegistryCommand,
+) -> Result<(), SkillRegistryCommand> {
+    SKILL_REGISTRY_QUEUE.push(command)
 }
 
 pub fn record_last_gemini_prompt(prompt: &str) {
@@ -323,12 +395,59 @@ pub fn take_pending_driver_upload_match_key() -> Option<String> {
     LAST_DRIVER_UPLOAD_MATCH_KEY.lock().take()
 }
 
-pub fn record_pending_driver_download(driver_id: &str, match_key: &str) {
-    *LAST_DRIVER_DOWNLOAD_TARGET.lock() = Some((String::from(driver_id), String::from(match_key)));
+pub fn record_pending_driver_download(
+    driver_id: &str,
+    match_key: &str,
+    activate_after_download: bool,
+    source: &str,
+) {
+    *LAST_DRIVER_DOWNLOAD_TARGET.lock() = Some(PendingDriverDownload {
+        driver_id: String::from(driver_id),
+        match_key: String::from(match_key),
+        activate_after_download,
+        source: String::from(source),
+    });
 }
 
-pub fn take_pending_driver_download() -> Option<(String, String)> {
+pub fn take_pending_driver_download() -> Option<PendingDriverDownload> {
     LAST_DRIVER_DOWNLOAD_TARGET.lock().take()
+}
+
+pub fn record_pending_skill_download(skill_id: &str, auto_load: bool) {
+    *LAST_PENDING_SKILL_DOWNLOAD.lock() = Some(PendingSkillDownload {
+        skill_id: String::from(skill_id),
+        auto_load,
+    });
+}
+
+pub fn take_pending_skill_download() -> Option<PendingSkillDownload> {
+    LAST_PENDING_SKILL_DOWNLOAD.lock().take()
+}
+
+pub fn schedule_driver_download_activation(driver_id: &str, match_key: &str, source: &str) {
+    let mut pending = PENDING_DRIVER_DOWNLOAD_ACTIONS.lock();
+    if pending.iter().any(|entry| {
+        entry.driver_id == driver_id && entry.match_key == match_key && entry.source == source
+    }) {
+        return;
+    }
+    pending.push(PendingDriverDownload {
+        driver_id: String::from(driver_id),
+        match_key: String::from(match_key),
+        activate_after_download: true,
+        source: String::from(source),
+    });
+}
+
+pub fn take_scheduled_driver_download_activation(
+    driver_id: &str,
+    match_key: &str,
+) -> Option<PendingDriverDownload> {
+    let mut pending = PENDING_DRIVER_DOWNLOAD_ACTIONS.lock();
+    let index = pending
+        .iter()
+        .position(|entry| entry.driver_id == driver_id && entry.match_key == match_key)?;
+    Some(pending.remove(index))
 }
 
 pub fn clear_registry_context() {

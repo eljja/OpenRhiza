@@ -55,6 +55,7 @@ Do not stop after generation. Continue through validation, application, and repo
 ## Runtime activation policy
 
 - Treat non-core drivers, filesystem logic, skills, workflows, and generated programs as sandbox components by default.
+- Treat console expansion, framebuffer transition, compositor startup, and GUI session logic as sandbox skills or workflows unless the machine would otherwise lose basic recovery display output.
 - Prefer adding a new sandbox component model over expanding the core with device-specific logic.
 - Prefer applying non-core changes without reboot.
 - Treat reboot as a last resort, not the normal activation path.

@@ -11,6 +11,18 @@ $targets = @(
         Root = Join-Path $repoRoot "sandbox-skills\registry_lookup_bootstrap"
         Artifact = "registry_lookup_bootstrap.wasm"
         FatName = "SKREG.WAS"
+    },
+    @{
+        Name = "display_console"
+        Root = Join-Path $repoRoot "sandbox-skills\display_console_bootstrap"
+        Artifact = "display_console_bootstrap.wasm"
+        FatName = "SKDSP.WAS"
+    },
+    @{
+        Name = "gui_session"
+        Root = Join-Path $repoRoot "sandbox-skills\gui_session_bootstrap"
+        Artifact = "gui_session_bootstrap.wasm"
+        FatName = "SKGUI.WAS"
     }
 )
 
