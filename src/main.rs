@@ -1365,7 +1365,7 @@ fn maybe_queue_followup_workflow_for_skill(skill_id: &str) {
     match skill_id {
         "skill_display_console_mode_v1" => {
             match crate::api_v1::queue_custom_workflow_query(
-                "display console expansion framebuffer transition gui bootstrap",
+                "1920x1080 display console expansion framebuffer transition gui bootstrap",
                 &["display_console", "gui_session", "registry_lookup", "sandbox", "gemini"],
             ) {
                 Ok(()) => crate::result_println!(
@@ -1378,7 +1378,7 @@ fn maybe_queue_followup_workflow_for_skill(skill_id: &str) {
         }
         "skill_gui_session_bootstrap_v1" => {
             match crate::api_v1::queue_custom_workflow_query(
-                "gui session bootstrap compositor input orchestration",
+                "1920x1080 gui session bootstrap compositor input orchestration",
                 &["gui_session", "display_console", "registry_lookup", "sandbox", "gemini"],
             ) {
                 Ok(()) => crate::result_println!(
@@ -1391,7 +1391,7 @@ fn maybe_queue_followup_workflow_for_skill(skill_id: &str) {
         }
         "skill_display_framebuffer_mode_v1" => {
             match crate::api_v1::queue_custom_workflow_query(
-                "gui session bootstrap compositor input orchestration",
+                "1920x1080 gui session bootstrap compositor input orchestration",
                 &["display_framebuffer", "gui_session", "registry_lookup", "sandbox", "gemini"],
             ) {
                 Ok(()) => crate::result_println!(
@@ -1837,62 +1837,24 @@ fn log_service_api_summary(phase: ServiceApiPhase, body: &[u8]) {
                 if workflow_ids
                     .iter()
                     .any(|workflow_id| workflow_id == "workflow_display_expand_v1")
-                    && crate::skill_cache::find_cached_skill("skill_display_framebuffer_mode_v1").is_none()
                 {
-                    match crate::api_v1::queue_skill_registry_command(
-                        crate::api_v1::SkillRegistryCommand::DownloadCandidate {
-                            skill_id: String::from("skill_display_framebuffer_mode_v1"),
-                            auto_load: true,
-                            auto_run: true,
-                        },
-                    ) {
-                        Ok(()) => crate::result_println!(
-                            "[Display Workflow] Queued framebuffer mode skill download."
-                        ),
-                        Err(_) => crate::result_println!(
-                            "[Display Workflow] Skill registry queue full."
-                        ),
-                    }
-                }
-                if workflow_ids
-                    .iter()
-                    .any(|workflow_id| workflow_id == "workflow_display_expand_v1")
-                    && crate::skill_cache::find_cached_skill("skill_gui_session_bootstrap_v1").is_none()
-                {
-                    match crate::api_v1::queue_skill_registry_command(
-                        crate::api_v1::SkillRegistryCommand::DownloadCandidate {
-                            skill_id: String::from("skill_gui_session_bootstrap_v1"),
-                            auto_load: true,
-                            auto_run: true,
-                        },
-                    ) {
-                        Ok(()) => crate::result_println!(
-                            "[Display Workflow] Queued GUI bootstrap skill download."
-                        ),
-                        Err(_) => crate::result_println!(
-                            "[Display Workflow] Skill registry queue full."
-                        ),
-                    }
+                    ensure_display_skill_ready(
+                        "skill_display_framebuffer_mode_v1",
+                        "framebuffer mode skill",
+                    );
+                    ensure_display_skill_ready(
+                        "skill_gui_session_bootstrap_v1",
+                        "GUI bootstrap skill",
+                    );
                 }
                 if workflow_ids
                     .iter()
                     .any(|workflow_id| workflow_id == "workflow_gui_bootstrap_v1")
-                    && crate::skill_cache::find_cached_skill("skill_gui_compositor_seed_v1").is_none()
                 {
-                    match crate::api_v1::queue_skill_registry_command(
-                        crate::api_v1::SkillRegistryCommand::DownloadCandidate {
-                            skill_id: String::from("skill_gui_compositor_seed_v1"),
-                            auto_load: true,
-                            auto_run: true,
-                        },
-                    ) {
-                        Ok(()) => crate::result_println!(
-                            "[Display Workflow] Queued compositor seed skill download."
-                        ),
-                        Err(_) => crate::result_println!(
-                            "[Display Workflow] Skill registry queue full."
-                        ),
-                    }
+                    ensure_display_skill_ready(
+                        "skill_gui_compositor_seed_v1",
+                        "compositor seed skill",
+                    );
                 }
             }
         }
@@ -2331,6 +2293,53 @@ fn maybe_queue_driver_candidate_download(body_text: &str, auto_apply_drivers: bo
                 driver_id
             ),
         }
+    }
+}
+
+fn ensure_display_skill_ready(skill_id: &str, label: &str) {
+    let already_loaded = crate::skill_runtime::runtime_states()
+        .iter()
+        .any(|state| state.skill_id == skill_id && state.current_artifact_id.is_some());
+
+    if already_loaded {
+        crate::result_println!(
+            "[Display Workflow] {} already loaded; keeping current sandbox session.",
+            label
+        );
+        return;
+    }
+
+    if crate::skill_cache::find_cached_skill(skill_id).is_some() {
+        crate::skill_runtime::schedule_auto_run(skill_id);
+        match crate::skill_runtime::queue_load(skill_id) {
+            Ok(fat_name) => crate::result_println!(
+                "[Display Workflow] Queued {} load from {}.",
+                label,
+                fat_name
+            ),
+            Err(error) => crate::result_println!(
+                "[Display Workflow] {} load skipped: {}",
+                label,
+                error
+            ),
+        }
+        return;
+    }
+
+    match crate::api_v1::queue_skill_registry_command(
+        crate::api_v1::SkillRegistryCommand::DownloadCandidate {
+            skill_id: String::from(skill_id),
+            auto_load: true,
+            auto_run: true,
+        },
+    ) {
+        Ok(()) => crate::result_println!(
+            "[Display Workflow] Queued {} download.",
+            label
+        ),
+        Err(_) => crate::result_println!(
+            "[Display Workflow] Skill registry queue full."
+        ),
     }
 }
 

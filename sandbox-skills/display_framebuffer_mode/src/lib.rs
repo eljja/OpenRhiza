@@ -13,12 +13,14 @@ extern "C" {
         pixel_width: u32,
         pixel_height: u32,
     );
+    fn os_set_display_session_target(target: u32);
+    fn os_set_display_validation_state(state: u32);
 }
 
 static INIT_MSG: &[u8] =
-    b"[Skill] display_framebuffer_mode initialized. Ready to negotiate a wider framebuffer-backed console target with rollback to the text shell.\n";
+    b"[Skill] display_framebuffer_mode initialized. Ready to negotiate a 1920x1080 framebuffer-backed console target with rollback to the text shell.\n";
 static RUN_MSG: &[u8] =
-    b"[Skill] display_framebuffer_mode: plan 1280x960-style console expansion, validate framebuffer transition in sandbox, and keep text-shell recovery visible.\n";
+    b"[Skill] display_framebuffer_mode: request a 1920x1080 framebuffer-console session, validate the display path in sandbox, and keep text-shell recovery visible.\n";
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
@@ -35,7 +37,9 @@ pub extern "C" fn init_driver() {
 #[no_mangle]
 pub extern "C" fn run_skill() -> i32 {
     unsafe {
-        os_request_display_mode(1, 160, 60, 1280, 960);
+        os_set_display_session_target(1);
+        os_set_display_validation_state(2);
+        os_request_display_mode(1, 240, 67, 1920, 1080);
         os_log(RUN_MSG.as_ptr(), RUN_MSG.len() as u32);
     }
     1

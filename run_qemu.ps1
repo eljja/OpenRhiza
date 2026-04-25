@@ -11,16 +11,17 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $qemuExe = "C:\Program Files\qemu\qemu-system-x86_64.exe"
-$pwshExe = "C:\Program Files\PowerShell\7\pwsh.exe"
+$pythonwExe = (Get-Command pythonw.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1)
+$pythonExe = (Get-Command python.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1)
 $serialWindowTitle = "OpenRhiza Serial Log"
-$serialServerScript = Join-Path $repoRoot "tools\serial_log_server.ps1"
+$serialServerScript = Join-Path $repoRoot "tools\serial_log_server.py"
 
 if (-not (Test-Path -LiteralPath $qemuExe)) {
     throw "QEMU executable not found at '$qemuExe'."
 }
 
-if (-not (Test-Path -LiteralPath $pwshExe)) {
-    throw "PowerShell executable not found at '$pwshExe'."
+if ([string]::IsNullOrWhiteSpace($pythonwExe) -and [string]::IsNullOrWhiteSpace($pythonExe)) {
+    throw "Python executable not found."
 }
 
 if (-not (Test-Path -LiteralPath $serialServerScript)) {
@@ -85,8 +86,58 @@ function Initialize-FixedCacheFileFromText {
     [System.IO.File]::WriteAllBytes($Path, $buffer)
 }
 
+function Merge-SkillCacheSeedMap {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $header = "# OpenRhiza local skill cache`n"
+    $seedMap = [ordered]@{
+        "skill_registry_lookup_v1" = "SKREG.WAS"
+        "skill_display_console_mode_v1" = "SKDSP.WAS"
+        "skill_gui_session_bootstrap_v1" = "SKGUI.WAS"
+        "skill_display_framebuffer_mode_v1" = "SKFBUF.WAS"
+        "skill_gui_compositor_seed_v1" = "SKCOMP.WAS"
+    }
+
+    $existingText = ""
+    if (Test-Path -LiteralPath $Path) {
+        $existingText = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($Path))
+        $nulIndex = $existingText.IndexOf([char]0)
+        if ($nulIndex -ge 0) {
+            $existingText = $existingText.Substring(0, $nulIndex)
+        }
+    }
+
+    $merged = [ordered]@{}
+    foreach ($line in ($existingText -split "`r?`n")) {
+        $trimmed = $line.Trim()
+        if ([string]::IsNullOrWhiteSpace($trimmed) -or $trimmed.StartsWith("#")) {
+            continue
+        }
+        $parts = $trimmed.Split("=", 2)
+        if ($parts.Length -ne 2) {
+            continue
+        }
+        $merged[$parts[0].Trim()] = $parts[1].Trim()
+    }
+
+    foreach ($key in $seedMap.Keys) {
+        $merged[$key] = $seedMap[$key]
+    }
+
+    $text = $header
+    foreach ($entry in $merged.GetEnumerator()) {
+        $text += "$($entry.Key)=$($entry.Value)`n"
+    }
+
+    Initialize-FixedCacheFileFromText -Path $Path -Text $text -Size 512
+}
+
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "DRVMAP.TXT") -Header "# OpenRhiza active driver map`n" -Size 512
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "SKILLCCH.TXT") -Header "# OpenRhiza local skill cache`n" -Size 512
+Merge-SkillCacheSeedMap -Path (Join-Path $driverDisk "SKILLCCH.TXT")
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "SKCAPCHE.TXT") -Header "# OpenRhiza capability cache`ndomain=skills`nsummary=`n" -Size 512
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "SKLACTV.TXT") -Header "# OpenRhiza active skill map`n" -Size 512
 if (Test-Path -LiteralPath (Join-Path $repoRoot "BOOT_AUTORUN.md")) {
@@ -146,10 +197,9 @@ function Ensure-SerialLogWindow {
         }
     }
 
-    $cmdLine = "title $serialWindowTitle && `"$pwshExe`" -NoExit -File `"$serialServerScript`""
-    Start-Process -FilePath "cmd.exe" -WorkingDirectory $repoRoot -ArgumentList @(
-        "/k"
-        $cmdLine
+    $pythonLauncher = if (-not [string]::IsNullOrWhiteSpace($pythonwExe)) { $pythonwExe } else { $pythonExe }
+    Start-Process -FilePath $pythonLauncher -WorkingDirectory $repoRoot -ArgumentList @(
+        $serialServerScript
     ) -WindowStyle Normal | Out-Null
 
     for ($attempt = 0; $attempt -lt 40; $attempt++) {

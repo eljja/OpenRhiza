@@ -248,6 +248,24 @@ impl OpenRhizaSeed {
         )
         .map_err(|_| String::from("Failed to link os_set_gui_session_state"))?;
 
+        linker.func_wrap(
+            "env",
+            "os_set_display_session_target",
+            |_caller: Caller<'_, ()>, target: u32| {
+                crate::display::set_display_session_target_from_wasm(target);
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_set_display_session_target"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_set_display_validation_state",
+            |_caller: Caller<'_, ()>, state: u32| {
+                crate::display::set_display_validation_state_from_wasm(state);
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_set_display_validation_state"))?;
+
         let instance = linker.instantiate(&mut store, &module)
             .map_err(|e| format!("Instantiate failed: {}", e))?
             .start(&mut store)

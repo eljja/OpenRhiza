@@ -22,6 +22,7 @@ pub struct PromptOrchestrationPlan {
     pub local_context_block: String,
     pub summary: String,
     pub auto_apply_drivers: bool,
+    pub display_intent: bool,
 }
 
 pub fn build_plan(prompt: &str) -> PromptOrchestrationPlan {
@@ -76,6 +77,21 @@ pub fn build_plan(prompt: &str) -> PromptOrchestrationPlan {
             "reliable", "quality", "vote", "comment", "improvement",
         ],
     ) || driver_intent || software_intent || skill_intent;
+    let display_intent = prompt_has_any(
+        prompt_lower.as_str(),
+        &[
+            "display",
+            "console",
+            "framebuffer",
+            "gui",
+            "compositor",
+            "window",
+            "resolution",
+            "1080p",
+            "1920x1080",
+            "screen",
+        ],
+    );
     let auto_apply_drivers = driver_intent && execution_intent;
 
     let mut phases = vec![];
@@ -89,13 +105,16 @@ pub fn build_plan(prompt: &str) -> PromptOrchestrationPlan {
     if skill_intent || driver_intent || software_intent {
         phases.push(RegistryQueryPhase::Workflow);
     }
+    if display_intent && !phases.iter().any(|phase| matches!(phase, RegistryQueryPhase::Workflow)) {
+        phases.push(RegistryQueryPhase::Workflow);
+    }
     phases.push(RegistryQueryPhase::Policy);
     if evaluation_intent {
         phases.push(RegistryQueryPhase::Evaluation);
     }
 
     let local_context_block = build_local_context_block(prompt);
-    let summary = build_summary(driver_intent, software_intent, skill_intent, evaluation_intent);
+    let summary = build_summary(driver_intent, software_intent, skill_intent, evaluation_intent, display_intent);
 
     PromptOrchestrationPlan {
         phases,
@@ -103,6 +122,7 @@ pub fn build_plan(prompt: &str) -> PromptOrchestrationPlan {
         local_context_block,
         summary,
         auto_apply_drivers,
+        display_intent,
     }
 }
 
@@ -133,6 +153,7 @@ fn build_summary(
     software_intent: bool,
     skill_intent: bool,
     evaluation_intent: bool,
+    display_intent: bool,
 ) -> String {
     let mut labels = Vec::new();
     if driver_intent {
@@ -146,6 +167,9 @@ fn build_summary(
     }
     if evaluation_intent {
         labels.push("evaluation");
+    }
+    if display_intent {
+        labels.push("display");
     }
 
     if labels.is_empty() {
@@ -188,6 +212,10 @@ fn build_local_context_block(prompt: &str) -> String {
         out.push_str(skill_block.trim());
         out.push('\n');
     }
+
+    out.push('\n');
+    out.push_str(crate::display::status_block().trim());
+    out.push('\n');
 
     if let Some(driver_runtime) = crate::driver_runtime::context_block() {
         out.push('\n');

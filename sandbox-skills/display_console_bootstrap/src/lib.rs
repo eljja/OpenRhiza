@@ -13,12 +13,14 @@ extern "C" {
         pixel_width: u32,
         pixel_height: u32,
     );
+    fn os_set_display_session_target(target: u32);
+    fn os_set_display_validation_state(state: u32);
 }
 
 static INIT_MSG: &[u8] =
-    b"[Skill] display_console bootstrap initialized. Ready to negotiate wider text-mode or framebuffer-backed console surfaces.\n";
+    b"[Skill] display_console bootstrap initialized. Ready to negotiate a sandbox-owned 1920x1080 text console without moving display policy into the core.\n";
 static RUN_MSG: &[u8] =
-    b"[Skill] display_console bootstrap: inspect current display backend, request registry workflow for console expansion, validate sandbox compositor before promotion.\n";
+    b"[Skill] display_console bootstrap: request a 1920x1080 wide-console session, keep the recovery shell alive, and continue through registry workflow before promotion.\n";
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
@@ -35,7 +37,9 @@ pub extern "C" fn init_driver() {
 #[no_mangle]
 pub extern "C" fn run_skill() -> i32 {
     unsafe {
-        os_request_display_mode(1, 132, 43, 1056, 688);
+        os_set_display_session_target(1);
+        os_set_display_validation_state(1);
+        os_request_display_mode(1, 240, 67, 1920, 1080);
         os_log(RUN_MSG.as_ptr(), RUN_MSG.len() as u32);
     }
     1
