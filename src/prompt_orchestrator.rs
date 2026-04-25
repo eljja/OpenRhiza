@@ -21,11 +21,12 @@ pub struct PromptOrchestrationPlan {
     pub next_index: usize,
     pub local_context_block: String,
     pub summary: String,
+    pub auto_apply_drivers: bool,
 }
 
 pub fn build_plan(prompt: &str) -> PromptOrchestrationPlan {
     let prompt_lower = prompt.to_ascii_lowercase();
-    let driver_intent = prompt_has_any(
+    let explicit_driver_intent = prompt_has_any(
         prompt_lower.as_str(),
         &[
             "driver", "device", "hardware", "pci", "usb", "xhci", "keyboard", "mouse",
@@ -46,6 +47,28 @@ pub fn build_plan(prompt: &str) -> PromptOrchestrationPlan {
             "policy", "plan",
         ],
     );
+    let execution_intent = prompt_has_any(
+        prompt_lower.as_str(),
+        &[
+            "setup", "set up", "install", "activate", "enable", "configure", "load",
+            "apply", "use", "make", "bring up", "fix", "prepare",
+        ],
+    );
+    let environment_setup_intent = execution_intent
+        && prompt_has_any(
+            prompt_lower.as_str(),
+            &[
+                "qemu",
+                "vm",
+                "virtual machine",
+                "virtio",
+                "guest",
+                "this machine",
+                "this vm",
+                "fully usable",
+            ],
+        );
+    let driver_intent = explicit_driver_intent || environment_setup_intent;
     let evaluation_intent = prompt_has_any(
         prompt_lower.as_str(),
         &[
@@ -53,6 +76,7 @@ pub fn build_plan(prompt: &str) -> PromptOrchestrationPlan {
             "reliable", "quality", "vote", "comment", "improvement",
         ],
     ) || driver_intent || software_intent || skill_intent;
+    let auto_apply_drivers = driver_intent && execution_intent;
 
     let mut phases = vec![];
     if driver_intent {
@@ -78,6 +102,7 @@ pub fn build_plan(prompt: &str) -> PromptOrchestrationPlan {
         next_index: 0,
         local_context_block,
         summary,
+        auto_apply_drivers,
     }
 }
 

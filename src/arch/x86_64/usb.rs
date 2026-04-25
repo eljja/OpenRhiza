@@ -1008,6 +1008,21 @@ fn process_hid_report(kind: HidDeviceKind) {
                 let current_keys = [report[2], report[3], report[4], report[5], report[6], report[7]];
                 let previous_keys = device.prev_keys;
                 let keys_changed = current_keys != previous_keys;
+                let modifiers_changed = modifiers != device.prev_modifiers;
+
+                if keys_changed || modifiers_changed {
+                    crate::serial_println!(
+                        "[USB-HID] Report mods={:#04X} keys=[{:#04X},{:#04X},{:#04X},{:#04X},{:#04X},{:#04X}] prev_mods={:#04X}",
+                        modifiers,
+                        current_keys[0],
+                        current_keys[1],
+                        current_keys[2],
+                        current_keys[3],
+                        current_keys[4],
+                        current_keys[5],
+                        device.prev_modifiers
+                    );
+                }
 
                 process_modifier_changes(device.prev_modifiers, modifiers);
 
@@ -1043,7 +1058,8 @@ fn process_hid_report(kind: HidDeviceKind) {
                 let buttons = report.get(0).copied().unwrap_or(0);
                 let dx = report.get(1).copied().unwrap_or(0) as i8;
                 let dy = report.get(2).copied().unwrap_or(0) as i8;
-                input_handoff::emit_mouse_packet(dx, dy, buttons);
+                let wheel = report.get(3).copied().unwrap_or(0) as i8;
+                input_handoff::emit_mouse_packet(dx, dy, buttons, wheel);
             }
         }
     }
@@ -1191,6 +1207,23 @@ fn hid_to_scancode(hid_usage: u8) -> (bool, u8) {
         0x44 => (false, 0x57), // F11
         0x45 => (false, 0x58), // F12
         0x47 => (false, 0x46), // Scroll Lock
+        0x53 => (false, 0x45), // Keypad Num Lock
+        0x54 => (true, 0x35),  // Keypad /
+        0x55 => (false, 0x37), // Keypad *
+        0x56 => (false, 0x4A), // Keypad -
+        0x57 => (false, 0x4E), // Keypad +
+        0x58 => (true, 0x1C),  // Keypad Enter
+        0x59 => (false, 0x4F), // Keypad 1 / End
+        0x5A => (false, 0x50), // Keypad 2 / Down
+        0x5B => (false, 0x51), // Keypad 3 / Page Down
+        0x5C => (false, 0x4B), // Keypad 4 / Left
+        0x5D => (false, 0x4C), // Keypad 5
+        0x5E => (false, 0x4D), // Keypad 6 / Right
+        0x5F => (false, 0x47), // Keypad 7 / Home
+        0x60 => (false, 0x48), // Keypad 8 / Up
+        0x61 => (false, 0x49), // Keypad 9 / Page Up
+        0x62 => (false, 0x52), // Keypad 0 / Insert
+        0x63 => (false, 0x53), // Keypad . / Delete
         0x49 => (true, 0x52),  // Insert
         0xE0 => (false, 0x1D), // Left Ctrl (fallback)
         0xE1 => (false, 0x2A), // Left Shift (fallback)

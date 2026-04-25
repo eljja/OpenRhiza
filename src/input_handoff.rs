@@ -191,12 +191,13 @@ pub fn emit_key_scancode(scancode: u8, extended: bool, pressed: bool) {
     });
 }
 
-pub fn emit_mouse_packet(dx: i8, dy: i8, buttons: u8) {
+pub fn emit_mouse_packet(dx: i8, dy: i8, buttons: u8, wheel: i8) {
+    let packed_c = (buttons as i32 & 0xFF) | ((wheel as i32) << 8);
     emit_input_event(InputEvent {
         kind: InputEventKind::MousePacket,
         a: dx as i32,
         b: dy as i32,
-        c: buttons as i32,
+        c: packed_c,
     });
 }
 
@@ -217,10 +218,13 @@ pub fn apply_runtime_input_events() {
                 crate::task::keyboard::add_scancode(byte);
             }
             InputEventKind::MousePacket => {
+                let buttons = (event.c & 0xFF) as u8;
+                let wheel = ((event.c >> 8) & 0xFF) as i8;
                 crate::vga::WRITER.lock().update_mouse_state(
                     event.a as i8,
                     event.b as i8,
-                    event.c as u8,
+                    buttons,
+                    wheel,
                 );
             }
         }

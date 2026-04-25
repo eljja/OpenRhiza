@@ -46,13 +46,16 @@ pub extern "C" fn poll_input_driver() {
         let buttons = unsafe { PACKET[4] };
         let dx = unsafe { PACKET[5] as i8 };
         let dy = unsafe { PACKET[6] as i8 };
+        let wheel = if report_len >= 4 { unsafe { PACKET[7] as i8 } } else { 0 };
+
+        let packed_c = (buttons as i32 & 0xFF) | ((wheel as i32) << 8);
 
         unsafe {
             os_emit_input_event(
                 INPUT_EVENT_MOUSE_PACKET,
                 dx as i32,
                 dy as i32,
-                buttons as i32,
+                packed_c,
             );
         }
     }

@@ -29,6 +29,7 @@ lazy_static! {
         color_code: PROMPT_COLOR,
         input_buffer: [b' '; INPUT_CAPACITY],
         input_len: 0,
+        input_cursor: 0,
         log_lines: [[b' '; VGA_WIDTH]; MAX_LOG_LINES],
         log_line_colors: [LOG_COLOR; MAX_LOG_LINES],
         log_line_count: 1,
@@ -48,6 +49,14 @@ lazy_static! {
         mouse_buttons: 0,
         mouse_dx_accum: 0,
         mouse_dy_accum: 0,
+        scrollbar_drag_active: false,
+        mouse_overlay_active: false,
+        mouse_drawn_col: 0,
+        mouse_drawn_row: LOG_START_ROW,
+        mouse_saved_char: ScreenChar {
+            ascii_character: b' ',
+            color_code: LOG_COLOR,
+        },
         buffer: unsafe {
             let offset = crate::arch::x86_64::discovery::PHYS_MEM_OFFSET;
             &mut *((offset + VGA_BUFFER_ADDR as u64) as *mut Buffer)
@@ -73,6 +82,7 @@ pub struct VgaWriter {
     color_code: u8,
     input_buffer: [u8; INPUT_CAPACITY],
     input_len: usize,
+    input_cursor: usize,
     log_lines: [[u8; VGA_WIDTH]; MAX_LOG_LINES],
     log_line_colors: [u8; MAX_LOG_LINES],
     log_line_count: usize,
@@ -92,6 +102,11 @@ pub struct VgaWriter {
     mouse_buttons: u8,
     mouse_dx_accum: i16,
     mouse_dy_accum: i16,
+    scrollbar_drag_active: bool,
+    mouse_overlay_active: bool,
+    mouse_drawn_col: usize,
+    mouse_drawn_row: usize,
+    mouse_saved_char: ScreenChar,
     buffer: &'static mut Buffer,
 }
 
@@ -123,6 +138,16 @@ impl VgaWriter {
         } else if self.mouse_row > log_end_row {
             self.mouse_row = log_end_row;
         }
+    }
+
+    fn clear_mouse_overlay(&mut self) {
+        if !self.mouse_overlay_active {
+            return;
+        }
+        if self.mouse_drawn_row < VGA_HEIGHT && self.mouse_drawn_col < VGA_WIDTH {
+            self.buffer.chars[self.mouse_drawn_row][self.mouse_drawn_col] = self.mouse_saved_char;
+        }
+        self.mouse_overlay_active = false;
     }
 
     fn write_fmt_with_color(&mut self, args: fmt::Arguments, color: u8) -> fmt::Result {
@@ -203,26 +228,48 @@ impl VgaWriter {
     }
 
     pub fn init_cli(&mut self) {
+        self.enable_hardware_cursor();
         self.runtime_seconds = 0;
         self.render_runtime(0);
         self.render_log_view();
         self.render_input_line();
     }
 
+    fn enable_hardware_cursor(&self) {
+        let mut port_3d4 = x86_64::instructions::port::Port::<u8>::new(0x3D4);
+        let mut port_3d5 = x86_64::instructions::port::Port::<u8>::new(0x3D5);
+        unsafe {
+            port_3d4.write(0x0A);
+            let val = port_3d5.read();
+            port_3d5.write((val & 0xC0) | 13);
+            port_3d4.write(0x0B);
+            let val = port_3d5.read();
+            port_3d5.write((val & 0xE0) | 15);
+        }
+    }
+
     pub fn push_input_char(&mut self, byte: u8) {
         if self.input_len >= INPUT_CAPACITY {
             return;
         }
-        self.input_buffer[self.input_len] = byte;
+        for i in (self.input_cursor..self.input_len).rev() {
+            self.input_buffer[i + 1] = self.input_buffer[i];
+        }
+        self.input_buffer[self.input_cursor] = byte;
         self.input_len += 1;
+        self.input_cursor += 1;
         self.render_input_line();
     }
 
     pub fn pop_input_char(&mut self) {
-        if self.input_len == 0 {
+        if self.input_cursor == 0 {
             return;
         }
+        for i in self.input_cursor..self.input_len {
+            self.input_buffer[i - 1] = self.input_buffer[i];
+        }
         self.input_len -= 1;
+        self.input_cursor -= 1;
         self.input_buffer[self.input_len] = b' ';
         self.render_input_line();
     }
@@ -238,6 +285,7 @@ impl VgaWriter {
         }
         self.input_buffer[..self.input_len].fill(b' ');
         self.input_len = 0;
+        self.input_cursor = 0;
         self.history_index = None;
         self.history_snapshot.fill(b' ');
         self.history_snapshot_len = 0;
@@ -258,12 +306,30 @@ impl VgaWriter {
     }
 
     pub fn delete_char(&mut self) {
-        self.pop_input_char();
+        if self.input_cursor >= self.input_len {
+            return;
+        }
+        for i in self.input_cursor + 1..self.input_len {
+            self.input_buffer[i - 1] = self.input_buffer[i];
+        }
+        self.input_len -= 1;
+        self.input_buffer[self.input_len] = b' ';
+        self.render_input_line();
     }
 
-    pub fn cursor_left(&mut self) {}
+    pub fn cursor_left(&mut self) {
+        if self.input_cursor > 0 {
+            self.input_cursor -= 1;
+            self.render_input_line();
+        }
+    }
 
-    pub fn cursor_right(&mut self) {}
+    pub fn cursor_right(&mut self) {
+        if self.input_cursor < self.input_len {
+            self.input_cursor += 1;
+            self.render_input_line();
+        }
+    }
 
     pub fn history_up(&mut self) {
         if self.command_history_count == 0 {
@@ -311,13 +377,24 @@ impl VgaWriter {
         }
     }
 
-    pub fn home(&mut self) {}
+    pub fn home(&mut self) {
+        if self.input_cursor > 0 {
+            self.input_cursor = 0;
+            self.render_input_line();
+        }
+    }
 
-    pub fn end(&mut self) {}
+    pub fn end(&mut self) {
+        if self.input_cursor < self.input_len {
+            self.input_cursor = self.input_len;
+            self.render_input_line();
+        }
+    }
 
     pub fn cancel_line(&mut self) {
         self.input_buffer[..self.input_len].fill(b' ');
         self.input_len = 0;
+        self.input_cursor = 0;
         self.render_input_line();
     }
 
@@ -328,10 +405,10 @@ impl VgaWriter {
     pub fn clear_after_cursor(&mut self) {}
 
     pub fn delete_word(&mut self) {
-        while self.input_len > 0 && self.input_buffer[self.input_len - 1] == b' ' {
+        while self.input_cursor > 0 && self.input_buffer[self.input_cursor - 1] == b' ' {
             self.pop_input_char();
         }
-        while self.input_len > 0 && self.input_buffer[self.input_len - 1] != b' ' {
+        while self.input_cursor > 0 && self.input_buffer[self.input_cursor - 1] != b' ' {
             self.pop_input_char();
         }
     }
@@ -357,11 +434,11 @@ impl VgaWriter {
         let active_input_rows = self.active_input_rows();
         let total_cells = VGA_WIDTH * active_input_rows;
 
-        self.render_log_view();
-
         for row in INPUT_REGION_MIN_START..VGA_HEIGHT {
             self.clear_row(row);
         }
+
+        self.render_log_view();
 
         for (idx, byte) in INPUT_PROMPT.iter().enumerate() {
             let absolute = idx;
@@ -387,21 +464,35 @@ impl VgaWriter {
             };
         }
 
-        if self.input_len < INPUT_CAPACITY {
-            let absolute = INPUT_PROMPT.len() + self.input_len;
-            if absolute < total_cells {
-                let row = input_start_row + absolute / VGA_WIDTH;
-                let col = absolute % VGA_WIDTH;
-                self.buffer.chars[row][col] = ScreenChar {
-                    ascii_character: b'_',
-                    color_code: self.color_code,
-                };
-            }
+        self.update_hardware_cursor();
+    }
+
+    fn update_hardware_cursor(&self) {
+        let input_start_row = self.input_start_row();
+        let cursor_absolute = INPUT_PROMPT.len() + self.input_cursor;
+        let row = input_start_row + cursor_absolute / VGA_WIDTH;
+        let col = cursor_absolute % VGA_WIDTH;
+
+        let pos = (row * VGA_WIDTH + col) as u16;
+        let mut port_3d4 = x86_64::instructions::port::Port::<u8>::new(0x3D4);
+        let mut port_3d5 = x86_64::instructions::port::Port::<u8>::new(0x3D5);
+        unsafe {
+            port_3d4.write(0x0F);
+            port_3d5.write((pos & 0x00FF) as u8);
+            port_3d4.write(0x0E);
+            port_3d5.write((pos >> 8) as u8);
         }
     }
 
     pub fn render_runtime(&mut self, total_seconds: u64) {
         self.runtime_seconds = total_seconds;
+        self.render_status_row();
+        self.render_mouse_overlay();
+        self.update_hardware_cursor();
+    }
+
+    fn render_status_row(&mut self) {
+        let total_seconds = self.runtime_seconds;
         let hours = total_seconds / 3600;
         let minutes = (total_seconds % 3600) / 60;
         let seconds = total_seconds % 60;
@@ -443,6 +534,7 @@ impl VgaWriter {
         }
 
         self.render_mouse_overlay();
+        self.update_hardware_cursor();
     }
 
     fn push_log_byte(&mut self, byte: u8, color: u8) {
@@ -464,6 +556,7 @@ impl VgaWriter {
         let log_end_row = self.log_end_row();
         let log_visible_rows = self.log_visible_rows();
 
+        self.clear_mouse_overlay();
         self.clamp_mouse_to_log_area();
 
         for row in LOG_START_ROW..=log_end_row {
@@ -495,7 +588,21 @@ impl VgaWriter {
             }
         }
 
-        self.render_mouse_overlay();
+        let max_offset = self.max_scroll_offset();
+        if max_offset > 0 {
+            let track_len = log_visible_rows.saturating_sub(1).max(1);
+            let thumb_y = track_len - (self.scroll_offset * track_len) / max_offset;
+            for row_offset in 0..log_visible_rows {
+                let row = LOG_START_ROW + row_offset;
+                let is_thumb = row_offset == thumb_y;
+                let ch = if is_thumb { b'#' } else { b'|' };
+                let color = if is_thumb { 0x0F } else { 0x08 };
+                self.buffer.chars[row][VGA_WIDTH - 1] = ScreenChar {
+                    ascii_character: ch,
+                    color_code: color,
+                };
+            }
+        }
     }
 
     fn max_scroll_offset(&self) -> usize {
@@ -507,10 +614,20 @@ impl VgaWriter {
         let copy_len = value_len.min(INPUT_CAPACITY).min(value.len());
         self.input_buffer[..copy_len].copy_from_slice(&value[..copy_len]);
         self.input_len = copy_len;
+        self.input_cursor = copy_len;
         self.render_input_line();
     }
 
-    pub fn update_mouse_state(&mut self, dx: i8, dy: i8, buttons: u8) {
+    pub fn update_mouse_state(&mut self, dx: i8, dy: i8, buttons: u8, wheel: i8) {
+        let mut view_changed = false;
+        if wheel > 0 {
+            self.scroll_up(wheel as usize);
+            view_changed = true;
+        } else if wheel < 0 {
+            self.scroll_down((-wheel) as usize);
+            view_changed = true;
+        }
+
         self.mouse_enabled = true;
         self.mouse_dx_accum += dx as i16;
         self.mouse_dy_accum += dy as i16;
@@ -542,12 +659,40 @@ impl VgaWriter {
         self.mouse_row = next_row.clamp(LOG_START_ROW as isize, log_end_row as isize) as usize;
         self.mouse_buttons = buttons & 0x07;
 
-        self.render_runtime(self.runtime_seconds);
-        self.render_log_view();
-        self.render_input_line();
+        let max_offset = self.max_scroll_offset();
+        let left_click = (self.mouse_buttons & 0x01) != 0;
+
+        if left_click {
+            if !self.scrollbar_drag_active && self.mouse_col == VGA_WIDTH - 1 && max_offset > 0 {
+                self.scrollbar_drag_active = true;
+            }
+            if self.scrollbar_drag_active && max_offset > 0 {
+                let relative_y = self.mouse_row.saturating_sub(LOG_START_ROW);
+                let track_len = self.log_visible_rows().saturating_sub(1).max(1);
+                let inverse_y = track_len.saturating_sub(relative_y);
+                let new_offset = (inverse_y * max_offset) / track_len;
+                if new_offset.min(max_offset) != self.scroll_offset {
+                    view_changed = true;
+                }
+                self.scroll_offset = new_offset.min(max_offset);
+            }
+        } else {
+            self.scrollbar_drag_active = false;
+        }
+
+        if view_changed {
+            self.render_runtime(self.runtime_seconds);
+            self.render_log_view();
+            self.render_input_line();
+        } else {
+            self.render_status_row();
+            self.render_mouse_overlay();
+            self.update_hardware_cursor();
+        }
     }
 
     fn render_mouse_overlay(&mut self) {
+        self.clear_mouse_overlay();
         if !self.mouse_enabled {
             return;
         }
@@ -555,10 +700,14 @@ impl VgaWriter {
             return;
         }
 
+        self.mouse_saved_char = self.buffer.chars[self.mouse_row][self.mouse_col];
+        self.mouse_drawn_row = self.mouse_row;
+        self.mouse_drawn_col = self.mouse_col;
         self.buffer.chars[self.mouse_row][self.mouse_col] = ScreenChar {
             ascii_character: b'X',
             color_code: MOUSE_POINTER_COLOR,
         };
+        self.mouse_overlay_active = true;
     }
 
     fn history_entry(&self, logical_index: usize) -> Option<(&[u8], usize)> {

@@ -46,15 +46,25 @@ This file tracks the current state of the repository after the April 2026 docume
 - Impact: uppercase and symbol entry through the right Shift key is unreliable during interactive VGA CLI testing
 - Suggested fix: continue investigating the QEMU input backend and compare raw HID reports across Windows host paths
 
+### KI-006: USB numpad translation is incomplete in the current Windows QEMU USB keyboard path
+
+- Location: `src/arch/x86_64/usb.rs`, `run_qemu.ps1`
+- Current state:
+  - PS/2 keyboard transport delivers numpad keys to the guest
+  - USB keyboard transport under the current Windows plus QEMU path still does not reliably deliver numpad presses into the guest HID report stream
+  - recent VGA and serial testing shows that the guest-side keypad mapping is present, but the expected HID usages are often missing before OpenRhiza decodes them
+- Impact: keypad-driven numeric entry and keypad operators are unreliable in the preferred USB keyboard runtime path
+- Suggested fix: inspect raw USB HID reports during keypad input and compare Windows host plus QEMU frontend behavior against the PS/2 fallback path
+
 ## Medium Priority
 
-### KI-006: Global hardware state still relies on low-level mutable statics and raw pointers
+### KI-007: Global hardware state still relies on low-level mutable statics and raw pointers
 
 - Location: multiple modules, especially `src/arch/x86_64/discovery.rs`, `src/arch/x86_64/usb.rs`, and `src/allocator.rs`
 - Impact: the current code builds cleanly, but still depends on carefully constrained low-level global state
 - Suggested fix: migrate global mutable state toward atomics, wrappers, or safer ownership patterns
 
-### KI-007: Legacy placeholder modules still exist
+### KI-008: Legacy placeholder modules still exist
 
 - Location:
   - `src/arch/core_logic/seed.rs`
