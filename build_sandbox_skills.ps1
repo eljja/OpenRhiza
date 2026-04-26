@@ -4,6 +4,7 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $outDir = Join-Path $repoRoot "rhiza_drivers"
+$stripper = Join-Path $repoRoot "tools\strip_wasm_custom_sections.py"
 
 $targets = @(
     @{
@@ -35,6 +36,12 @@ $targets = @(
         Root = Join-Path $repoRoot "sandbox-skills\gui_compositor_seed"
         Artifact = "gui_compositor_seed.wasm"
         FatName = "SKCOMP.WAS"
+    },
+    @{
+        Name = "gui_scene_mutator_seed"
+        Root = Join-Path $repoRoot "sandbox-skills\gui_scene_mutator_seed"
+        Artifact = "gui_scene_mutator_seed.wasm"
+        FatName = "SKMUT.WAS"
     }
 )
 
@@ -48,6 +55,9 @@ foreach ($target in $targets) {
 
     $artifact = Join-Path $target.Root ("target\wasm32-unknown-unknown\release\" + $target.Artifact)
     $fatName = Join-Path $outDir $target.FatName
-    Copy-Item -LiteralPath $artifact -Destination $fatName -Force
+    & python $stripper $artifact $fatName
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to strip custom sections for $artifact"
+    }
     Write-Host ("Built sandbox skill " + $target.Name + " -> " + $fatName)
 }

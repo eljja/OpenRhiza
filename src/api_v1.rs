@@ -676,13 +676,21 @@ pub fn build_gemini_generate_request_with_context(
     prompt: &str,
     extra_context: Option<&str>,
 ) -> String {
-    let mut system_instruction = String::from(OPENRHIZA_SYSTEM_INSTRUCTION_HEADER);
-    system_instruction.push_str("\n\n");
-    system_instruction.push_str(OPENRHIZA_OS_BASELINE_MD.trim());
-    if let Some(context) = current_registry_context_block() {
-        system_instruction.push_str("\n\n");
-        system_instruction.push_str(context.trim());
-    }
+    let gui_selftest = prompt.to_ascii_lowercase().contains("[gui-selftest]");
+    let mut system_instruction = if gui_selftest {
+        String::from(
+            "You are OpenRhiza GUI self-test mode. Keep output compact. Emit only GUI machine-action JSON objects when possible. Respect object isolation, sandbox ownership, and rollback safety.",
+        )
+    } else {
+        let mut value = String::from(OPENRHIZA_SYSTEM_INSTRUCTION_HEADER);
+        value.push_str("\n\n");
+        value.push_str(OPENRHIZA_OS_BASELINE_MD.trim());
+        if let Some(context) = current_registry_context_block() {
+            value.push_str("\n\n");
+            value.push_str(context.trim());
+        }
+        value
+    };
     if let Some(extra_context) = extra_context {
         let trimmed = extra_context.trim();
         if !trimmed.is_empty() {

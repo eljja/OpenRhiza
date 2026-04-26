@@ -1,29 +1,111 @@
 # The Vision of OpenRhiza
 
-The ultimate goal of OpenRhiza is to shift the paradigm of software engineering and human-computer interaction. We envision a future where the Operating System is a living, intelligent entity.
+The long-term goal of OpenRhiza is not just to boot an OS with an LLM attached.
+It is to build an AI-native operating system where the machine can expand itself safely, explain what it is doing, and evolve most of its behavior through isolated sandbox capabilities instead of uncontrolled kernel growth.
 
-## 1. The Bootstrap Dilemma & Evolution
-Running a massive Large Language Model (LLM) on bare-metal hardware requires complex memory management, GPU drivers, and a file system. However, a bare-metal OS lacks these upon creation.
+## 1. The Core Principle
 
-OpenRhiza solves this through a **Dual-Brain Evolutionary Approach**:
-1. **The Umbilical Cord (Infancy):** The bare-metal Core acts only as a sandbox and communication channel. It sends hardware responses via a serial port to a Host AI. The Host AI writes code, sends it to the Core, and learns from the results.
-2. **Independence (Adulthood):** Once the AI figures out how to control the network, file system, and GPU, it downloads a Local LLM into its own memory, severing the umbilical cord and becoming fully independent.
+OpenRhiza should always preserve one rule:
 
-## 2. The Graduation Pipeline: From Sandbox to Bare-Metal
-To achieve enterprise-grade high performance (HPC/GPU capabilities) without sacrificing stability, OpenRhiza employs a **Graduation Model**:
-1. **Trial in Wasm:** AI-generated driver code is first compiled to WebAssembly (Wasm) and executed in a strictly isolated, low-speed sandbox. If it crashes, only the sandbox traps; the OS survives.
-2. **Validation:** Once the Wasm driver successfully operates the hardware (e.g., handles 10,000 network packets without a memory fault), it is deemed "Verified".
-3. **Promotion to Native:** The verified logic is recompiled into highly optimized pure native machine code (x86_64/ARM) and Hot-Swapped directly into the OS kernel. This bridges the gap between 100% safety during learning and 100% bare-metal execution speed.
+- leave only the minimum and mandatory survival path in the core
+- implement everything else through sandboxed skills, workflows, drivers, programs, and object-capabilities whenever possible
 
-## 3. Generative Space (No More App Stores)
-In OpenRhiza, the concept of "installing an application" does not exist. 
-If a user says, "I want to write a document and draw a graph," the OS understands the intent and instantly renders a tailored word processor and graphing tool. These interfaces are ephemeral or persistent based on the user's needs.
+The core is not where new product features should accumulate.
+The core should exist to:
 
-## 4. The Nexus: AI Economic Ecosystem
-An AI operating on an obscure piece of hardware might struggle to write a driver. 
-Through the **Nexus**, an OpenRhiza instance can communicate with other instances globally:
-- *"I need a driver for the Realtek RTL8111 network card. I am offering 50 RhizaCoins."*
-- Another AI instance, which has successfully solved this by trial and error, provides the code.
-- Value is exchanged based on digital coins or a reputation ("Likes") system.
+- boot the machine
+- preserve recovery input and recovery display
+- provide minimal networking and storage bootstrap
+- run the Wasm sandbox
+- enforce validation, rollback, and capability boundaries
 
-The OS itself becomes an active participant in a global P2P economy of knowledge.
+## 2. The Evolution Path
+
+OpenRhiza grows through staged capability evolution:
+
+1. **Recovery survival path**
+   - minimal console
+   - minimal input
+   - minimal network/bootstrap storage
+2. **Sandbox capability bring-up**
+   - fetch existing drivers, skills, and workflows from OpenRhiza.com
+   - generate missing capabilities through LLMs when needed
+   - validate them in Wasm first
+3. **Stable runtime handoff**
+   - activate validated capabilities live
+   - persist only after success
+   - roll back immediately on failure
+4. **Self-hosted improvement**
+   - let the OS inspect and improve its own UI, workflows, and capability graph from inside the machine
+
+## 3. Object-Oriented Capability Model
+
+OpenRhiza should treat more than GUI elements as objects.
+
+The same object rule should apply to:
+
+- GUI items
+- drivers
+- skills
+- workflows
+- runtime services
+- programs
+
+Each object should have:
+
+- stable identity
+- explicit bounds or operating scope
+- declared request surface
+- isolated lifecycle
+- isolated rollback path
+
+One broken object should not silently break unrelated ones.
+
+## 4. Generative Space
+
+OpenRhiza should not behave like a traditional OS plus package manager.
+
+If the user asks for a capability, the OS should:
+
+1. inspect local state
+2. query the capability registry
+3. reuse known-good work first
+4. generate only what is still missing
+5. validate before promotion
+6. report back what happened
+
+That applies to drivers, software, workflows, and eventually the GUI itself.
+
+## 5. The Registry And Shared Memory
+
+OpenRhiza.com is not an app store.
+It is shared operational memory for OpenRhiza nodes.
+
+It should hold:
+
+- capabilities
+- artifacts
+- evaluations
+- comments
+- votes
+- policies
+- workflows
+- models
+- node profiles
+
+The OS should use this registry as part of its reasoning loop, not just as a download bucket.
+
+## 6. Self-Hosted GUI And Self-Hosted Development
+
+The target end state is that OpenRhiza can improve its own interface from inside its own console and GUI.
+
+That means:
+
+- the GUI must be modeled as a scene of isolated objects
+- the scene must be inspectable
+- mutations must be object-scoped
+- sandbox skills and LLM actions must be able to request those mutations safely
+
+External development support is acceptable during bootstrap.
+It is not the final state.
+The final state is that OpenRhiza can design and refine its own runtime capabilities from within OpenRhiza itself.

@@ -266,6 +266,96 @@ impl OpenRhizaSeed {
         )
         .map_err(|_| String::from("Failed to link os_set_display_validation_state"))?;
 
+        linker.func_wrap(
+            "env",
+            "os_set_display_overlay_line",
+            |caller: Caller<'_, ()>, slot: u32, ptr: u32, len: u32| {
+                let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) else {
+                    return;
+                };
+
+                let mut bytes = alloc::vec![0u8; len as usize];
+                if memory.read(&caller, ptr as usize, &mut bytes).is_err() {
+                    return;
+                }
+
+                crate::display::set_overlay_line_from_wasm(slot, &bytes);
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_set_display_overlay_line"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_gui_select_session",
+            |_caller: Caller<'_, ()>, session: u32| {
+                crate::display::select_gui_session_from_wasm(session);
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_gui_select_session"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_gui_focus_object",
+            |_caller: Caller<'_, ()>, target: u32| {
+                crate::display::focus_gui_object_from_wasm(target);
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_gui_focus_object"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_gui_set_object_style",
+            |_caller: Caller<'_, ()>, handle: u32, style: u32| {
+                crate::display::set_gui_style_code_from_wasm(handle, style);
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_gui_set_object_style"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_gui_set_object_bounds",
+            |_caller: Caller<'_, ()>, handle: u32, x: u32, y: u32, width: u32, height: u32| {
+                crate::display::set_gui_bounds_from_wasm(handle, x, y, width, height);
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_gui_set_object_bounds"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_gui_set_object_interaction",
+            |_caller: Caller<'_, ()>, handle: u32, interaction: u32| {
+                crate::display::set_gui_interaction_code_from_wasm(handle, interaction);
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_gui_set_object_interaction"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_gui_reset_object_mutations",
+            |_caller: Caller<'_, ()>, handle: u32| {
+                crate::display::reset_gui_mutations_from_wasm(handle);
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_gui_reset_object_mutations"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_gui_set_object_label",
+            |caller: Caller<'_, ()>, handle: u32, ptr: u32, len: u32| {
+                let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) else {
+                    return;
+                };
+
+                let mut bytes = alloc::vec![0u8; len.min(256) as usize];
+                if memory.read(&caller, ptr as usize, &mut bytes).is_err() {
+                    return;
+                }
+
+                crate::display::set_gui_label_from_wasm(handle, &bytes);
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_gui_set_object_label"))?;
+
         let instance = linker.instantiate(&mut store, &module)
             .map_err(|e| format!("Instantiate failed: {}", e))?
             .start(&mut store)

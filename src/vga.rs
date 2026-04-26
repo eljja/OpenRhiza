@@ -1,5 +1,6 @@
 // src/vga.rs
 use alloc::string::String;
+use alloc::vec::Vec;
 use core::fmt;
 use lazy_static::lazy_static;
 use spin::Mutex;
@@ -20,7 +21,7 @@ const LOG_COLOR: u8 = 0x08;
 const USER_ECHO_COLOR: u8 = 0x0A;
 const RESULT_COLOR: u8 = 0x0E;
 const MOUSE_POINTER_COLOR: u8 = 0x70;
-const MOUSE_SENSITIVITY_DIVISOR: i16 = 4;
+const MOUSE_SENSITIVITY_DIVISOR: i16 = 12;
 
 lazy_static! {
     pub static ref WRITER: Mutex<VgaWriter> = Mutex::new(VgaWriter {
@@ -66,7 +67,7 @@ lazy_static! {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
-struct ScreenChar {
+pub(crate) struct ScreenChar {
     ascii_character: u8,
     color_code: u8,
 }
@@ -110,7 +111,66 @@ pub struct VgaWriter {
     buffer: &'static mut Buffer,
 }
 
+#[derive(Clone, PartialEq, Eq)]
+pub struct ExternalSurfaceSnapshot {
+    pub status_line: String,
+    pub header_line: String,
+    pub log_lines: Vec<(String, u8)>,
+    pub input_line: String,
+    pub mouse_enabled: bool,
+    pub mouse_col: usize,
+    pub mouse_row: usize,
+    pub mouse_buttons: u8,
+}
+
 impl VgaWriter {
+    fn import_existing_screen_to_log(&mut self) {
+        self.log_lines = [[b' '; VGA_WIDTH]; MAX_LOG_LINES];
+        self.log_line_colors = [LOG_COLOR; MAX_LOG_LINES];
+        self.log_line_count = 0;
+        self.log_current_line = 0;
+        self.scroll_offset = 0;
+
+        for row in LOG_START_ROW..VGA_HEIGHT {
+            if self.log_line_count >= MAX_LOG_LINES.saturating_sub(1) {
+                break;
+            }
+
+            let mut line = [b' '; VGA_WIDTH];
+            let mut line_color = LOG_COLOR;
+            let mut saw_non_space = false;
+
+            for col in 0..VGA_WIDTH {
+                let cell = self.buffer.chars[row][col];
+                line[col] = cell.ascii_character;
+                if !saw_non_space && cell.ascii_character != b' ' {
+                    line_color = cell.color_code;
+                    saw_non_space = true;
+                }
+            }
+
+            self.log_lines[self.log_line_count] = line;
+            self.log_line_colors[self.log_line_count] = line_color;
+            self.log_current_line = self.log_line_count;
+            self.log_line_count += 1;
+        }
+
+        if self.log_line_count == 0 {
+            self.log_line_count = 1;
+            self.log_current_line = 0;
+        } else if self.log_line_count < MAX_LOG_LINES {
+            self.log_current_line = self.log_line_count;
+            self.log_lines[self.log_current_line] = blank_line();
+            self.log_line_colors[self.log_current_line] = LOG_COLOR;
+            self.log_line_count += 1;
+        } else {
+            self.log_current_line = self.log_line_count - 1;
+        }
+
+        self.row_position = self.log_end_row();
+        self.column_position = 0;
+    }
+
     fn active_input_rows(&self) -> usize {
         let total_cells = INPUT_PROMPT.len()
             .saturating_add(self.input_len)
@@ -229,6 +289,7 @@ impl VgaWriter {
 
     pub fn init_cli(&mut self) {
         self.enable_hardware_cursor();
+        self.import_existing_screen_to_log();
         self.runtime_seconds = 0;
         self.render_runtime(0);
         self.render_log_view();
@@ -465,6 +526,7 @@ impl VgaWriter {
         }
 
         self.update_hardware_cursor();
+        crate::display::notify_surface_dirty();
     }
 
     fn update_hardware_cursor(&self) {
@@ -489,6 +551,7 @@ impl VgaWriter {
         self.render_status_row();
         self.render_mouse_overlay();
         self.update_hardware_cursor();
+        crate::display::notify_surface_dirty();
     }
 
     fn render_status_row(&mut self) {
@@ -603,6 +666,8 @@ impl VgaWriter {
                 };
             }
         }
+
+        crate::display::notify_surface_dirty();
     }
 
     fn max_scroll_offset(&self) -> usize {
@@ -658,6 +723,11 @@ impl VgaWriter {
         self.mouse_col = next_col.clamp(0, (VGA_WIDTH - 1) as isize) as usize;
         self.mouse_row = next_row.clamp(LOG_START_ROW as isize, log_end_row as isize) as usize;
         self.mouse_buttons = buttons & 0x07;
+        let input_line = alloc::format!(
+            "input> {}",
+            String::from_utf8_lossy(&self.input_buffer[..self.input_len])
+        );
+        crate::display::update_pointer_motion(dx, dy, buttons, wheel, input_line.as_str());
 
         let max_offset = self.max_scroll_offset();
         let left_click = (self.mouse_buttons & 0x01) != 0;
@@ -688,6 +758,7 @@ impl VgaWriter {
             self.render_status_row();
             self.render_mouse_overlay();
             self.update_hardware_cursor();
+            crate::display::notify_surface_dirty();
         }
     }
 
@@ -708,6 +779,56 @@ impl VgaWriter {
             color_code: MOUSE_POINTER_COLOR,
         };
         self.mouse_overlay_active = true;
+    }
+
+    fn external_surface_snapshot(&self, max_log_lines: usize) -> ExternalSurfaceSnapshot {
+        let total_seconds = self.runtime_seconds;
+        let hours = total_seconds / 3600;
+        let minutes = (total_seconds % 3600) / 60;
+        let seconds = total_seconds % 60;
+        let status_line = alloc::format!(
+            "OpenRhiza bootstrap presenter  |  running {:02}:{:02}:{:02}  |  mouse {:03},{:02} {:03b}",
+            hours,
+            minutes,
+            seconds,
+            self.mouse_col,
+            self.mouse_row.saturating_sub(LOG_START_ROW),
+            self.mouse_buttons & 0x07
+        );
+
+        let mut log_lines = Vec::new();
+        let total = self.log_line_count;
+        let start = total.saturating_sub(max_log_lines);
+        for index in start..total {
+            let Some(line) = self.log_line_by_logical_index(index) else {
+                continue;
+            };
+            let color = self
+                .log_line_color_by_logical_index(index)
+                .unwrap_or(LOG_COLOR);
+            let mut end = line.len();
+            while end > 0 && line[end - 1] == b' ' {
+                end -= 1;
+            }
+            let text = if end == 0 {
+                String::new()
+            } else {
+                String::from_utf8_lossy(&line[..end]).into_owned()
+            };
+            log_lines.push((text, color));
+        }
+
+        let input_text = String::from_utf8_lossy(&self.input_buffer[..self.input_len]).into_owned();
+        ExternalSurfaceSnapshot {
+            status_line,
+            header_line: String::from("Recovery shell remains available while sandbox display sessions are validated."),
+            log_lines,
+            input_line: alloc::format!("input> {}", input_text),
+            mouse_enabled: self.mouse_enabled,
+            mouse_col: self.mouse_col,
+            mouse_row: self.mouse_row.saturating_sub(LOG_START_ROW),
+            mouse_buttons: self.mouse_buttons & 0x07,
+        }
     }
 
     fn history_entry(&self, logical_index: usize) -> Option<(&[u8], usize)> {
@@ -820,6 +941,17 @@ pub fn init_cli() {
 
 pub fn render_runtime(total_seconds: u64) {
     WRITER.lock().render_runtime(total_seconds);
+}
+
+pub fn external_surface_snapshot(max_log_lines: usize) -> ExternalSurfaceSnapshot {
+    WRITER.lock().external_surface_snapshot(max_log_lines)
+}
+
+pub fn debug_set_input_line(text: &str) {
+    WRITER
+        .lock()
+        .set_input_from_bytes(text.as_bytes(), text.len());
+    crate::display::notify_surface_dirty();
 }
 
 pub const fn user_echo_color() -> u8 {

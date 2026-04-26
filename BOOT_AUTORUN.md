@@ -2,6 +2,10 @@
 
 Commands in the fenced block below run automatically after the boot sequence reaches `input>`.
 
+This file exists to bootstrap capability bring-up during development.
+It is not the final user-facing interaction model.
+The final goal is that the OpenRhiza intelligence itself decides which skills, workflows, and GUI mutations to run from inside the machine.
+
 ```openrhiza
 @wait ticks 1000
 /api-skill
@@ -10,5 +14,7 @@ Commands in the fenced block below run automatically after the boot sequence rea
 @wait skill-stage skill_display_console_mode_v1 testing
 /skill-run skill_display_console_mode_v1
 @wait ticks 2500
+/gui-focus composer
 /display-status
+/gui-scene
 ```

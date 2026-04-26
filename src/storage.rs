@@ -162,6 +162,57 @@ fn fat16_cluster_chain(layout: &Fat16Layout, starting_cluster: u16) -> Vec<u16> 
     chain
 }
 
+fn read_u32_leb_from_bytes(data: &[u8], offset: &mut usize) -> Option<u32> {
+    let mut result = 0u32;
+    let mut shift = 0u32;
+
+    for _ in 0..5 {
+        let byte = *data.get(*offset)?;
+        *offset += 1;
+        result |= ((byte & 0x7F) as u32) << shift;
+        if (byte & 0x80) == 0 {
+            return Some(result);
+        }
+        shift += 7;
+    }
+
+    None
+}
+
+fn truncate_wasm_padding_if_present(data: &mut Vec<u8>) {
+    if data.len() < 8 || &data[..4] != b"\0asm" {
+        return;
+    }
+
+    let mut offset = 8usize;
+    let mut module_end = 8usize;
+
+    while offset < data.len() {
+        let section_start = offset;
+        let _section_id = data[offset];
+        offset += 1;
+        let Some(payload_len) = read_u32_leb_from_bytes(data.as_slice(), &mut offset) else {
+            break;
+        };
+        if _section_id == 0
+            && payload_len == 0
+            && data[section_start..].iter().all(|byte| *byte == 0)
+        {
+            break;
+        }
+        let payload_end = offset.saturating_add(payload_len as usize);
+        if payload_end > data.len() {
+            break;
+        }
+        module_end = payload_end;
+        offset = payload_end;
+    }
+
+    if module_end > 8 && module_end < data.len() {
+        data.truncate(module_end);
+    }
+}
+
 fn find_named_file_in_secondary_fat16(target_names: &[[u8; 11]]) -> Option<(Fat16Layout, Fat16FileLocation)> {
     let layout = load_fat16_layout()?;
     let mut boot = [0u8; 512];
@@ -179,7 +230,7 @@ fn find_named_file_in_secondary_fat16(target_names: &[[u8; 11]]) -> Option<(Fat1
             let entry_offset = i * 32;
             let entry = &root_sector[entry_offset..entry_offset + 32];
             if entry[0] == 0x00 {
-                return None;
+                continue;
             }
             if entry[0] == 0xE5 || entry[11] == 0x0F {
                 continue;
@@ -193,7 +244,7 @@ fn find_named_file_in_secondary_fat16(target_names: &[[u8; 11]]) -> Option<(Fat1
             let starting_cluster = u16::from_le_bytes([entry[26], entry[27]]);
             let file_size = u32::from_le_bytes([entry[28], entry[29], entry[30], entry[31]]) as usize;
             if starting_cluster < 2 {
-                return None;
+                continue;
             }
 
             let cluster_chain = fat16_cluster_chain(&layout, starting_cluster);
@@ -240,6 +291,7 @@ pub fn read_named_file_from_secondary_fat16(target_names: &[[u8; 11]]) -> Option
         }
     }
 
+    truncate_wasm_padding_if_present(&mut file_data);
     Some(file_data)
 }
 

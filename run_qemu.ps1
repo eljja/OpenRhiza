@@ -11,14 +11,51 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $qemuExe = "C:\Program Files\qemu\qemu-system-x86_64.exe"
-$pythonwExe = (Get-Command pythonw.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1)
-$pythonExe = (Get-Command python.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source -First 1)
+$pythonwExe = $null
+$pythonExe = $null
 $serialWindowTitle = "OpenRhiza Serial Log"
 $serialServerScript = Join-Path $repoRoot "tools\serial_log_server.py"
 
 if (-not (Test-Path -LiteralPath $qemuExe)) {
     throw "QEMU executable not found at '$qemuExe'."
 }
+
+function Resolve-PreferredPython {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$CommandName
+    )
+
+    $wellKnownCandidates = @(
+        "D:\python\anaconda3\$CommandName",
+        "D:\python\anaconda3\Scripts\$CommandName"
+    )
+    foreach ($candidate in $wellKnownCandidates) {
+        if (Test-Path -LiteralPath $candidate) {
+            return $candidate
+        }
+    }
+
+    $candidates = @(Get-Command $CommandName -All -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty Source -Unique)
+
+    if (-not $candidates -or $candidates.Count -eq 0) {
+        return $null
+    }
+
+    $preferred = $candidates | Where-Object {
+        $_ -notmatch '\\WindowsApps\\' -and $_ -notmatch 'PythonSoftwareFoundation\.PythonManager'
+    } | Select-Object -First 1
+
+    if (-not [string]::IsNullOrWhiteSpace($preferred)) {
+        return $preferred
+    }
+
+    return ($candidates | Select-Object -First 1)
+}
+
+$pythonwExe = Resolve-PreferredPython -CommandName "pythonw.exe"
+$pythonExe = Resolve-PreferredPython -CommandName "python.exe"
 
 if ([string]::IsNullOrWhiteSpace($pythonwExe) -and [string]::IsNullOrWhiteSpace($pythonExe)) {
     throw "Python executable not found."
@@ -94,11 +131,12 @@ function Merge-SkillCacheSeedMap {
 
     $header = "# OpenRhiza local skill cache`n"
     $seedMap = [ordered]@{
-        "skill_registry_lookup_v1" = "SKREG.WAS"
-        "skill_display_console_mode_v1" = "SKDSP.WAS"
-        "skill_gui_session_bootstrap_v1" = "SKGUI.WAS"
-        "skill_display_framebuffer_mode_v1" = "SKFBUF.WAS"
-        "skill_gui_compositor_seed_v1" = "SKCOMP.WAS"
+        "skill_display_console_mode_v1" = "SK000.WAS"
+        "skill_gui_session_bootstrap_v1" = "SK001.WAS"
+        "skill_display_framebuffer_mode_v1" = "SK002.WAS"
+        "skill_gui_compositor_seed_v1" = "SK003.WAS"
+        "skill_registry_lookup_v1" = "SK004.WAS"
+        "skill_gui_scene_mutator_v1" = "SK005.WAS"
     }
 
     $existingText = ""
@@ -120,7 +158,11 @@ function Merge-SkillCacheSeedMap {
         if ($parts.Length -ne 2) {
             continue
         }
-        $merged[$parts[0].Trim()] = $parts[1].Trim()
+        $value = $parts[1].Trim()
+        if (-not $value.EndsWith(".WAS")) {
+            continue
+        }
+        $merged[$parts[0].Trim()] = $value
     }
 
     foreach ($key in $seedMap.Keys) {
@@ -133,6 +175,32 @@ function Merge-SkillCacheSeedMap {
     }
 
     Initialize-FixedCacheFileFromText -Path $Path -Text $text -Size 512
+}
+
+function Install-SeedSkillSlot {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SourceName,
+        [Parameter(Mandatory = $true)]
+        [string]$TargetName,
+        [Parameter(Mandatory = $true)]
+        [int]$Size
+    )
+
+    $sourcePath = Join-Path $driverDisk $SourceName
+    $targetPath = Join-Path $driverDisk $TargetName
+    if (-not (Test-Path -LiteralPath $sourcePath)) {
+        return
+    }
+
+    $sourceBytes = [System.IO.File]::ReadAllBytes($sourcePath)
+    if ($sourceBytes.Length -gt $Size) {
+        throw "$SourceName exceeds fixed skill slot size $Size bytes."
+    }
+
+    $buffer = New-Object byte[] $Size
+    [Array]::Copy($sourceBytes, $buffer, $sourceBytes.Length)
+    [System.IO.File]::WriteAllBytes($targetPath, $buffer)
 }
 
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "DRVMAP.TXT") -Header "# OpenRhiza active driver map`n" -Size 512
@@ -158,6 +226,13 @@ Initialize-FixedCacheFile -Path (Join-Path $driverDisk "EVALCCH.TXT") -Header "#
 foreach ($skillSlot in @("SK000.WAS", "SK001.WAS", "SK002.WAS", "SK003.WAS", "SK004.WAS", "SK005.WAS", "SK006.WAS", "SK007.WAS")) {
     Initialize-FixedCacheFile -Path (Join-Path $driverDisk $skillSlot) -Header "" -Size 65536
 }
+
+Install-SeedSkillSlot -SourceName "SKDSP.WAS" -TargetName "SK000.WAS" -Size 65536
+Install-SeedSkillSlot -SourceName "SKGUI.WAS" -TargetName "SK001.WAS" -Size 65536
+Install-SeedSkillSlot -SourceName "SKFBUF.WAS" -TargetName "SK002.WAS" -Size 65536
+Install-SeedSkillSlot -SourceName "SKCOMP.WAS" -TargetName "SK003.WAS" -Size 65536
+Install-SeedSkillSlot -SourceName "SKREG.WAS" -TargetName "SK004.WAS" -Size 65536
+Install-SeedSkillSlot -SourceName "SKMUT.WAS" -TargetName "SK005.WAS" -Size 65536
 
 function Stop-OpenRhizaSession {
     Get-Process -Name "qemu-system-x86_64" -ErrorAction SilentlyContinue |
@@ -221,10 +296,16 @@ function Ensure-SerialLogWindow {
 Stop-OpenRhizaSession
 Ensure-SerialLogWindow
 
+$resolvedDisplayBackend = switch ($DisplayBackend) {
+    "gtk" { "gtk,grab-on-hover=on" }
+    "sdl" { "sdl" }
+    default { $DisplayBackend }
+}
+
 $qemuArgs = @(
     "-no-reboot"
     "-no-shutdown"
-    "-display", $DisplayBackend
+    "-display", $resolvedDisplayBackend
     "-k", "en-us"
     "-drive", "format=raw,file=$bootImagePath"
     "-drive", "file=fat:rw:$driverDisk,format=raw,index=2"
@@ -244,5 +325,9 @@ if ($KeyboardTransport -eq "usb") {
     $qemuArgs += @("-device", "usb-mouse,bus=xhci.0,port=1")
 }
 
-$qemu = Start-Process -FilePath $qemuExe -WorkingDirectory $repoRoot -ArgumentList $qemuArgs -PassThru
-Wait-Process -Id $qemu.Id
+Push-Location $repoRoot
+try {
+    & $qemuExe @qemuArgs
+} finally {
+    Pop-Location
+}

@@ -113,7 +113,7 @@ pub fn build_plan(prompt: &str) -> PromptOrchestrationPlan {
         phases.push(RegistryQueryPhase::Evaluation);
     }
 
-    let local_context_block = build_local_context_block(prompt);
+    let local_context_block = build_local_context_block(prompt, display_intent);
     let summary = build_summary(driver_intent, software_intent, skill_intent, evaluation_intent, display_intent);
 
     PromptOrchestrationPlan {
@@ -131,8 +131,16 @@ pub fn build_prompt_orchestration_plan(prompt: &str) -> PromptOrchestrationPlan 
 }
 
 pub fn build_enriched_prompt(prompt: &str, plan: &PromptOrchestrationPlan) -> String {
+    if prompt.to_ascii_lowercase().contains("[gui-selftest]") {
+        return format!(
+            "OpenRhiza GUI self-test.\nOnly emit compact JSON action objects, one per line, with no prose and no markdown.\nAllowed actions:\n{{\"action\":\"gui_select_session\",\"session\":\"openrhiza|sandbox|wide|recovery\"}}\n{{\"action\":\"gui_focus\",\"target\":\"conversation|composer|none\"}}\n{{\"action\":\"gui_set_label\",\"handle\":40,\"text\":\"...\"}}\n{{\"action\":\"gui_set_style\",\"handle\":30,\"style\":\"composer|conversation|sidebar-active|plain|accent\"}}\n{{\"action\":\"gui_set_bounds\",\"handle\":30,\"x\":304,\"y\":862,\"width\":1592,\"height\":132}}\n{{\"action\":\"gui_set_interaction\",\"handle\":30,\"interaction\":\"idle|hovered|focused|active|disabled\"}}\n{{\"action\":\"gui_reset\",\"handle\":0}}\n\nCurrent GUI:\n{}\n\nTask:\n{}",
+            plan.local_context_block.trim(),
+            prompt.trim()
+        );
+    }
+
     format!(
-        "OpenRhiza prompt orchestration summary: {}\n\n{}\n\nUser request:\n{}",
+        "OpenRhiza prompt orchestration summary: {}\n\n{}\n\nSupported machine actions:\n- {{\"action\":\"load_driver\",\"driver_name\":\"drv_example_v1\"}}\n- {{\"action\":\"gui_select_session\",\"session\":\"openrhiza|sandbox|wide|recovery\"}}\n- {{\"action\":\"gui_focus\",\"target\":\"conversation|composer|none\"}}\n- {{\"action\":\"gui_set_label\",\"handle\":40,\"text\":\"...\"}}\n- {{\"action\":\"gui_set_style\",\"handle\":30,\"style\":\"composer|conversation|sidebar-active|plain|accent\"}}\n- {{\"action\":\"gui_set_bounds\",\"handle\":30,\"x\":304,\"y\":916,\"width\":1592,\"height\":78}}\n- {{\"action\":\"gui_set_interaction\",\"handle\":30,\"interaction\":\"idle|hovered|focused|active|disabled\"}}\n- {{\"action\":\"gui_reset\",\"handle\":0}}\n\nUser request:\n{}",
         plan.summary,
         plan.local_context_block.trim(),
         prompt.trim()
@@ -186,7 +194,21 @@ fn build_summary(
     out
 }
 
-fn build_local_context_block(prompt: &str) -> String {
+fn build_local_context_block(prompt: &str, display_intent: bool) -> String {
+    let gui_selftest = prompt.to_ascii_lowercase().contains("[gui-selftest]");
+    if gui_selftest {
+        let mut out = String::from("OpenRhiza GUI self-test context:\n");
+        out.push_str(crate::display::status_block().trim());
+        out.push('\n');
+        out.push('\n');
+        out.push_str(crate::display::gui_scene_report().trim());
+        out.push('\n');
+        out.push('\n');
+        out.push_str(crate::display::gui_mutation_report().trim());
+        out.push('\n');
+        return out;
+    }
+
     let mut out = String::from("Local machine context:\n");
     out.push_str("- prompt: ");
     out.push_str(prompt.trim());
@@ -216,6 +238,15 @@ fn build_local_context_block(prompt: &str) -> String {
     out.push('\n');
     out.push_str(crate::display::status_block().trim());
     out.push('\n');
+
+    if display_intent || matches!(crate::display::session_target(), crate::display::DisplaySessionTarget::GuiSession) {
+        out.push('\n');
+        out.push_str(crate::display::gui_scene_report().trim());
+        out.push('\n');
+        out.push('\n');
+        out.push_str(crate::display::gui_mutation_report().trim());
+        out.push('\n');
+    }
 
     if let Some(driver_runtime) = crate::driver_runtime::context_block() {
         out.push('\n');

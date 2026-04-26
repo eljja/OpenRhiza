@@ -12,6 +12,14 @@ const SKILL_SLOT_TEXT: [&str; 8] = [
     "SK006.WAS",
     "SK007.WAS",
 ];
+const SEED_SKILL_MAP: [(&str, &str); 6] = [
+    ("skill_display_console_mode_v1", "SK000.WAS"),
+    ("skill_gui_session_bootstrap_v1", "SK001.WAS"),
+    ("skill_display_framebuffer_mode_v1", "SK002.WAS"),
+    ("skill_gui_compositor_seed_v1", "SK003.WAS"),
+    ("skill_registry_lookup_v1", "SK004.WAS"),
+    ("skill_gui_scene_mutator_v1", "SK005.WAS"),
+];
 
 #[derive(Clone, Debug)]
 pub struct CachedSkillArtifact {
@@ -35,6 +43,15 @@ pub fn find_cached_skill(skill_id: &str) -> Option<CachedSkillArtifact> {
     load_cached_skills()
         .into_iter()
         .find(|artifact| artifact.skill_id == skill_id)
+        .or_else(|| {
+            SEED_SKILL_MAP
+                .iter()
+                .find(|(seed_skill_id, _)| *seed_skill_id == skill_id)
+                .map(|(seed_skill_id, fat_name_text)| CachedSkillArtifact {
+                    skill_id: String::from(*seed_skill_id),
+                    fat_name_text: String::from(*fat_name_text),
+                })
+        })
 }
 
 pub fn parse_cached_skills(text: &str) -> Vec<CachedSkillArtifact> {
@@ -53,6 +70,9 @@ pub fn parse_cached_skills(text: &str) -> Vec<CachedSkillArtifact> {
         let skill_id = skill_id.trim();
         let fat_name_text = fat_name_text.trim();
         if skill_id.is_empty() || fat_name_text.is_empty() {
+            continue;
+        }
+        if !fat_name_text.ends_with(".WAS") {
             continue;
         }
 

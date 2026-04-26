@@ -184,7 +184,7 @@ fn handle_cli_command(command: &str) {
 
     if let Some(local_command) = command.strip_prefix('/') {
         match local_command {
-            "help" => crate::result_println!("[CLI] Local commands: /help, /clear, /status, /display-status, /nexus-fetch, /api-register, /api-register-http, /http-health, /https-health, /https-root, /api-hw, /api-driver, /api-software, /api-skill, /api-workflow, /api-policy, /api-eval, /api-all, /gemini-test, /driver-map, /driver-runtime-status, /driver-promote <match_key>, /skill-cache, /skill-download <skill_id>, /skill-load <skill_id>, /skill-run <skill_id>, /skill-unload <skill_id>, /skill-activate <skill_id>, /driver-generate <match_key>, /driver-upload <match_key>, /driver-download <driver_id> [match_key], /driver-comment <driver_id> <text>, /driver-vote <driver_id> up|down, /driver-bindings, /driver-activate <match_key> <driver_id>, /driver-rollback <match_key>, /sandbox-mouse-load, /sandbox-keyboard-load, /input-routing-status, /input-activate <keyboard|mouse>, /input-rollback <keyboard|mouse>"),
+            "help" => crate::result_println!("[CLI] Local commands: /help, /clear, /status, /display-status, /gui-scene, /gui-mutations, /gui-session <openrhiza|sandbox|wide|recovery>, /gui-focus <conversation|composer|none>, /gui-scroll <up|down|bottom> [count], /gui-compose-demo, /gui-label <handle> <text>, /gui-style <handle> <style>, /gui-bounds <handle> <x> <y> <width> <height>, /gui-interaction <handle> <idle|hovered|focused|active|disabled>, /gui-reset <handle|all>, /nexus-fetch, /api-register, /api-register-http, /http-health, /https-health, /https-root, /api-hw, /api-driver, /api-software, /api-skill, /api-workflow, /api-policy, /api-eval, /api-all, /gemini-test, /gemini-gui-test, /driver-map, /driver-runtime-status, /driver-promote <match_key>, /skill-cache, /skill-download <skill_id>, /skill-load <skill_id>, /skill-run <skill_id>, /skill-unload <skill_id>, /skill-activate <skill_id>, /driver-generate <match_key>, /driver-upload <match_key>, /driver-download <driver_id> [match_key], /driver-comment <driver_id> <text>, /driver-vote <driver_id> up|down, /driver-bindings, /driver-activate <match_key> <driver_id>, /driver-rollback <match_key>, /sandbox-mouse-load, /sandbox-keyboard-load, /input-routing-status, /input-activate <keyboard|mouse>, /input-rollback <keyboard|mouse>"),
             "clear" => WRITER.lock().clear_log_area(),
             "status" => {
                 crate::result_println!("[CLI] Keyboard input ready.");
@@ -192,6 +192,41 @@ fn handle_cli_command(command: &str) {
                 crate::result_println!("[CLI] Plain text without '/' is sent to Gemini.");
             }
             "display-status" => show_display_status(),
+            "gui-scene" => show_gui_scene(),
+            "gui-mutations" => show_gui_mutations(),
+            _ if local_command.starts_with("gui-session ") => {
+                let name = local_command["gui-session ".len()..].trim();
+                select_gui_session(name);
+            }
+            _ if local_command.starts_with("gui-focus ") => {
+                let name = local_command["gui-focus ".len()..].trim();
+                focus_gui_object(name);
+            }
+            _ if local_command.starts_with("gui-scroll ") => {
+                let rest = local_command["gui-scroll ".len()..].trim();
+                scroll_gui_conversation(rest);
+            }
+            "gui-compose-demo" => set_gui_composer_demo(),
+            _ if local_command.starts_with("gui-label ") => {
+                let rest = local_command["gui-label ".len()..].trim();
+                set_gui_label(rest);
+            }
+            _ if local_command.starts_with("gui-style ") => {
+                let rest = local_command["gui-style ".len()..].trim();
+                set_gui_style(rest);
+            }
+            _ if local_command.starts_with("gui-bounds ") => {
+                let rest = local_command["gui-bounds ".len()..].trim();
+                set_gui_bounds(rest);
+            }
+            _ if local_command.starts_with("gui-interaction ") => {
+                let rest = local_command["gui-interaction ".len()..].trim();
+                set_gui_interaction(rest);
+            }
+            _ if local_command.starts_with("gui-reset ") => {
+                let target = local_command["gui-reset ".len()..].trim();
+                reset_gui_mutations(target);
+            }
             "nexus-fetch" => queue_api_command(crate::api_v1::ServiceApiCommand::NexusFetch, "nexus_fetch"),
             "api-register" => queue_api_command(crate::api_v1::ServiceApiCommand::Register, "register"),
             "api-register-http" => queue_api_command(crate::api_v1::ServiceApiCommand::RegisterHttp, "register_http"),
@@ -207,6 +242,7 @@ fn handle_cli_command(command: &str) {
             "api-eval" => queue_api_command(crate::api_v1::ServiceApiCommand::EvaluationQuery, "evaluation_query"),
             "api-all" => queue_api_command(crate::api_v1::ServiceApiCommand::All, "full_api_sequence"),
             "gemini-test" => queue_gemini_prompt("Summarize the current role of OpenRhiza OS in one short sentence.".into()),
+            "gemini-gui-test" => queue_gemini_gui_test(),
             "driver-map" => show_driver_map(),
             "driver-runtime-status" => show_driver_runtime_status(),
             "skill-cache" => show_skill_cache(),
@@ -300,6 +336,12 @@ fn queue_gemini_prompt(prompt: alloc::string::String) {
         Ok(()) => crate::result_println!("[CLI] Queued Gemini prompt."),
         Err(_) => crate::result_println!("[CLI] Gemini prompt queue full."),
     }
+}
+
+fn queue_gemini_gui_test() {
+    queue_gemini_prompt(
+        "[gui-selftest] Adjust the current OpenRhiza GUI scene. Emit only compact JSON action objects with no prose and no markdown fences. Prefer these exact actions: gui_select_session, gui_focus, gui_set_bounds, gui_set_label, gui_set_style, gui_set_interaction, gui_reset. Select the openrhiza session, focus the composer, slightly widen the conversation region, increase the composer height for a richer Codex-like layout, and update the footer labels to mention a Gemini GUI self-test.".into(),
+    );
 }
 
 fn queue_driver_generate(match_key: &str) {
@@ -549,6 +591,162 @@ fn show_display_status() {
     for line in crate::display::status_block().lines() {
         crate::result_println!("{}", line);
     }
+}
+
+fn show_gui_scene() {
+    for line in crate::display::gui_scene_report().lines() {
+        crate::result_println!("{}", line);
+    }
+}
+
+fn show_gui_mutations() {
+    for line in crate::display::gui_mutation_report().lines() {
+        crate::result_println!("{}", line);
+    }
+}
+
+fn select_gui_session(name: &str) {
+    match crate::display::select_gui_session(name) {
+        Ok(()) => crate::result_println!("[GUI] selected session: {}", name),
+        Err(error) => crate::result_println!("[GUI] {}", error),
+    }
+}
+
+fn focus_gui_object(name: &str) {
+    match crate::display::focus_gui_object(name) {
+        Ok(()) => crate::result_println!("[GUI] focus: {}", name),
+        Err(error) => crate::result_println!("[GUI] {}", error),
+    }
+}
+
+fn scroll_gui_conversation(rest: &str) {
+    let mut parts = rest.split_whitespace();
+    let Some(direction) = parts.next() else {
+        crate::result_println!("[CLI] Usage: /gui-scroll <up|down|bottom> [count]");
+        return;
+    };
+    let count = parts
+        .next()
+        .and_then(|value| value.parse::<usize>().ok())
+        .unwrap_or(1);
+
+    match crate::display::scroll_gui_conversation(direction, count) {
+        Ok(()) => crate::result_println!("[CLI] GUI conversation scroll updated."),
+        Err(error) => crate::result_println!("[CLI] {}", error),
+    }
+}
+
+fn set_gui_composer_demo() {
+    crate::vga::debug_set_input_line(
+        "input> Design a codex-like multi-session GUI with a wider assistant conversation surface, a taller adaptive composer, and object-local scroll behavior that does not affect unrelated GUI objects.",
+    );
+    crate::result_println!("[CLI] GUI composer demo text applied.");
+}
+
+fn set_gui_label(rest: &str) {
+    let mut parts = rest.splitn(2, ' ');
+    let Some(handle_text) = parts.next() else {
+        crate::result_println!("[GUI] Usage: /gui-label <handle> <text>");
+        return;
+    };
+    let Some(label) = parts.next() else {
+        crate::result_println!("[GUI] Usage: /gui-label <handle> <text>");
+        return;
+    };
+    let Ok(handle) = handle_text.parse::<u64>() else {
+        crate::result_println!("[GUI] handle must be a number");
+        return;
+    };
+    match crate::display::set_gui_label(handle, label.trim()) {
+        Ok(()) => crate::result_println!("[GUI] label updated for handle {}", handle),
+        Err(error) => crate::result_println!("[GUI] {}", error),
+    }
+}
+
+fn set_gui_style(rest: &str) {
+    let mut parts = rest.split_whitespace();
+    let Some(handle_text) = parts.next() else {
+        crate::result_println!("[GUI] Usage: /gui-style <handle> <style>");
+        return;
+    };
+    let Some(style) = parts.next() else {
+        crate::result_println!("[GUI] Usage: /gui-style <handle> <style>");
+        return;
+    };
+    let Ok(handle) = handle_text.parse::<u64>() else {
+        crate::result_println!("[GUI] handle must be a number");
+        return;
+    };
+    match crate::display::set_gui_style(handle, style) {
+        Ok(()) => crate::result_println!("[GUI] style updated for handle {}", handle),
+        Err(error) => crate::result_println!("[GUI] {}", error),
+    }
+}
+
+fn set_gui_bounds(rest: &str) {
+    let parts: alloc::vec::Vec<&str> = rest.split_whitespace().collect();
+    if parts.len() != 5 {
+        crate::result_println!("[GUI] Usage: /gui-bounds <handle> <x> <y> <width> <height>");
+        return;
+    }
+    let Ok(handle) = parts[0].parse::<u64>() else {
+        crate::result_println!("[GUI] handle must be a number");
+        return;
+    };
+    let Ok(x) = parts[1].parse::<usize>() else {
+        crate::result_println!("[GUI] x must be a number");
+        return;
+    };
+    let Ok(y) = parts[2].parse::<usize>() else {
+        crate::result_println!("[GUI] y must be a number");
+        return;
+    };
+    let Ok(width) = parts[3].parse::<usize>() else {
+        crate::result_println!("[GUI] width must be a number");
+        return;
+    };
+    let Ok(height) = parts[4].parse::<usize>() else {
+        crate::result_println!("[GUI] height must be a number");
+        return;
+    };
+    match crate::display::set_gui_bounds(handle, x, y, width, height) {
+        Ok(()) => crate::result_println!("[GUI] bounds updated for handle {}", handle),
+        Err(error) => crate::result_println!("[GUI] {}", error),
+    }
+}
+
+fn set_gui_interaction(rest: &str) {
+    let mut parts = rest.split_whitespace();
+    let Some(handle_text) = parts.next() else {
+        crate::result_println!("[GUI] Usage: /gui-interaction <handle> <idle|hovered|focused|active|disabled>");
+        return;
+    };
+    let Some(interaction) = parts.next() else {
+        crate::result_println!("[GUI] Usage: /gui-interaction <handle> <idle|hovered|focused|active|disabled>");
+        return;
+    };
+    let Ok(handle) = handle_text.parse::<u64>() else {
+        crate::result_println!("[GUI] handle must be a number");
+        return;
+    };
+    match crate::display::set_gui_interaction(handle, interaction) {
+        Ok(()) => crate::result_println!("[GUI] interaction updated for handle {}", handle),
+        Err(error) => crate::result_println!("[GUI] {}", error),
+    }
+}
+
+fn reset_gui_mutations(target: &str) {
+    if target == "all" {
+        crate::display::reset_gui_mutations(None);
+        crate::result_println!("[GUI] cleared all gui mutations");
+        return;
+    }
+    let Ok(handle) = target.parse::<u64>() else {
+        crate::result_println!("[GUI] Usage: /gui-reset <handle|all>");
+        return;
+    };
+    crate::display::reset_gui_mutations(Some(handle));
+    crate::result_println!("[GUI] cleared gui mutations for handle {}", handle);
 }
 
 fn queue_skill_load(skill_id: &str) {

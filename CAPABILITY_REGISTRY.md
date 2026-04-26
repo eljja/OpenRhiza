@@ -18,6 +18,13 @@ The registry should hold:
 - votes
 - artifacts
 
+The registry should also preserve the object model of those capabilities where relevant:
+
+- GUI scene capabilities should be modeled as object graphs or object mutations
+- drivers should expose bounded activation targets
+- workflows should expose explicit steps and rollback boundaries
+- skills should describe narrow abilities rather than global behavior patches
+
 ## Why This Model Exists
 
 OpenRhiza is prompt-first.
@@ -132,6 +139,15 @@ When the user asks for something, OpenRhiza should prefer:
 
 This applies across drivers, skills, programs, and workflows.
 It also applies to display, compositor, and GUI evolution: registry skill first, sandbox validation second, core promotion last.
+
+The same principle applies to interface work:
+
+1. inspect the current GUI scene
+2. query for existing GUI skills or workflows
+3. reuse a known-good scene mutation first
+4. generate only the missing mutation or skill
+5. validate object-local effects without risking recovery display
+6. promote only after success
 
 ## UI And API Direction
 

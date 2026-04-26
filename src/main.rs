@@ -30,6 +30,9 @@ pub mod storage;
 pub mod https;
 pub mod dns;
 pub mod display;
+pub mod gui_font;
+pub mod gui_contract;
+pub mod gui_lvgl_bridge;
 pub mod task;
 pub mod security;
 pub mod e1000;
@@ -284,6 +287,7 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
     executor.spawn(task::Task::new(task::keyboard::keyboard_task()));
     executor.spawn(task::Task::new(usb_input_task()));
     executor.spawn(task::Task::new(runtime_status_task()));
+    executor.spawn(task::Task::new(display_refresh_task()));
     executor.spawn(task::Task::new(crate::boot_automation::boot_autorun_task()));
     executor.spawn(task::Task::new(core_os_task(rhiza)));
     executor.run();
@@ -309,8 +313,15 @@ async fn runtime_status_task() {
     loop {
         let ticks = crate::task::timer::TICKS.load(core::sync::atomic::Ordering::Relaxed);
         let seconds = ticks / crate::task::timer::TICKS_PER_SECOND;
-        crate::vga::render_runtime(seconds);
+        crate::display::render_runtime(seconds);
         crate::task::timer::sleep_ticks(crate::task::timer::TICKS_PER_SECOND).await;
+    }
+}
+
+async fn display_refresh_task() {
+    loop {
+        crate::display::refresh_if_needed();
+        crate::task::timer::sleep_ticks(4).await;
     }
 }
 
@@ -1834,14 +1845,27 @@ fn log_service_api_summary(phase: ServiceApiPhase, body: &[u8]) {
                     crate::capability_cache::RegistryDomain::Workflow,
                     summary.as_str(),
                 );
+                let gui_session_active = matches!(
+                    crate::display::requested_mode(),
+                    Some(mode) if matches!(mode.backend, crate::display::DisplayBackend::Gui)
+                ) || matches!(
+                    crate::display::session_target(),
+                    crate::display::DisplaySessionTarget::GuiSession
+                ) || matches!(
+                    crate::display::gui_phase(),
+                    crate::display::GuiSessionPhase::BootstrapRequested
+                        | crate::display::GuiSessionPhase::SandboxSession
+                );
                 if workflow_ids
                     .iter()
                     .any(|workflow_id| workflow_id == "workflow_display_expand_v1")
                 {
-                    ensure_display_skill_ready(
-                        "skill_display_framebuffer_mode_v1",
-                        "framebuffer mode skill",
-                    );
+                    if !gui_session_active {
+                        ensure_display_skill_ready(
+                            "skill_display_framebuffer_mode_v1",
+                            "framebuffer mode skill",
+                        );
+                    }
                     ensure_display_skill_ready(
                         "skill_gui_session_bootstrap_v1",
                         "GUI bootstrap skill",
@@ -1854,6 +1878,15 @@ fn log_service_api_summary(phase: ServiceApiPhase, body: &[u8]) {
                     ensure_display_skill_ready(
                         "skill_gui_compositor_seed_v1",
                         "compositor seed skill",
+                    );
+                }
+                if workflow_ids
+                    .iter()
+                    .any(|workflow_id| workflow_id == "workflow_gui_scene_mutate_v1")
+                {
+                    ensure_display_skill_ready(
+                        "skill_gui_scene_mutator_v1",
+                        "GUI scene mutator skill",
                     );
                 }
             }
@@ -2537,7 +2570,10 @@ fn log_gemini_response(response: &crate::https::ApiResponse) {
 }
 
 fn execute_gemini_machine_actions(text: &str) {
-    let actions = extract_gemini_driver_actions(text);
+    let mut actions = extract_gemini_machine_actions(text);
+    if actions.is_empty() {
+        actions = extract_gemini_machine_actions_linewise(text);
+    }
     if actions.is_empty() {
         return;
     }
@@ -2547,41 +2583,93 @@ fn execute_gemini_machine_actions(text: &str) {
         actions.len()
     );
 
-    for driver_id in actions {
-        let Some(match_key) = crate::api_v1::find_driver_registry_match_key(driver_id.as_str()) else {
-            crate::result_println!(
-                "[Gemini] no registry match_key is known for {}; skipped execution.",
-                driver_id
-            );
-            continue;
-        };
+    for action in actions {
+        match action {
+            GeminiMachineAction::LoadDriver(driver_id) => {
+                let Some(match_key) = crate::api_v1::find_driver_registry_match_key(driver_id.as_str()) else {
+                    crate::result_println!(
+                        "[Gemini] no registry match_key is known for {}; skipped execution.",
+                        driver_id
+                    );
+                    continue;
+                };
 
-        crate::api_v1::schedule_driver_download_activation(
-            driver_id.as_str(),
-            match_key.as_str(),
-            "gemini-action",
-        );
+                crate::api_v1::schedule_driver_download_activation(
+                    driver_id.as_str(),
+                    match_key.as_str(),
+                    "gemini-action",
+                );
 
-        match crate::api_v1::queue_driver_registry_command(
-            crate::api_v1::DriverRegistryCommand::DownloadCandidate {
-                driver_id: driver_id.clone(),
-                match_key: match_key.clone(),
+                match crate::api_v1::queue_driver_registry_command(
+                    crate::api_v1::DriverRegistryCommand::DownloadCandidate {
+                        driver_id: driver_id.clone(),
+                        match_key: match_key.clone(),
+                    },
+                ) {
+                    Ok(()) => crate::result_println!(
+                        "[Driver Runtime] Queued Gemini driver apply for {} ({})",
+                        driver_id,
+                        match_key
+                    ),
+                    Err(_) => crate::result_println!(
+                        "[Driver Runtime] Registry download queue full; Gemini action skipped for {}",
+                        driver_id
+                    ),
+                }
+            }
+            GeminiMachineAction::GuiSelectSession(session) => match crate::display::select_gui_session(session.as_str()) {
+                Ok(()) => crate::result_println!("[GUI] Gemini selected session: {}", session),
+                Err(error) => crate::result_println!("[GUI] Gemini action failed: {}", error),
             },
-        ) {
-            Ok(()) => crate::result_println!(
-                "[Driver Runtime] Queued Gemini driver apply for {} ({})",
-                driver_id,
-                match_key
-            ),
-            Err(_) => crate::result_println!(
-                "[Driver Runtime] Registry download queue full; Gemini action skipped for {}",
-                driver_id
-            ),
+            GeminiMachineAction::GuiFocus(target) => match crate::display::focus_gui_object(target.as_str()) {
+                Ok(()) => crate::result_println!("[GUI] Gemini focus target: {}", target),
+                Err(error) => crate::result_println!("[GUI] Gemini action failed: {}", error),
+            },
+            GeminiMachineAction::GuiSetLabel { handle, text } => match crate::display::set_gui_label(handle, text.as_str()) {
+                Ok(()) => crate::result_println!("[GUI] Gemini label updated for handle {}", handle),
+                Err(error) => crate::result_println!("[GUI] Gemini action failed: {}", error),
+            },
+            GeminiMachineAction::GuiSetStyle { handle, style } => match crate::display::set_gui_style(handle, style.as_str()) {
+                Ok(()) => crate::result_println!("[GUI] Gemini style updated for handle {}", handle),
+                Err(error) => crate::result_println!("[GUI] Gemini action failed: {}", error),
+            },
+            GeminiMachineAction::GuiSetBounds {
+                handle,
+                x,
+                y,
+                width,
+                height,
+            } => match crate::display::set_gui_bounds(handle, x as usize, y as usize, width as usize, height as usize) {
+                Ok(()) => crate::result_println!("[GUI] Gemini bounds updated for handle {}", handle),
+                Err(error) => crate::result_println!("[GUI] Gemini action failed: {}", error),
+            },
+            GeminiMachineAction::GuiSetInteraction { handle, interaction } => match crate::display::set_gui_interaction(handle, interaction.as_str()) {
+                Ok(()) => crate::result_println!("[GUI] Gemini interaction updated for handle {}", handle),
+                Err(error) => crate::result_println!("[GUI] Gemini action failed: {}", error),
+            },
+            GeminiMachineAction::GuiReset { handle } => {
+                crate::display::reset_gui_mutations(handle);
+                match handle {
+                    Some(handle) => crate::result_println!("[GUI] Gemini cleared gui mutations for handle {}", handle),
+                    None => crate::result_println!("[GUI] Gemini cleared all gui mutations"),
+                }
+            }
         }
     }
 }
 
-fn extract_gemini_driver_actions(text: &str) -> alloc::vec::Vec<String> {
+enum GeminiMachineAction {
+    LoadDriver(String),
+    GuiSelectSession(String),
+    GuiFocus(String),
+    GuiSetLabel { handle: u64, text: String },
+    GuiSetStyle { handle: u64, style: String },
+    GuiSetBounds { handle: u64, x: u64, y: u64, width: u64, height: u64 },
+    GuiSetInteraction { handle: u64, interaction: String },
+    GuiReset { handle: Option<u64> },
+}
+
+fn extract_gemini_machine_actions(text: &str) -> alloc::vec::Vec<GeminiMachineAction> {
     let mut actions = alloc::vec::Vec::new();
     let mut search_start = 0usize;
 
@@ -2589,31 +2677,296 @@ fn extract_gemini_driver_actions(text: &str) -> alloc::vec::Vec<String> {
         let object_start = search_start + action_index;
         let remainder = &text[object_start..];
 
-        let Some(driver_name_index) = remainder.find("\"driver_name\"") else {
-            search_start = object_start + 8;
-            continue;
-        };
-
         let Some(action_value) = extract_json_like_string(remainder, "action") else {
             search_start = object_start + 8;
             continue;
         };
 
-        if action_value != "load_driver" {
-            search_start = object_start + driver_name_index + 13;
-            continue;
-        }
-
-        if let Some(driver_id) = extract_json_like_string(remainder, "driver_name") {
-            if !actions.iter().any(|existing| existing == &driver_id) {
-                actions.push(driver_id);
+        match action_value.as_str() {
+            "load_driver" => {
+                if let Some(driver_id) = extract_json_like_string(remainder, "driver_name") {
+                    let duplicate = actions.iter().any(|existing| match existing {
+                        GeminiMachineAction::LoadDriver(existing_id) => existing_id == &driver_id,
+                        _ => false,
+                    });
+                    if !duplicate {
+                        actions.push(GeminiMachineAction::LoadDriver(driver_id));
+                    }
+                }
             }
+            "click" => {
+                if let Some(session) = extract_json_like_string(remainder, "session") {
+                    actions.push(GeminiMachineAction::GuiSelectSession(session));
+                } else if let Some(handle) = extract_json_like_u64(remainder, "handle") {
+                    if let Some(session) = gui_session_name_for_handle(handle) {
+                        actions.push(GeminiMachineAction::GuiSelectSession(session));
+                    } else if let Some(target) = gui_focus_target_for_handle(handle) {
+                        actions.push(GeminiMachineAction::GuiFocus(target));
+                    }
+                }
+            }
+            "focus" => {
+                if let Some(target) = extract_json_like_string(remainder, "target") {
+                    actions.push(GeminiMachineAction::GuiFocus(target));
+                } else if let Some(handle) = extract_json_like_u64(remainder, "handle") {
+                    if let Some(target) = gui_focus_target_for_handle(handle) {
+                        actions.push(GeminiMachineAction::GuiFocus(target));
+                    }
+                }
+            }
+            "gui_select_session" => {
+                if let Some(session) = extract_json_like_string(remainder, "session") {
+                    actions.push(GeminiMachineAction::GuiSelectSession(session));
+                } else if let Some(reference) = extract_json_like_string(remainder, "ref") {
+                    if let Some(session) = gui_session_name_from_ref(reference.as_str()) {
+                        actions.push(GeminiMachineAction::GuiSelectSession(session));
+                    }
+                }
+            }
+            "gui_focus" => {
+                if let Some(target) = extract_json_like_string(remainder, "target") {
+                    actions.push(GeminiMachineAction::GuiFocus(target));
+                } else if let Some(handle) = extract_json_like_u64(remainder, "handle") {
+                    if let Some(target) = gui_focus_target_for_handle(handle) {
+                        actions.push(GeminiMachineAction::GuiFocus(target));
+                    }
+                }
+            }
+            "gui_set_label" => {
+                if let (Some(handle), Some(text)) = (
+                    extract_json_like_u64(remainder, "handle"),
+                    extract_json_like_string(remainder, "text")
+                        .or_else(|| extract_json_like_string(remainder, "label")),
+                ) {
+                    actions.push(GeminiMachineAction::GuiSetLabel { handle, text });
+                }
+            }
+            "gui_set_style" => {
+                if let (Some(handle), Some(style)) = (
+                    extract_json_like_u64(remainder, "handle"),
+                    extract_json_like_string(remainder, "style"),
+                ) {
+                    actions.push(GeminiMachineAction::GuiSetStyle { handle, style });
+                }
+            }
+            "gui_set_bounds" => {
+                if let Some(handle) = extract_json_like_u64(remainder, "handle") {
+                    let direct = (
+                        extract_json_like_u64(remainder, "x"),
+                        extract_json_like_u64(remainder, "y"),
+                        extract_json_like_u64(remainder, "width"),
+                        extract_json_like_u64(remainder, "height"),
+                    );
+                    let parsed = if let (Some(x), Some(y), Some(width), Some(height)) = direct {
+                        Some((x, y, width, height))
+                    } else {
+                        extract_json_like_rect(remainder, "bounds")
+                            .or_else(|| extract_json_like_bounds_string(remainder, "bounds"))
+                    };
+                    if let Some((x, y, width, height)) = parsed {
+                    actions.push(GeminiMachineAction::GuiSetBounds {
+                        handle,
+                        x,
+                        y,
+                        width,
+                        height,
+                    });
+                    }
+                }
+            }
+            "gui_set_interaction" => {
+                if let (Some(handle), Some(interaction)) = (
+                    extract_json_like_u64(remainder, "handle"),
+                    extract_json_like_string(remainder, "interaction"),
+                ) {
+                    actions.push(GeminiMachineAction::GuiSetInteraction { handle, interaction });
+                }
+            }
+            "gui_reset" => {
+                let handle = extract_json_like_u64(remainder, "handle");
+                actions.push(GeminiMachineAction::GuiReset { handle });
+            }
+            "mutate" => {
+                if let Some(handle) = extract_json_like_u64(remainder, "handle") {
+                    if let Some((x, y, width, height)) =
+                        extract_json_like_rect(remainder, "bounds")
+                    {
+                        actions.push(GeminiMachineAction::GuiSetBounds {
+                            handle,
+                            x,
+                            y,
+                            width,
+                            height,
+                        });
+                    }
+
+                    if let Some(text) = extract_json_like_string(remainder, "label") {
+                        actions.push(GeminiMachineAction::GuiSetLabel { handle, text });
+                    }
+
+                    if let Some(style) = extract_json_like_string(remainder, "style") {
+                        actions.push(GeminiMachineAction::GuiSetStyle { handle, style });
+                    }
+
+                    if let Some(interaction) =
+                        extract_json_like_string(remainder, "interaction")
+                    {
+                        actions.push(GeminiMachineAction::GuiSetInteraction {
+                            handle,
+                            interaction,
+                        });
+                    }
+                }
+            }
+            _ => {}
         }
 
-        search_start = object_start + driver_name_index + 13;
+        search_start = object_start + 8;
     }
 
     actions
+}
+
+fn extract_gemini_machine_actions_linewise(text: &str) -> alloc::vec::Vec<GeminiMachineAction> {
+    let mut actions = alloc::vec::Vec::new();
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with('{') || !trimmed.contains("\"action\"") {
+            continue;
+        }
+
+        let Some(action_value) = extract_json_like_string(trimmed, "action") else {
+            continue;
+        };
+
+        match action_value.as_str() {
+            "gui_select_session" | "click" => {
+                if let Some(session) = extract_json_like_string(trimmed, "session") {
+                    actions.push(GeminiMachineAction::GuiSelectSession(session));
+                } else if let Some(reference) = extract_json_like_string(trimmed, "ref") {
+                    if let Some(session) = gui_session_name_from_ref(reference.as_str()) {
+                        actions.push(GeminiMachineAction::GuiSelectSession(session));
+                    }
+                } else if let Some(handle) = extract_json_like_u64(trimmed, "handle") {
+                    if let Some(session) = gui_session_name_for_handle(handle) {
+                        actions.push(GeminiMachineAction::GuiSelectSession(session));
+                    }
+                }
+            }
+            "gui_focus" | "focus" => {
+                if let Some(target) = extract_json_like_string(trimmed, "target") {
+                    actions.push(GeminiMachineAction::GuiFocus(target));
+                } else if let Some(handle) = extract_json_like_u64(trimmed, "handle") {
+                    if let Some(target) = gui_focus_target_for_handle(handle) {
+                        actions.push(GeminiMachineAction::GuiFocus(target));
+                    }
+                }
+            }
+            "gui_set_label" => {
+                if let (Some(handle), Some(text)) = (
+                    extract_json_like_u64(trimmed, "handle"),
+                    extract_json_like_string(trimmed, "text")
+                        .or_else(|| extract_json_like_string(trimmed, "label")),
+                ) {
+                    actions.push(GeminiMachineAction::GuiSetLabel { handle, text });
+                }
+            }
+            "gui_set_style" => {
+                if let (Some(handle), Some(style)) = (
+                    extract_json_like_u64(trimmed, "handle"),
+                    extract_json_like_string(trimmed, "style"),
+                ) {
+                    actions.push(GeminiMachineAction::GuiSetStyle { handle, style });
+                }
+            }
+            "gui_set_interaction" => {
+                if let (Some(handle), Some(interaction)) = (
+                    extract_json_like_u64(trimmed, "handle"),
+                    extract_json_like_string(trimmed, "interaction"),
+                ) {
+                    actions.push(GeminiMachineAction::GuiSetInteraction { handle, interaction });
+                }
+            }
+            "gui_set_bounds" | "mutate" => {
+                if let Some(handle) = extract_json_like_u64(trimmed, "handle") {
+                    let parsed = if let (Some(x), Some(y), Some(width), Some(height)) = (
+                        extract_json_like_u64(trimmed, "x"),
+                        extract_json_like_u64(trimmed, "y"),
+                        extract_json_like_u64(trimmed, "width"),
+                        extract_json_like_u64(trimmed, "height"),
+                    ) {
+                        Some((x, y, width, height))
+                    } else {
+                        extract_json_like_rect(trimmed, "bounds")
+                            .or_else(|| extract_json_like_bounds_string(trimmed, "bounds"))
+                    };
+
+                    if let Some((x, y, width, height)) = parsed {
+                        actions.push(GeminiMachineAction::GuiSetBounds {
+                            handle,
+                            x,
+                            y,
+                            width,
+                            height,
+                        });
+                    }
+
+                    if action_value == "mutate" {
+                        if let Some(text) = extract_json_like_string(trimmed, "label") {
+                            actions.push(GeminiMachineAction::GuiSetLabel { handle, text });
+                        }
+                        if let Some(style) = extract_json_like_string(trimmed, "style") {
+                            actions.push(GeminiMachineAction::GuiSetStyle { handle, style });
+                        }
+                        if let Some(interaction) =
+                            extract_json_like_string(trimmed, "interaction")
+                        {
+                            actions.push(GeminiMachineAction::GuiSetInteraction {
+                                handle,
+                                interaction,
+                            });
+                        }
+                    }
+                }
+            }
+            "gui_reset" => {
+                let handle = extract_json_like_u64(trimmed, "handle");
+                actions.push(GeminiMachineAction::GuiReset { handle });
+            }
+            _ => {}
+        }
+    }
+
+    actions
+}
+
+fn gui_session_name_for_handle(handle: u64) -> Option<String> {
+    match handle {
+        10 => Some(String::from("openrhiza")),
+        11 => Some(String::from("sandbox")),
+        12 => Some(String::from("wide")),
+        13 => Some(String::from("recovery")),
+        _ => None,
+    }
+}
+
+fn gui_session_name_from_ref(reference: &str) -> Option<String> {
+    match reference {
+        "session:openrhiza" => Some(String::from("openrhiza")),
+        "session:sandbox-gui" => Some(String::from("sandbox")),
+        "session:wide-console" => Some(String::from("wide")),
+        "session:recovery-shell" => Some(String::from("recovery")),
+        _ => None,
+    }
+}
+
+fn gui_focus_target_for_handle(handle: u64) -> Option<String> {
+    match handle {
+        20 => Some(String::from("conversation")),
+        30 | 31 => Some(String::from("composer")),
+        _ => None,
+    }
 }
 
 fn extract_json_like_string(body: &str, key: &str) -> Option<String> {
@@ -2653,6 +3006,86 @@ fn extract_json_like_string(body: &str, key: &str) -> Option<String> {
     }
 
     None
+}
+
+fn extract_json_like_u64(body: &str, key: &str) -> Option<u64> {
+    if let Some(value) = extract_json_like_string(body, key) {
+        return value.parse::<u64>().ok();
+    }
+
+    let pattern = alloc::format!("\"{}\"", key);
+    let start = body.find(pattern.as_str())? + pattern.len();
+    let rest = &body[start..];
+    let colon = rest.find(':')?;
+    let rest = rest[colon + 1..].trim_start();
+    let digits_len = rest
+        .bytes()
+        .take_while(|byte| byte.is_ascii_digit())
+        .count();
+    if digits_len == 0 {
+        return None;
+    }
+    rest[..digits_len].parse::<u64>().ok()
+}
+
+fn extract_json_like_rect(body: &str, key: &str) -> Option<(u64, u64, u64, u64)> {
+    let pattern = alloc::format!("\"{}\"", key);
+    let start = body.find(pattern.as_str())? + pattern.len();
+    let rest = &body[start..];
+    let colon = rest.find(':')?;
+    let rest = &rest[colon + 1..];
+    let open = rest.find('[')?;
+    let rest = &rest[open + 1..];
+    let close = rest.find(']')?;
+    let values = &rest[..close];
+
+    let mut numbers = [0u64; 4];
+    let mut count = 0usize;
+    for part in values.split(',') {
+        if count >= 4 {
+            break;
+        }
+        let value = part.trim().parse::<u64>().ok()?;
+        numbers[count] = value;
+        count += 1;
+    }
+
+    if count == 4 {
+        Some((numbers[0], numbers[1], numbers[2], numbers[3]))
+    } else {
+        None
+    }
+}
+
+fn extract_json_like_bounds_string(body: &str, key: &str) -> Option<(u64, u64, u64, u64)> {
+    let text = extract_json_like_string(body, key)?;
+    let trimmed = text.trim();
+    let stripped = trimmed
+        .strip_prefix('(')?
+        .strip_suffix(')')?
+        .trim();
+    let mut parts = stripped.split_whitespace();
+    let xy = parts.next()?;
+    let wh = parts.next()?;
+    if parts.next().is_some() {
+        return None;
+    }
+
+    let mut xy_parts = xy.split(',');
+    let x = xy_parts.next()?.trim().parse::<u64>().ok()?;
+    let y = xy_parts.next()?.trim().parse::<u64>().ok()?;
+    if xy_parts.next().is_some() {
+        return None;
+    }
+
+    let mut wh_parts = wh.split('x');
+    let width = wh_parts.next()?.trim().parse::<u64>().ok()?;
+    let height = wh_parts.next()?.trim().parse::<u64>().ok()?;
+    if wh_parts.next().is_some() {
+        return None;
+    }
+
+    Some((x, y, width, height))
 }
 
 fn log_plain_http_response(response: &crate::https::ApiResponse) {

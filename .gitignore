@@ -4,3 +4,8 @@ target/
 mock_server*.log
 openrhiza-nexus/data/
 target-*/
+logs/
+tools/__pycache__/
+sandbox-skills/*/target/
+rhiza_drivers/BOOTAUTO.MD
+rhiza_drivers/SKCAPCHE.TXT

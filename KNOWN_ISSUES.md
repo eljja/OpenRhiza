@@ -72,6 +72,24 @@ This file tracks the current state of the repository after the April 2026 docume
 - Impact: these files can mislead future contributors because they no longer describe the active runtime path
 - Suggested fix: either remove them or clearly isolate them as legacy references
 
+### KI-009: `skill_gui_compositor_seed_v1` still fails when loaded from `SK003.WAS`
+
+- Location: local seed skill path, currently surfaced during autorun and manual seed-load attempts
+- Current state:
+  - `skill_display_console_mode_v1`, `skill_display_framebuffer_mode_v1`, and `skill_gui_session_bootstrap_v1` load from fixed slots successfully
+  - `skill_gui_compositor_seed_v1` can still fail with a `bad magic number` parse error at offset `0x0`
+- Impact: bootstrap GUI can come up, but the compositor-seed follow-up stage is not yet reliable
+- Suggested fix: inspect `SK003.WAS` generation, stripping, padding, and seed-disk copy flow end-to-end
+
+### KI-010: Residual GUI flicker can still occur at object-boundary transitions
+
+- Location: `src/display.rs`
+- Current state:
+  - same-region pointer movement is nearly stable
+  - crossing between major GUI regions such as sidebar, conversation, and composer can still produce a small redraw flash
+- Impact: visual polish is not yet at the final target
+- Suggested fix: continue reducing redraw scope, especially around pointer overlay restore and object-boundary invalidation
+
 ## Resolved or Partially Resolved Historical Items
 
 ### KI-R01: Native keyboard support exists

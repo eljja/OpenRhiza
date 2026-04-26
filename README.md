@@ -19,9 +19,9 @@
 
 ### The AI-Native Operating System
 
-**OpenRhiza is a self-evolving operating system where LLMs generate hardware drivers into isolated Wasm sandboxes in real-time.** 
-Starting from an ultra-lightweight bare-metal root (*Rhiza*), it continuously bridges the gap between hardware and software by hot-swapping AI-generated capabilities. 
-It aims for 100% crash-proof learning environments and native-level execution performance for limitless branching.
+**OpenRhiza is a sandbox-first AI operating system.**
+It keeps only the minimum survival path in the core, and moves drivers, skills, workflows, display expansion, and GUI behavior into isolated Wasm-owned capabilities whenever possible.
+Starting from an ultra-light bare-metal root (*Rhiza*), it grows the machine by querying OpenRhiza.com, reusing known-good artifacts, generating missing parts with LLMs, validating them in sandbox form, and only then promoting them.
 
 [![GitHub release](https://img.shields.io/github/release/eljja/OpenRhiza.svg)](#releases)
 [![Rust](https://img.shields.io/badge/rust-nightly-orange.svg)](#)
@@ -36,14 +36,15 @@ It aims for 100% crash-proof learning environments and native-level execution pe
 
 ## 📖 The "Rhiza" Philosophy
 
-Like a robust underground root system (Rhizome), OpenRhiza is built on an indestructible, tiny base layer (`Layer 0 / Seed`). Currently, it may only show a small sprout above the surface (basic shell/networking), but its roots are vast—connected to a global P2P AI ecosystem (`openrhiza.com`) capable of flowering into any application, driver, or GPU stack on demand.
+Like a robust underground root system (Rhizome), OpenRhiza is built on an indestructible, tiny base layer (`Layer 0 / Seed`). That base should remain small enough to survive failure and recover input, display, storage bootstrap, and networking. Everything else should be grown as isolated capability objects delivered through `skills`, `workflows`, `drivers`, and `programs`.
 
 ### Key Innovations
 
-1. **AI as the Kernel**: The AI bounds the OS; it generates logic, runs it, and validates it.
-2. **Real-time Wasm Drivers**: A True Microkernel where hardware drivers are compiled into WebAssembly globally, injected via the cloud, and safely sandboxed.
-3. **Extreme Performance**: Once validated in the slow Wasm sandbox, logic can be compiled JIT into aggressive native code, yielding HPC-ready speeds without sacrificing safety.
-4. **No "App Stores"**: There are no installed applications. You declare your intent, and the AI weaves the transient UI and logic required just for you.
+1. **Core Minimalism**: Keep only the mandatory survival path in the core. Do not let the kernel become the home of higher-level policy or feature code.
+2. **Sandbox-First Capabilities**: Drivers, skills, workflows, display sessions, and GUI behavior should be isolated runtime objects first.
+3. **Object Discipline**: GUI items, drivers, skills, and services should have explicit identity, state, bounds, lifecycle, and rollback boundaries so one broken object does not silently corrupt another.
+4. **Prompt-First Operation**: Users should declare intent. OpenRhiza should query, reuse, generate, validate, activate, and report without turning the user into a manual package manager.
+5. **No Traditional App Store**: OpenRhiza.com is a capability registry, not a static app catalog.
 
 ## 🌐 The Nexus: OpenRhiza.com Ecosystem
 
@@ -85,16 +86,28 @@ graph TD
     end
 ```
 
-## 🚀 Status & Roadmap
+## 🚀 Current Status
 
-OpenRhiza is currently in the **Bootstrap Phase**. We are cementing the root system.
+OpenRhiza is in a **sandbox-owned bootstrap GUI phase**.
 
-- **[DONE]** `x86_64` bare-metal boot, IDT, LAPIC, and async structures.
-- **[DONE]** Native Wasm interpreter embedded in Kernel (True Sandbox).
-- **[DONE]** Standalone network drivers dynamically loaded.
-- **[WIP]** Multi-Wasm Capability: Enabling Storage, NIC, and GPU to execute asynchronously.
-- **[WIP]** Native TLS 1.3 injection for secure Nexus fetching.
-- **[FUTURE]** LLM orchestration directly over PCI/GPU instances.
+What works now:
+
+- `x86_64` bare-metal boot, IDT, LAPIC, async task runtime, and recovery console
+- Wasm sandbox execution inside the kernel
+- OpenRhiza.com capability lookup and download path
+- local driver and skill cache seeds on the QEMU driver disk
+- staged display bring-up: recovery console -> framebuffer validation -> GUI bootstrap
+- a `1920x1080` bootstrap GUI with object-based sidebar, conversation surface, and composer
+- object-scoped GUI mutation path exposed to sandbox skills and LLM machine actions
+- live GUI input path and recovery rollback path coexisting again after deadlock fixes
+
+What is still in progress:
+
+- final compositor seed stabilization
+- complete elimination of residual GUI redraw flicker
+- richer per-object scrolling, editing, and selection
+- stronger self-hosted GUI development from inside the OpenRhiza console
+- tighter separation between temporary bootstrap presenters and long-term sandbox-owned GUI/runtime behavior
 
 ## 📥 Getting Started
 
@@ -123,6 +136,11 @@ We track our stable evolutionary steps via [GitHub Releases](https://github.com/
 Explore the depths of the root system through our engineering documents:
 - [VISION.md](VISION.md): The ultimate grand goal.
 - [ARCHITECTURE.md](ARCHITECTURE.md): The 5-layer system.
+- [DISPLAY_ABI.md](DISPLAY_ABI.md): The display handoff boundary between core and sandbox skills.
+- [GUI_DEVELOPMENT.md](GUI_DEVELOPMENT.md): The dual-track GUI plan for native object GUI and LVGL-style bridging.
+- [OS.md](OS.md): The baseline operating rules that the internal OpenRhiza intelligence should follow.
+- [CAPABILITY_REGISTRY.md](CAPABILITY_REGISTRY.md): Why OpenRhiza.com is a capability registry rather than an app store.
+- [KNOWN_ISSUES.md](KNOWN_ISSUES.md): Active technical limits and unresolved runtime issues.
 - [Gemini_walkthrough.md](Gemini_walkthrough.md): The Wasm migration realism logs.
 - [Gemini.md](Gemini.md): Short-form running logs.
 

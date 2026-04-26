@@ -360,14 +360,16 @@ function seedIfEmpty(db: DatabaseSync) {
     ('skill_display_console_mode_v1','Display Console Mode','display','sandbox_skill','Requests a sandbox-owned 1920x1080 wide-console session instead of embedding console expansion policy inside the kernel.','["1920x1080 console","wide console","display transition"]','available','2026-04-25'),
     ('skill_gui_session_bootstrap_v1','GUI Session Bootstrap','display','sandbox_skill','Coordinates a sandbox-owned 1920x1080 GUI handoff while preserving rollback to the recovery text shell.','["gui bootstrap","1920x1080 gui","display orchestration"]','testing','2026-04-25'),
     ('skill_display_framebuffer_mode_v1','Display Framebuffer Mode','display','sandbox_skill','Negotiates a 1920x1080 framebuffer-backed console session through the display ABI rather than a kernel-resident display stack.','["1920x1080 framebuffer","wide console","display validation"]','testing','2026-04-25'),
-    ('skill_gui_compositor_seed_v1','GUI Compositor Seed','display','sandbox_skill','Bootstraps a sandbox GUI compositor session targeting 1920x1080 with recovery-shell rollback preserved.','["gui compositor","1920x1080 session","display session"]','testing','2026-04-25');
+    ('skill_gui_compositor_seed_v1','GUI Compositor Seed','display','sandbox_skill','Bootstraps a sandbox GUI compositor session targeting 1920x1080 with recovery-shell rollback preserved.','["gui compositor","1920x1080 session","display session"]','testing','2026-04-25'),
+    ('skill_gui_scene_mutator_v1','GUI Scene Mutator','display','sandbox_skill','Applies object-scoped bounds, focus, footer, and interaction mutations to the active GUI scene without touching unrelated GUI objects.','["gui mutation","object scene","layout refinement","codex-like gui"]','testing','2026-04-26');
 
     INSERT OR IGNORE INTO workflows VALUES
     ('workflow_driver_acquire_v1','Driver Acquire And Promote','driver','available','["Inspect local runtime bindings","Query OpenRhiza.com registry","Generate if missing","Sandbox smoke test","Activate live binding","Persist preferred binding","Upload evaluation/comment/vote"]','2026-04-19'),
     ('workflow_program_acquire_v1','Program Acquire And Run','program','available','["Search capability registry","Download or generate program","Validate execution path","Run for user task","Upload evaluation"]','2026-04-19'),
     ('workflow_skill_load_v1','Skill Load And Execute','skill','available','["Search local and remote skills","Load sandbox-safe skill","Run skill for current task","Record outcome"]','2026-04-19'),
     ('workflow_display_expand_v1','Display Expand And Validate','display','available','["Query display and GUI skills","Download sandbox display skill","Request a 1920x1080 console session","Validate rollback before promotion"]','2026-04-25'),
-    ('workflow_gui_bootstrap_v1','GUI Bootstrap With Rollback','display','testing','["Inspect current display backend","Acquire compositor and input skills","Start sandbox 1920x1080 GUI session","Preserve live rollback to text console"]','2026-04-25');
+    ('workflow_gui_bootstrap_v1','GUI Bootstrap With Rollback','display','testing','["Inspect current display backend","Acquire compositor and input skills","Start sandbox 1920x1080 GUI session","Preserve live rollback to text console"]','2026-04-25'),
+    ('workflow_gui_scene_mutate_v1','GUI Scene Mutate And Validate','display','testing','["Inspect current GUI scene","Acquire gui mutation skill","Apply object-scoped bounds/style/focus changes","Validate redraw and rollback boundaries before promotion"]','2026-04-26');
 
     INSERT OR IGNORE INTO policies VALUES
     ('policy_registry_first_v1','workflow','Always query the capability registry before generating new drivers, programs, or skills.','active','["local cache first","registry second","generation third"]','2026-04-19'),
@@ -388,6 +390,7 @@ function seedIfEmpty(db: DatabaseSync) {
   seedSkillArtifactIfPresent(db, "skill_gui_session_bootstrap_v1", "artifact_skill_gui_session_bootstrap_v1_seed2", "SKGUI.WAS");
   seedSkillArtifactIfPresent(db, "skill_display_framebuffer_mode_v1", "artifact_skill_display_framebuffer_mode_v1_seed", "SKFBUF.WAS");
   seedSkillArtifactIfPresent(db, "skill_gui_compositor_seed_v1", "artifact_skill_gui_compositor_seed_v1_seed", "SKCOMP.WAS");
+  seedSkillArtifactIfPresent(db, "skill_gui_scene_mutator_v1", "artifact_skill_gui_scene_mutator_v1_seed", "SKMUT.WAS");
 }
 
 function seedSkillArtifactIfPresent(

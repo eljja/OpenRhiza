@@ -5,8 +5,9 @@ use core::sync::atomic::Ordering;
 use crate::sandbox_lifecycle::SandboxStage;
 
 const BOOT_AUTORUN_FILES: [[u8; 11]; 1] = [*b"BOOTAUTOMD "];
+const AUTORUN_INITIAL_DELAY_TICKS: u64 = 1_500;
 const AUTORUN_POLL_TICKS: u64 = 25;
-const AUTORUN_TIMEOUT_TICKS: u64 = 30_000;
+const AUTORUN_TIMEOUT_TICKS: u64 = 60_000;
 
 enum BootAutorunStep {
     Command(String),
@@ -17,7 +18,7 @@ enum BootAutorunStep {
 
 pub async fn boot_autorun_task() {
     crate::println!("[Task] boot_autorun_task started");
-    crate::task::timer::sleep_ticks(250).await;
+    crate::task::timer::sleep_ticks(AUTORUN_INITIAL_DELAY_TICKS).await;
 
     let Some(text) = crate::storage::read_text_file_from_secondary_fat16(&BOOT_AUTORUN_FILES) else {
         return;
@@ -43,10 +44,20 @@ pub async fn boot_autorun_task() {
                 crate::task::timer::sleep_ticks(ticks).await;
             }
             BootAutorunStep::WaitSkillCached(skill_id) => {
-                wait_for_skill_cached(skill_id.as_str()).await;
+                if !wait_for_skill_cached(skill_id.as_str()).await {
+                    crate::result_println!(
+                        "[Boot Autorun] Aborting boot script after cached-skill wait failure."
+                    );
+                    return;
+                }
             }
             BootAutorunStep::WaitSkillStage { skill_id, stage } => {
-                wait_for_skill_stage(skill_id.as_str(), stage).await;
+                if !wait_for_skill_stage(skill_id.as_str(), stage).await {
+                    crate::result_println!(
+                        "[Boot Autorun] Aborting boot script after skill-stage wait failure."
+                    );
+                    return;
+                }
             }
         }
     }
@@ -184,7 +195,7 @@ fn parse_u64(text: &str) -> Option<u64> {
     Some(out)
 }
 
-async fn wait_for_skill_cached(skill_id: &str) {
+async fn wait_for_skill_cached(skill_id: &str) -> bool {
     crate::result_println!("[Boot Autorun] Waiting for cached skill {}.", skill_id);
     let deadline = crate::task::timer::TICKS
         .load(Ordering::Relaxed)
@@ -193,7 +204,7 @@ async fn wait_for_skill_cached(skill_id: &str) {
     loop {
         if crate::skill_cache::find_cached_skill(skill_id).is_some() {
             crate::result_println!("[Boot Autorun] Cached skill {} is ready.", skill_id);
-            return;
+            return true;
         }
 
         if crate::task::timer::TICKS.load(Ordering::Relaxed) >= deadline {
@@ -201,14 +212,14 @@ async fn wait_for_skill_cached(skill_id: &str) {
                 "[Boot Autorun] Timeout waiting for cached skill {}.",
                 skill_id
             );
-            return;
+            return false;
         }
 
         crate::task::timer::sleep_ticks(AUTORUN_POLL_TICKS).await;
     }
 }
 
-async fn wait_for_skill_stage(skill_id: &str, stage: SandboxStage) {
+async fn wait_for_skill_stage(skill_id: &str, stage: SandboxStage) -> bool {
     crate::result_println!(
         "[Boot Autorun] Waiting for {} to reach {:?}.",
         skill_id,
@@ -228,7 +239,7 @@ async fn wait_for_skill_stage(skill_id: &str, stage: SandboxStage) {
                 skill_id,
                 stage
             );
-            return;
+            return true;
         }
 
         if crate::task::timer::TICKS.load(Ordering::Relaxed) >= deadline {
@@ -237,7 +248,7 @@ async fn wait_for_skill_stage(skill_id: &str, stage: SandboxStage) {
                 skill_id,
                 stage
             );
-            return;
+            return false;
         }
 
         crate::task::timer::sleep_ticks(AUTORUN_POLL_TICKS).await;

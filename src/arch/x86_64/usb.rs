@@ -543,6 +543,25 @@ pub fn init_xhci(bar0_physical: u32, offset: u64, pci_bus: u8, pci_device: u8) {
     unsafe { *core::ptr::addr_of_mut!(XHCI_REGS) = Some(regs); }
 
     // ── Step 9: Scan ports for connected devices ──
+    // QEMU currently boots in two stable layouts:
+    // 1. USB keyboard + USB mouse  => enumerate as keyboard, then mouse
+    // 2. PS/2 keyboard + USB mouse => only one USB HID device exists, and it is the mouse
+    // We detect the second case up front so the single mouse device is not misclassified
+    // as a keyboard, which would cause pointer motion to appear as key input.
+    let mut connected_ports = 0usize;
+    for port_idx in 0..max_ports {
+        let Some(regs) = (unsafe { xhci_regs_mut() }) else { break };
+        let portsc = regs.port_register_set.read_volatile_at(port_idx as usize).portsc;
+        if portsc.current_connect_status() {
+            connected_ports += 1;
+        }
+    }
+
+    let single_usb_mouse_mode = connected_ports == 1;
+    if single_usb_mouse_mode {
+        crate::println!("[USB] single-device HID layout detected; treating lone USB HID as mouse");
+    }
+
     let mut found_supported = 0usize;
     let mut next_kind_index = 0usize;
     for port_idx in 0..max_ports {
@@ -555,10 +574,17 @@ pub fn init_xhci(bar0_physical: u32, offset: u64, pci_bus: u8, pci_device: u8) {
             unsafe { USB_PORTS_SEEN = USB_PORTS_SEEN.saturating_add(1); }
             crate::serial_println!("[xHCI] Port {} Connected! Speed: {}", port_id, speed);
             crate::println!("[USB] port {} connected", port_id);
-            let kind = match next_kind_index {
-                0 => Some(HidDeviceKind::Keyboard),
-                1 => Some(HidDeviceKind::Mouse),
-                _ => None,
+            let kind = if single_usb_mouse_mode {
+                match next_kind_index {
+                    0 => Some(HidDeviceKind::Mouse),
+                    _ => None,
+                }
+            } else {
+                match next_kind_index {
+                    0 => Some(HidDeviceKind::Keyboard),
+                    1 => Some(HidDeviceKind::Mouse),
+                    _ => None,
+                }
             };
             if let Some(kind) = kind {
                 enumerate_device(kind, port_id, speed);

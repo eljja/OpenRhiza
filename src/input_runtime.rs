@@ -212,8 +212,12 @@ pub fn queue_restore_if_persisted(kind: HidDeviceKind) -> Result<Option<String>,
         return Ok(None);
     };
 
-    begin_load(kind, driver_id.as_str(), PendingLoadDisposition::RestoreActive)?;
-    Ok(Some(driver_id))
+    crate::println!(
+        "[Sandbox Input] Persisted {} driver {} is available after re-enumeration, but automatic runtime restore remains disabled to preserve the guaranteed local input path.",
+        kind_label(kind),
+        driver_id
+    );
+    Ok(None)
 }
 
 pub fn snapshot() -> [InputRuntimeState; 2] {
@@ -227,18 +231,10 @@ pub fn schedule_persisted_restores() {
             continue;
         };
 
-        match queue_restore_load(kind, driver_id.as_str()) {
-            Ok(()) => crate::println!(
-                "[Sandbox Input] Scheduled persisted {} driver {} for auto-restore.",
-                kind_label(kind),
-                driver_id
-            ),
-            Err(error) => crate::println!(
-                "[Sandbox Input] Could not restore persisted {} driver {}: {}",
-                kind_label(kind),
-                driver_id,
-                error
-            ),
-        }
+        crate::println!(
+            "[Sandbox Input] Persisted {} driver {} detected, but auto-restore is disabled to preserve a guaranteed local input path.",
+            kind_label(kind),
+            driver_id
+        );
     }
 }
