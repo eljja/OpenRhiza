@@ -1,5 +1,9 @@
 # OpenRhiza Public Readiness Analysis + NIC Strategy
 
+> Historical note:
+> This readiness analysis is preserved for historical reference.
+> It does not override the current authoritative runtime documents.
+
 ---
 
 ## 1. Current Completion Tier Evaluation

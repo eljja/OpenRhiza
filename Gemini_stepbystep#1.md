@@ -1,5 +1,9 @@
 # OpenRhiza Detailed Progress Log - Step 1
 
+> Historical note:
+> This file captures an older step-by-step checkpoint.
+> It is useful for historical context only and should not override the current baseline docs.
+
 This file is a longer-form narrative companion to `Gemini.md`.
 It has been refreshed so that the description matches the current repository state rather than the older April 2 snapshot.
 

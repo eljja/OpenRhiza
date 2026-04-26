@@ -1,5 +1,9 @@
 # OpenRhiza Architecture Correction: True Wasm Microkernel
 
+> Historical note:
+> This plan reflects an older checkpoint in the OpenRhiza migration process.
+> Use the current architecture and OS baseline documents for the active direction.
+
 We briefly lost sight of our core philosophy! We are reverting to the foundational concept of OpenRhiza: **"The OS kernel only acts as a minimal bootstrapper meant to establish outbound networks, while all subsequent hardware operations are dynamically retrieved as Wasm modules and executed in the sandbox."**
 
 ## Proposed Changes (Partially Implemented)

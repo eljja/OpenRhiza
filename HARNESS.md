@@ -12,9 +12,11 @@ The current codebase focuses on the bootstrap layers:
 
 - Bare-metal `no_std` Rust kernel on x86_64
 - Layer 0 sandboxing through an embedded Wasm runtime
-- Early I/O through serial, VGA text, APIC timer, and native xHCI keyboard support
+- Recovery I/O through serial, VGA text, APIC timer, and native input support
 - Early networking scaffolding through `smoltcp`
 - Signed Nexus payload verification through Ed25519
+- Bootstrap framebuffer and `1920x1080` GUI handoff
+- Object-scoped GUI mutation path
 
 The long-term direction remains:
 
@@ -28,12 +30,15 @@ The long-term direction remains:
 | File | Purpose |
 |------|---------|
 | `ARCHITECTURE.md` | High-level layered architecture and evolution model |
+| `OS.md` | The baseline operating rules and non-negotiable architectural constraints |
+| `DISPLAY_ABI.md` | Core/sandbox boundary for display and GUI handoff |
+| `GUI_DEVELOPMENT.md` | Current GUI direction and dual-track native/LVGL strategy |
 | `LEVEL1_BLUEPRINT.md` | Design intent for early bootstrap and safety boundaries |
 | `MODULE_MAP.md` | Current module inventory and active vs stale paths |
 | `BUILD_AND_TEST.md` | Current build/run/verification workflow |
 | `PROTOCOL.md` | Development serial protocol used by the host tooling |
 | `KNOWN_ISSUES.md` | Current unresolved problems and stale assumptions |
-| `Gemini.md` | Short running log of the project state |
+| `Gemini.md` | Historical short log only; not authoritative for current architecture |
 
 ## 2. Current Code Reality
 
@@ -52,9 +57,12 @@ This section is intentionally about the code that exists today, not the idealize
 - Wasm sandbox with host functions for MMIO, DMA allocation, RX injection, and TX fetch
 - Queue-backed `smoltcp` interface
 - Native xHCI initialization and USB keyboard polling
-- Bottom-row VGA CLI with native keyboard input
+- Recovery-shell CLI with native keyboard input
 - Native `e1000` traffic routed into the live network path
 - Nexus payload download attempt plus Ed25519 signature verification before Wasm execution
+- Boot autorun through the seed driver disk
+- Bootstrap framebuffer and GUI session handoff
+- Object-based sidebar, conversation, composer, and footer rendering
 
 ### Implemented but not fully integrated into the live boot path
 
@@ -128,6 +136,8 @@ Recommended handoff sequence:
 - DHCP and DNS
 - Better documentation around native vs host-assisted driver loading
 - Cleanup of stale legacy modules
+- Continue shrinking redraw scope and remaining GUI flicker
+- Stabilize the compositor-seed follow-up stage
 
 ## 7. Code Review Checklist
 

@@ -1,5 +1,10 @@
 # OpenRhiza Project Log
 
+> Historical note:
+> This file is a legacy short-form Gemini-era project log.
+> It is not the authoritative description of the current architecture anymore.
+> Prefer `README.md`, `OS.md`, `DISPLAY_ABI.md`, `GUI_DEVELOPMENT.md`, `MODULE_MAP.md`, and `KNOWN_ISSUES.md` for current reality.
+
 This file is the short-form running log for the repository.
 Use `Gemini_stepbystep#1.md` for a more detailed narrative.
 

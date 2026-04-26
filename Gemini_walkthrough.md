@@ -1,5 +1,9 @@
 # NIC/Hardware Driver Migration — State Check
 
+> Historical note:
+> This file records an earlier migration checkpoint.
+> It is useful as historical context, but it is not the authoritative statement of the current runtime path.
+
 ## Pipeline Serialization Results
 
 > [!NOTE]

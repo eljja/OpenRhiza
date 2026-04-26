@@ -1,5 +1,9 @@
 # Task Checklist: "Wasm Microkernel Migration"
 
+> Historical note:
+> This checklist captures an older migration phase.
+> Some items remain relevant, but this file should be treated as historical planning rather than current architecture truth.
+
 - `[x]` **Phase 1: Rollback Kernel Modifications**
   - `[x]` Remove hardcoded QEMU driver modules from `src/main.rs`
   - `[x]` Delete original driver files from `src/` (`nvme.rs`, `ahci.rs`, etc.)

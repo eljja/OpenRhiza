@@ -1,8 +1,22 @@
 # OpenRhiza Build, Run, and Verification Guide
 
-This document describes the current build and test flow for the `main` branch as of April 2026.
-It reflects the code that is actually present in the repository, including the native xHCI path,
-the async executor, the VGA CLI, the native `e1000` path, and the Nexus signature-verification flow.
+This document describes the current build and test flow for the `main` branch as of late April 2026.
+
+It reflects the code that is actually active now:
+
+- recovery console bootstrap
+- framebuffer validation handoff
+- `1920x1080` bootstrap GUI
+- sandbox display skills and GUI mutation path
+- native `e1000` and USB input bring-up
+- Nexus capability lookup plus signature verification
+
+Authoritative note:
+
+- For system rules, prefer [OS.md](D:/python/github/OpenRhiza/OpenRhiza/OS.md)
+- For display/core boundaries, prefer [DISPLAY_ABI.md](D:/python/github/OpenRhiza/OpenRhiza/DISPLAY_ABI.md)
+- For GUI direction, prefer [GUI_DEVELOPMENT.md](D:/python/github/OpenRhiza/OpenRhiza/GUI_DEVELOPMENT.md)
+- The older `host_brain.py` flow is now a legacy development path, not the primary runtime path
 
 ## Prerequisites
 
@@ -10,21 +24,21 @@ the async executor, the VGA CLI, the native `e1000` path, and the Nexus signatur
 |------|-------|-------|
 | Rust nightly | `rustup show` | The project expects nightly on Windows |
 | `x86_64-unknown-none` target | `rustup target list --installed` | Add with `rustup target add x86_64-unknown-none` |
-| `wasm32-unknown-unknown` target | `rustup target list --installed` | Needed by `host_brain.py` when compiling Wasm drivers |
+| `wasm32-unknown-unknown` target | `rustup target list --installed` | Needed for sandbox skill and driver Wasm builds |
 | `cargo-bootimage` | `cargo bootimage --help` | Install with `cargo install bootimage` |
 | QEMU x86_64 | `qemu-system-x86_64 --version` | The path is currently hardcoded in `Cargo.toml` |
-| Python 3.10+ | `python --version` | Needed for `host_brain.py`, `mock_nexus_server.py`, and `mock_signer.py` |
-| `google-genai` | `pip show google-genai` | Needed only for the host-side AI workflow |
+| Python 3.10+ | `python --version` | Needed for build helpers, serial log tooling, and optional mock tooling |
+| `google-genai` | `pip show google-genai` | Needed only for optional legacy host-side AI flows |
 
 ## Environment
 
-The host AI path and the kernel Gemini path use:
+The kernel Gemini path uses:
 
 ```bash
 GEMINI_API_KEY=your_api_key_here
 ```
 
-The kernel build now also loads the key from the repository root `.env` automatically.
+The kernel build also loads the key from the repository root `.env` automatically.
 It accepts either:
 
 ```bash
@@ -33,8 +47,7 @@ OPENRHIZA_GEMINI_API_KEY=your_api_key_here
 ```
 
 At build time the value is embedded into the OpenRhiza kernel as `OPENRHIZA_GEMINI_API_KEY`,
-so `cargo build` and `cargo bootimage` use the same Gemini credential path without requiring a
-separate manual export step.
+so `cargo build` and `cargo bootimage` use the same Gemini credential path without requiring a separate manual export step.
 
 ## Build
 
@@ -50,17 +63,24 @@ Boot image build:
 cargo bootimage
 ```
 
-Release build:
+Sandbox skill rebuild:
+
+```powershell
+pwsh.exe -ExecutionPolicy Bypass -File .\build_sandbox_skills.ps1
+```
+
+Companion web build:
 
 ```bash
-cargo build --release
-cargo bootimage --release
+cd openrhiza-nexus
+npm run build
 ```
 
 Artifacts:
 
 - Kernel binary: `target/x86_64-unknown-none/debug/OpenRhiza`
 - Boot image: `target/x86_64-unknown-none/debug/bootimage-OpenRhiza.bin`
+- Seed skill artifacts: `rhiza_drivers/*.WAS`
 
 ## Run
 
@@ -70,50 +90,40 @@ Recommended:
 cargo run
 ```
 
-`cargo run` uses the `bootimage` runner configured in `.cargo/config.toml` and the QEMU command
-declared in `Cargo.toml`.
+The most direct Windows GUI test command is:
 
-On Windows, `cargo run` currently launches QEMU through `run_qemu.ps1` so the GUI window stays attached
-to the desktop session more reliably than the older direct runner setup.
-
-### Current QEMU device layout
-
-The current repository is configured to boot with:
-
-```text
-qemu-system-x86_64.exe
-  -drive format=raw,file={bootimage}
-  -drive file=fat:rw:rhiza_drivers,format=raw,index=2
-  -serial tcp:127.0.0.1:4444,server,nowait
-  -netdev user,id=n1
-  -device e1000,netdev=n1
-  -device qemu-xhci,id=xhci
-  -device usb-kbd,bus=xhci.0
+```powershell
+pwsh.exe -ExecutionPolicy Bypass -File .\run_qemu.ps1 target\x86_64-unknown-none\debug\bootimage-OpenRhiza.bin
 ```
 
-Meaning:
+## Current QEMU Layout
 
-- Primary boot image: OpenRhiza bootable disk image
-- Secondary FAT disk: `rhiza_drivers/` mounted as a writable test disk
-- Serial bridge: host tooling can connect to `127.0.0.1:4444`
-- NIC: Intel `e1000`
-- USB controller: QEMU xHCI
-- USB keyboard: attached directly to the xHCI controller
+The current QEMU flow attaches:
 
-### Current interactive UI behavior
+- primary boot image
+- secondary FAT driver disk from `rhiza_drivers/`
+- serial TCP bridge on `127.0.0.1:4444`
+- Intel `e1000`
+- xHCI plus USB keyboard and mouse
 
-After boot completes:
+The FAT driver disk is not just a payload cache now. It is also the seed capability disk used for:
 
-- the log area remains in the upper VGA rows
-- the bottom row acts as a simple CLI input line
-- `help`, `status`, and `clear` are currently implemented
+- fixed skill slots `SK000.WAS` through `SK005.WAS`
+- local capability cache text files
+- boot autorun input
 
-Important current caveat:
+## Current Visible Runtime
 
-- left Shift is working in the current QEMU path
-- right Shift is still inconsistent under the present Windows plus QEMU USB keyboard setup and remains under investigation
+A healthy QEMU boot typically goes through:
 
-## Optional Host AI Loop
+1. recovery console
+2. sandbox display skill load
+3. framebuffer validation handoff
+4. bootstrap GUI
+
+The common end state for desktop testing is the bootstrap GUI rather than the old bottom-row-only CLI.
+
+## Optional Legacy Host AI Loop
 
 If you want the legacy host-assisted flow:
 
@@ -123,33 +133,31 @@ python host_brain.py --model gemini-2.5-flash
 python host_brain.py --model gemini-2.5-pro
 ```
 
-This path is still useful for Wasm driver generation and protocol validation, but it is not the
-only runtime path anymore.
+This path is still useful for historical experiments and protocol validation, but it is no longer the primary OpenRhiza runtime path.
 
 ## What To Expect At Boot
 
 A healthy boot should show most of the following:
 
 ```text
-OpenRhiza Seed (Layer 0) Booting... Serial Connected!
+OpenRhiza Seed (Layer 0) Booting...
 Heap Allocator initialized!
 Total Usable Memory: ...
 Hardware Discovery Complete.
 Found N PCI devices:
 ...
-[USB] Initializing xHCI Host Controller at BAR0: ...
-[xHCI] Controller Running! Scanning ports...
 [OS System] All subsystems initialized. Handing over to Async Executor.
-[OS Core] Autonomous Nexus Fetch Success
+[Boot Autorun] Running /api-skill
+[Skill Runtime] ...
+[Display Runtime] ...
 ```
 
 You may also see:
 
-- Storage probing logs for the FAT bootstrap disk
-- xHCI port and HID keyboard logs
-- Nexus fetch logs after the executor has been running for a short period
-- `Engine running` on the VGA side once the executor is active
-- a bottom-row `cli>` prompt
+- FAT driver-disk lookup logs
+- skill loading logs for `SK000.WAS`, `SK001.WAS`, and follow-up stages
+- framebuffer / GUI transition logs
+- the `1920x1080` bootstrap GUI
 
 ## Verification Checklist
 
@@ -161,60 +169,64 @@ Run:
 cargo build
 ```
 
-Current status:
+### 2. Rebuild seed skills
 
-- The build succeeds on the current tree
-- The current tree builds cleanly without Rust warnings
+Run:
 
-### 2. Boot
+```powershell
+pwsh.exe -ExecutionPolicy Bypass -File .\build_sandbox_skills.ps1
+```
+
+Confirm that:
+
+- `SKDSP.WAS`
+- `SKGUI.WAS`
+- `SKFBUF.WAS`
+- `SKCOMP.WAS`
+- `SKREG.WAS`
+- `SKMUT.WAS`
+
+are updated under `rhiza_drivers/`.
+
+### 3. Boot image
 
 Run:
 
 ```bash
-cargo run
+cargo bootimage
 ```
 
 Confirm:
 
-- Serial output appears
-- Heap initialization completes
-- PCI enumeration lists devices
-- xHCI initialization starts when the controller is present
-- The executor starts
-- The VGA bottom row shows the CLI prompt
-- Enter submits a CLI command and redraws the prompt
+- `target/x86_64-unknown-none/debug/bootimage-OpenRhiza.bin` is regenerated
 
-### 3. Optional serial protocol validation
+### 4. QEMU
 
-If you launch `host_brain.py`, confirm that it:
+Run:
 
-- Connects to `127.0.0.1:4444`
-- Injects the default QWERTY keymap when prompted
-- Optionally sends Wasm drivers over the serial protocol
+```powershell
+pwsh.exe -ExecutionPolicy Bypass -File .\run_qemu.ps1 target\x86_64-unknown-none\debug\bootimage-OpenRhiza.bin
+```
 
-### 4. Nexus verification path
+Confirm:
 
-The current core loop attempts a Nexus fetch after startup and verifies the returned Wasm payload
-with the embedded Ed25519 public key before execution.
-
-Important note:
-
-- `src/net.rs` now routes traffic through the native `e1000` path when available
-- `src/https.rs` currently implements the active TCP/HTTP fetch path
-- `src/tls.rs` contains an in-repo TLS 1.3 client implementation, but it is not yet wired into the live Nexus path
-- the repository has already been tested end-to-end against the local mock Nexus flow through payload extraction and Ed25519 verification
+- QEMU window appears
+- serial log window appears
+- recovery console boots
+- GUI handoff completes
+- GUI input and pointer remain alive
 
 ## Known Current Gaps
 
 - `src/https.rs` still uses raw TCP/HTTP rather than the in-repo TLS client
-- DHCP and DNS are still missing
 - ATA write support is still missing
-- Only one Wasm driver instance can be active at a time
-- right Shift is not yet distinct in the current Windows QEMU USB keyboard path
+- `skill_gui_compositor_seed_v1` is not yet fully stable in the fixed-slot seed path
+- Right Shift is not yet distinct in the current Windows QEMU USB keyboard path
+- A small amount of residual GUI flicker can still occur during object-boundary pointer movement
 
 ## Troubleshooting
 
-### `rust-lld` not found
+### `rust-lld` or toolchain components missing
 
 ```bash
 rustup component add llvm-tools-preview
@@ -224,20 +236,20 @@ rustup component add llvm-tools-preview
 
 Update `run_qemu.ps1` and the `run-command` entry in `Cargo.toml` to match your local QEMU installation path.
 
-### Serial host cannot connect
+### Boot image build fails with `llvm-objcopy` permission denied
 
-Make sure QEMU is already running and listening on `127.0.0.1:4444`.
+Stop any running QEMU session and rebuild:
 
-### Infinite reboot or triple fault
-
-Use QEMU debug flags such as:
-
-```text
--d int -no-reboot
+```powershell
+Get-Process qemu-system-x86_64 -ErrorAction SilentlyContinue | Stop-Process -Force
+cargo bootimage
 ```
 
-and focus on serial-only logging while diagnosing early boot faults.
+### Serial log window does not appear
 
-### Out of memory
+Check `run_qemu.ps1` Python resolution and the serial log helper script path.
 
-Increase `HEAP_SIZE` in `src/allocator.rs` if a new feature genuinely requires more memory.
+### GUI input dies after handoff
+
+Treat that as a regression.
+The recovery path and GUI path must remain separable, and GUI pointer or hit-test changes must not re-enter the VGA writer lock path.

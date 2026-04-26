@@ -1,7 +1,12 @@
 # OpenRhiza Module Map
 
 This document describes the current repository layout and the role of each important module.
-It intentionally distinguishes between active runtime paths, optional tooling, and stale or legacy modules.
+It distinguishes between:
+
+- active runtime paths
+- bootstrap-only paths
+- optional tooling
+- stale or historical modules
 
 ## Top-Level Structure
 
@@ -9,15 +14,16 @@ It intentionally distinguishes between active runtime paths, optional tooling, a
 OpenRhiza/
 ├── .cargo/config.toml
 ├── Cargo.toml
-├── host_brain.py
-├── mock_nexus_server.py
-├── mock_signer.py
 ├── run_qemu.ps1
 ├── src/
-├── bootloader-patched/
+├── assets/
+├── sandbox-skills/
 ├── rhiza_drivers/
-├── nexus_cache/
-└── openrhiza-nexus/
+├── bootloader-patched/
+├── openrhiza-nexus/
+├── host_brain.py
+├── mock_nexus_server.py
+└── mock_signer.py
 ```
 
 ## Active Kernel Modules
@@ -29,103 +35,91 @@ Kernel entry point and current boot orchestration.
 Active responsibilities:
 
 - initialize IDT
-- set physical memory offset
-- disable PIC and initialize APIC
 - initialize heap
 - scan PCI and hardware identity
 - initialize native `e1000` if discovered
-- initialize native xHCI if discovered
+- initialize USB input if discovered
 - probe bootstrap storage
-- create `OpenRhizaSeed`
+- create the Wasm seed runtime
 - initialize the network stack
 - start the async executor
-
-The `core_os_task` inside `main.rs` also:
-
-- polls Wasm networking
-- polls USB keyboard input through xHCI
-- optionally processes host-side serial protocol bytes
-- kicks off Nexus payload download and signature verification
+- coordinate boot autorun, skill loads, display transitions, GUI mutations, and display refresh
 
 ### `src/core/seed.rs`
 
-Current Wasm sandbox engine.
+Current Wasm sandbox engine and host import boundary.
 
 Responsibilities:
 
 - parse and instantiate Wasm modules
-- expose host functions:
-  - `read_mmio`
-  - `write_mmio`
-  - `alloc_dma_page`
-  - `os_rx_packet`
-  - `os_fetch_tx_packet`
-- call `init_driver`
-- optionally call `poll_net`
+- expose host functions for MMIO, DMA, packet flow, display requests, and GUI mutation requests
+- call driver and skill entry points
 
 Important limitation:
 
-- only one active Wasm instance is stored at a time
-
-### `src/task/mod.rs`
-
-Task abstraction for the async executor.
-
-### `src/task/executor.rs`
-
-Single-core async executor built on:
-
-- `TaskId`
-- `ArrayQueue`
-- cached wakers
-- `enable_and_hlt()` when idle
-
-### `src/task/timer.rs`
-
-Tick-based timer future support.
-
-- `timer_tick()` advances global ticks
-- `sleep_ticks()` allows cooperative delays in async tasks
+- capability multiplexing is still incomplete in some runtime paths, and older single-instance assumptions are not fully gone yet
 
 ### `src/task/keyboard.rs`
 
-Async keyboard scancode queue.
+Async keyboard queue and command routing.
 
 Current role:
 
-- accepts scancodes from the interrupt path
-- decodes native keyboard input through `src/keyboard.rs`
-- supports the legacy dynamic keymap injection path as an optional compatibility path
-- runs an async keyboard task for the bottom-row CLI input line
-- handles `help`, `status`, and `clear`
+- accept scancodes from the interrupt/input path
+- decode native keyboard input
+- feed both the recovery-shell input line and the bootstrap GUI composer
+- expose local commands for runtime inspection, GUI mutation, and capability testing
 
 ### `src/vga.rs`
 
-VGA text writer and printing macros.
+Recovery-shell text surface.
 
 Current role:
 
-- maintain the upper log area
-- render the bottom-row CLI prompt
-- keep a software cursor for the active input line
+- maintain the recovery log area
+- render the recovery input line
+- provide the shared text snapshot used by display handoff and GUI overlay logic
+
+### `src/display.rs`
+
+Bootstrap high-resolution display and GUI object runtime.
+
+Current responsibilities:
+
+- hold active/requested display mode state
+- maintain the framebuffer bootstrap surface
+- render the `1920x1080` bootstrap GUI
+- track GUI objects, hover, focus, session selection, and object-local redraw
+- expose GUI mutation helpers used by sandbox skills and LLM machine actions
+
+Important note:
+
+- this is still a bootstrap presenter, not the final long-term GUI engine
+- the long-term target remains sandbox-owned GUI behavior through narrow host imports
+
+### `src/gui_contract.rs`
+
+Shared GUI scene and mutation contract used by the bootstrap renderer and the LVGL-style bridge.
+
+### `src/gui_lvgl_bridge.rs`
+
+LVGL-style scene adapter for the same GUI object scene model.
+
+This is a reference bridge, not a core dependency.
+
+### `src/gui_font.rs`
+
+Modern GUI font atlas access for the bootstrap GUI.
 
 ### `src/net.rs`
 
 Current network-scaffolding layer.
 
-Important note:
-
-- this is the active network path in the boot flow
-- it still exposes a `WasmEthernetDevice` wrapper to `smoltcp`
-- the live TX/RX path now routes through the native `e1000` driver when present
-- the queue layer remains as a fallback and as the Wasm host-function bridge
-
 Responsibilities:
 
 - initialize `smoltcp`
-- manage global RX/TX queues
-- provide the `smoltcp` `Device` wrapper
-- create TCP sockets for higher layers
+- manage RX/TX flow
+- provide the networking surface used by higher layers
 
 ### `src/https.rs`
 
@@ -137,8 +131,7 @@ Responsibilities:
 - send an HTTP request
 - accumulate response bytes
 - parse response headers
-- extract the `X-Nexus-Signature` header
-- return `(payload, signature)` to the caller
+- extract the signature header
 
 Important limitation:
 
@@ -148,9 +141,6 @@ Important limitation:
 
 Nexus trust anchor and signature verification.
 
-- stores a built-in Ed25519 public key
-- validates downloaded Wasm payloads before sandbox execution
-
 ### `src/storage.rs`
 
 ATA PIO read-only bootstrap storage path.
@@ -159,63 +149,35 @@ Responsibilities:
 
 - read sectors from the secondary ATA bus
 - distinguish MBR from FAT boot sectors
-- locate `E1000.BIN` or `E1000.WAS`
-- extract the full payload length into a `Vec<u8>`
+- locate cached capability artifacts and fixed skill slots
+- extract payloads into a `Vec<u8>`
+- trim padded fixed-slot Wasm files back to their actual module length
 
 Limitation:
 
 - no write path yet
 
-### `src/keyboard.rs`
-
-Native PS/2 scancode decoder and full QWERTY mapping logic.
-
-This module is present and useful, but note that the active keyboard flow in `main.rs` currently emphasizes
-USB keyboard polling plus the async keyboard task.
-
 ### `src/e1000.rs`
 
 Substantial native Intel `e1000` NIC driver implementation.
 
-Capabilities in source:
-
-- MMIO register access
-- EEPROM MAC read
-- RX/TX descriptor setup
-- DMA-backed buffers
-
 Current status:
 
-- initialized from `main.rs` during PCI discovery
+- initialized during PCI discovery
 - active in the live boot network path
-- still shares some higher-level integration through `src/net.rs`
 
 ### `src/tls.rs`
 
 In-repo software TLS 1.3 client implementation.
 
-Dependencies:
-
-- `src/crypto/sha256.rs`
-- `src/crypto/aes.rs`
-- `src/crypto/p256.rs`
-- `src/crypto/random.rs`
-
 Current status:
 
 - present in source
-- not yet connected to `src/https.rs`
+- not yet connected to the active `https` flow
 
 ### `src/crypto/*`
 
-Pure software cryptographic primitives:
-
-- `aes.rs`: AES-128 and AES-GCM
-- `bignum.rs`: 256-bit arithmetic
-- `p256.rs`: P-256 ECDH
-- `random.rs`: entropy helper using RDRAND with fallback
-- `sha256.rs`: SHA-256, HMAC, HKDF
-- `mod.rs`: exports the crypto modules
+Pure software cryptographic primitives.
 
 ## Architecture-Specific Modules
 
@@ -223,19 +185,9 @@ Pure software cryptographic primitives:
 
 Active x86_64 hardware discovery module.
 
-- CPUID-based core count
-- usable-memory scan
-- DMA base selection
-- PCI enumeration
-
 ### `src/arch/x86_64/interrupts.rs`
 
 Current interrupt path.
-
-- IDT setup
-- page-fault handler
-- timer interrupt handler
-- keyboard interrupt handler
 
 ### `src/arch/x86_64/apic.rs`
 
@@ -247,33 +199,91 @@ COM1 serial output and polling helpers.
 
 ### `src/arch/x86_64/port.rs`
 
-Raw I/O port helpers for 8-bit and 16-bit access.
+Raw I/O port helpers.
 
 ### `src/arch/x86_64/usb.rs`
 
-Current native xHCI implementation.
-
-Implemented pieces include:
-
-- controller halt/reset/start
-- command ring
-- event ring
-- DCBAA
-- scratchpad handling
-- slot enable
-- address device
-- endpoint configuration
-- HID keyboard polling
-
-This is one of the most advanced active modules in the repository.
+Current native USB/xHCI implementation and HID polling path.
 
 Current caveat:
 
-- right Shift is still not reliably distinct in the present Windows plus QEMU USB keyboard path, even though left Shift and ordinary keys are functioning
+- Right Shift is still not reliably distinct in the present Windows plus QEMU USB keyboard path
 
-### `src/arch/x86_64/linker.ld`
+## Tooling and Companion Scripts
 
-Kernel linker script.
+### `run_qemu.ps1`
+
+Windows QEMU launcher used by the current `cargo run` flow.
+
+Responsibilities:
+
+- launch QEMU in the desktop session
+- attach the boot image, FAT driver disk, serial TCP bridge, `e1000`, and USB input devices
+- seed fixed skill slots from the local driver artifacts
+- launch the serial log viewer
+
+### `tools/serial_log_server.ps1`
+
+Serial log viewer launcher/helper.
+
+### `tools/generate_gui_font.py`
+
+Font atlas generation helper for the bootstrap GUI.
+
+### `tools/strip_wasm_custom_sections.py`
+
+Utility that strips Wasm custom sections before artifacts are copied into the driver disk.
+
+### `host_brain.py`
+
+Legacy host-side AI orchestration script.
+
+Status note:
+
+- preserved for historical and optional experimental workflows
+- not the primary OpenRhiza runtime path anymore
+
+### `mock_nexus_server.py`
+
+Companion server for local Nexus-style payload flow testing.
+
+### `mock_signer.py`
+
+Helper for signing payloads compatible with the embedded trust root.
+
+## Companion Project
+
+### `openrhiza-nexus/`
+
+Next.js-based companion registry and web surface.
+
+## Assets and Seed Skills
+
+### `assets/fonts/`
+
+Bundled GUI font assets used by the bootstrap GUI path.
+
+### `sandbox-skills/`
+
+Local Rust/Wasm capability crates used to produce seed skill artifacts for:
+
+- display console bootstrap
+- framebuffer mode handoff
+- GUI session bootstrap
+- GUI compositor seed
+- GUI scene mutator
+- registry lookup
+
+### `rhiza_drivers/`
+
+Secondary FAT driver disk contents used by QEMU.
+
+Includes:
+
+- fixed skill slots
+- seed Wasm artifacts
+- cache text files
+- boot autorun input
 
 ## Legacy or Stale Modules
 
@@ -286,49 +296,3 @@ Not part of the active boot path.
 
 Older placeholder seed implementation.
 Not part of the active boot path.
-
-## Tooling and Companion Scripts
-
-### `host_brain.py`
-
-Host-side AI orchestration script.
-
-Responsibilities:
-
-- connect to the serial bridge
-- generate Rust code via Gemini
-- compile generated code into Wasm
-- inject Wasm payloads into the running kernel
-- cache validated payloads under `nexus_cache/`
-
-### `run_qemu.ps1`
-
-Windows QEMU launcher used by the current `cargo run` flow.
-
-Responsibilities:
-
-- launch QEMU in the desktop session through PowerShell
-- attach the boot image, FAT driver disk, serial TCP bridge, `e1000`, and xHCI keyboard
-- keep the window alive with `-no-reboot` and `-no-shutdown`
-
-### `mock_nexus_server.py`
-
-Companion server for exercising the Nexus-style payload flow locally.
-
-### `mock_signer.py`
-
-Helper for signing payloads compatible with the embedded Ed25519 trust root.
-
-## Companion Project
-
-### `openrhiza-nexus/`
-
-Separate Next.js-based companion application included in the repository.
-It is not part of the bare-metal kernel build.
-
-## Bootloader
-
-### `bootloader-patched/`
-
-Local patched copy of the `bootloader` crate used by this repository.
-It is part of the actual build and should be treated as a first-class dependency, not a vendor dump.

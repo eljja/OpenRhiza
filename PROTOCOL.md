@@ -8,6 +8,7 @@ Important scope note:
 - This is a development and bring-up protocol
 - It is not the long-term production transport
 - The active kernel still supports it
+- It should be treated as a legacy/bootstrap protocol, not as the preferred future runtime model
 
 ## Transport
 
