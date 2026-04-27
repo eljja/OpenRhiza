@@ -346,7 +346,8 @@ function seedIfEmpty(db: DatabaseSync) {
     INSERT OR IGNORE INTO software_packages VALUES
     ('pkg_terminal_tools_v1','Terminal Starter Tools','system','text_bundle','Basic CLI-first package set for networked OpenRhiza systems.','available','2026-04-18'),
     ('pkg_diag_console_v1','Diagnostic Console','debugging','text_bundle','Operator-oriented inspection tools for hardware inventory and service API state.','testing','2026-04-18'),
-    ('pkg_driver_lab_v1','Driver Lab','development','sandbox_package','Utilities for generating, validating, and promoting driver candidates from the sandbox.','planned','2026-04-16');
+    ('pkg_driver_lab_v1','Driver Lab','development','sandbox_package','Utilities for generating, validating, and promoting driver candidates from the sandbox.','planned','2026-04-16'),
+    ('pkg_font_lab_v1','Font Lab','display','host_tool_bundle','Host-side tools for importing existing fonts and generating validated OpenRhiza atlas assets.','testing','2026-04-26');
 
     INSERT OR IGNORE INTO llm_models VALUES
     ('llm_remote_general_v1','OpenRhiza Remote General Model','OpenRhiza','remote_api','General-purpose remote inference endpoint for early OpenRhiza nodes.','["driver planning","software generation","registry lookups"]','online'),
@@ -361,7 +362,8 @@ function seedIfEmpty(db: DatabaseSync) {
     ('skill_gui_session_bootstrap_v1','GUI Session Bootstrap','display','sandbox_skill','Coordinates a sandbox-owned 1920x1080 GUI handoff while preserving rollback to the recovery text shell.','["gui bootstrap","1920x1080 gui","display orchestration"]','testing','2026-04-25'),
     ('skill_display_framebuffer_mode_v1','Display Framebuffer Mode','display','sandbox_skill','Negotiates a 1920x1080 framebuffer-backed console session through the display ABI rather than a kernel-resident display stack.','["1920x1080 framebuffer","wide console","display validation"]','testing','2026-04-25'),
     ('skill_gui_compositor_seed_v1','GUI Compositor Seed','display','sandbox_skill','Bootstraps a sandbox GUI compositor session targeting 1920x1080 with recovery-shell rollback preserved.','["gui compositor","1920x1080 session","display session"]','testing','2026-04-25'),
-    ('skill_gui_scene_mutator_v1','GUI Scene Mutator','display','sandbox_skill','Applies object-scoped bounds, focus, footer, and interaction mutations to the active GUI scene without touching unrelated GUI objects.','["gui mutation","object scene","layout refinement","codex-like gui"]','testing','2026-04-26');
+    ('skill_gui_scene_mutator_v1','GUI Scene Mutator','display','sandbox_skill','Applies object-scoped bounds, focus, footer, and interaction mutations to the active GUI scene without touching unrelated GUI objects.','["gui mutation","object scene","layout refinement","codex-like gui"]','testing','2026-04-26'),
+    ('skill_font_import_v1','Font Import','display','host_tool_skill','Imports existing TTF, OTF, TTC, OTC, WOFF, or WOFF2 fonts and generates OpenRhiza atlas assets without moving font parsing into the core.','["font atlas generation","typography","gui font import","font conversion"]','available','2026-04-26');
 
     INSERT OR IGNORE INTO workflows VALUES
     ('workflow_driver_acquire_v1','Driver Acquire And Promote','driver','available','["Inspect local runtime bindings","Query OpenRhiza.com registry","Generate if missing","Sandbox smoke test","Activate live binding","Persist preferred binding","Upload evaluation/comment/vote"]','2026-04-19'),
@@ -369,7 +371,8 @@ function seedIfEmpty(db: DatabaseSync) {
     ('workflow_skill_load_v1','Skill Load And Execute','skill','available','["Search local and remote skills","Load sandbox-safe skill","Run skill for current task","Record outcome"]','2026-04-19'),
     ('workflow_display_expand_v1','Display Expand And Validate','display','available','["Query display and GUI skills","Download sandbox display skill","Request a 1920x1080 console session","Validate rollback before promotion"]','2026-04-25'),
     ('workflow_gui_bootstrap_v1','GUI Bootstrap With Rollback','display','testing','["Inspect current display backend","Acquire compositor and input skills","Start sandbox 1920x1080 GUI session","Preserve live rollback to text console"]','2026-04-25'),
-    ('workflow_gui_scene_mutate_v1','GUI Scene Mutate And Validate','display','testing','["Inspect current GUI scene","Acquire gui mutation skill","Apply object-scoped bounds/style/focus changes","Validate redraw and rollback boundaries before promotion"]','2026-04-26');
+    ('workflow_gui_scene_mutate_v1','GUI Scene Mutate And Validate','display','testing','["Inspect current GUI scene","Acquire gui mutation skill","Apply object-scoped bounds/style/focus changes","Validate redraw and rollback boundaries before promotion"]','2026-04-26'),
+    ('workflow_font_import_v1','Font Import And Atlas Build','display','available','["Inspect source font format","Normalize collection or web font if needed","Generate atlas and manifest","Validate GUI rendering","Cache atlas for later GUI sessions"]','2026-04-26');
 
     INSERT OR IGNORE INTO policies VALUES
     ('policy_registry_first_v1','workflow','Always query the capability registry before generating new drivers, programs, or skills.','active','["local cache first","registry second","generation third"]','2026-04-19'),

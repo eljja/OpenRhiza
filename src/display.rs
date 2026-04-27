@@ -93,10 +93,6 @@ struct BootstrapFrameCache {
     selected_session: GuiObjectId,
     hovered: Option<GuiObjectId>,
     focused: Option<GuiObjectId>,
-    mouse_enabled: bool,
-    mouse_col: usize,
-    mouse_row: usize,
-    mouse_buttons: u8,
 }
 
 const POINTER_BITMAP_WIDTH: usize = 12;
@@ -106,6 +102,7 @@ const POINTER_SHADOW_OFFSET: usize = 2;
 const POINTER_WIDTH: usize = POINTER_BITMAP_WIDTH * POINTER_SCALE + POINTER_SHADOW_OFFSET;
 const POINTER_HEIGHT: usize = POINTER_BITMAP_HEIGHT * POINTER_SCALE + POINTER_SHADOW_OFFSET;
 const POINTER_SPEED_MULTIPLIER: i32 = 3;
+const GUI_MESSAGE_RENDER_LINE_LIMIT: usize = 8;
 
 #[derive(Clone, Copy)]
 struct BootstrapPointerState {
@@ -234,6 +231,15 @@ impl GuiSceneRuntimeState {
     }
 }
 
+#[derive(Clone)]
+struct GuiChatMessage {
+    is_user: bool,
+    style: GuiStyleClass,
+    text: String,
+}
+
+const GUI_CHAT_HISTORY_LIMIT: usize = 256;
+
 static DISPLAY_RUNTIME: Mutex<DisplayRuntimeState> = Mutex::new(DisplayRuntimeState {
     active_mode: DisplayModeInfo {
         backend: DisplayBackend::VgaText,
@@ -274,7 +280,56 @@ static POINTER_OVERLAY: Mutex<PointerOverlayState> = Mutex::new(PointerOverlaySt
 static GUI_OBJECTS: Mutex<GuiObjectRuntime> = Mutex::new(GuiObjectRuntime::new());
 static GUI_SCENE_RUNTIME: Mutex<GuiSceneRuntimeState> = Mutex::new(GuiSceneRuntimeState::new());
 static GUI_MUTATIONS: Mutex<Vec<GuiMutation>> = Mutex::new(Vec::new());
+static GUI_CHAT_HISTORY: Mutex<Vec<GuiChatMessage>> = Mutex::new(Vec::new());
 static BOOTSTRAP_SURFACE_DIRTY: AtomicBool = AtomicBool::new(true);
+static LAST_GUI_CARET_VISIBLE: AtomicBool = AtomicBool::new(true);
+
+fn push_gui_chat_message(message: GuiChatMessage) {
+    let mut history = GUI_CHAT_HISTORY.lock();
+    history.push(message);
+    if history.len() > GUI_CHAT_HISTORY_LIMIT {
+        let overflow = history.len() - GUI_CHAT_HISTORY_LIMIT;
+        history.drain(0..overflow);
+    }
+    drop(history);
+    notify_surface_dirty();
+}
+
+pub fn record_gui_user_prompt(prompt: &str) {
+    let trimmed = prompt.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    push_gui_chat_message(GuiChatMessage {
+        is_user: true,
+        style: GuiStyleClass::UserMessage,
+        text: String::from(trimmed),
+    });
+}
+
+pub fn record_gui_assistant_message(text: &str) {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    push_gui_chat_message(GuiChatMessage {
+        is_user: false,
+        style: GuiStyleClass::AssistantMessage,
+        text: String::from(trimmed),
+    });
+}
+
+pub fn record_gui_system_message(text: &str) {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return;
+    }
+    push_gui_chat_message(GuiChatMessage {
+        is_user: false,
+        style: GuiStyleClass::AccentText,
+        text: String::from(trimmed),
+    });
+}
 
 pub fn active_mode() -> DisplayModeInfo {
     DISPLAY_RUNTIME.lock().active_mode
@@ -1016,6 +1071,11 @@ pub fn render_runtime(seconds: u64) {
 }
 
 pub fn refresh_if_needed() {
+    let caret_visible = gui_caret_visible();
+    let previous_caret_visible = LAST_GUI_CARET_VISIBLE.swap(caret_visible, Ordering::Relaxed);
+    if caret_visible != previous_caret_visible && is_gui_composer_focused() {
+        BOOTSTRAP_SURFACE_DIRTY.store(true, Ordering::Relaxed);
+    }
     if !BOOTSTRAP_SURFACE_DIRTY.swap(false, Ordering::Relaxed) {
         return;
     }
@@ -1286,10 +1346,6 @@ fn draw_bootstrap_scene(
         selected_session,
         hovered,
         focused,
-        mouse_enabled: snapshot.mouse_enabled,
-        mouse_col: snapshot.mouse_col,
-        mouse_row: snapshot.mouse_row,
-        mouse_buttons: snapshot.mouse_buttons,
     });
 }
 
@@ -1712,22 +1768,22 @@ fn sync_gui_objects(width: usize, height: usize, input_line: &str) {
     objects.push(GuiObject {
         id: GuiObjectId::SessionOpenRhiza,
         kind: GuiObjectKind::SessionItem,
-        rect: GuiRect { x: 20, y: layout.content_top + 56, width: 220, height: 34 },
+        rect: GuiRect { x: 20, y: layout.content_top + 72, width: 220, height: 34 },
     });
     objects.push(GuiObject {
         id: GuiObjectId::SessionSandboxGui,
         kind: GuiObjectKind::SessionItem,
-        rect: GuiRect { x: 20, y: layout.content_top + 98, width: 220, height: 34 },
+        rect: GuiRect { x: 20, y: layout.content_top + 116, width: 220, height: 34 },
     });
     objects.push(GuiObject {
         id: GuiObjectId::SessionWideConsole,
         kind: GuiObjectKind::SessionItem,
-        rect: GuiRect { x: 20, y: layout.content_top + 140, width: 220, height: 34 },
+        rect: GuiRect { x: 20, y: layout.content_top + 160, width: 220, height: 34 },
     });
     objects.push(GuiObject {
         id: GuiObjectId::SessionRecoveryShell,
         kind: GuiObjectKind::SessionItem,
-        rect: GuiRect { x: 20, y: layout.content_top + 182, width: 220, height: 34 },
+        rect: GuiRect { x: 20, y: layout.content_top + 204, width: 220, height: 34 },
     });
     objects.push(GuiObject {
         id: GuiObjectId::Conversation,
@@ -1865,11 +1921,23 @@ fn draw_gui_footer(surface: BootstrapSurfaceState, footer_primary: &str, footer_
         return;
     };
     fill_rect(surface, footer.bounds.x, footer.bounds.y, footer.bounds.width, footer.bounds.height, 0x111111);
-    let primary = if !footer_primary.is_empty() {
+    let runtime = *GUI_SCENE_RUNTIME.lock();
+    let primary_source = if !footer_primary.is_empty() {
         String::from(footer_primary)
+    } else if runtime.conversation_scroll_items > 0 {
+        format!(
+            "Scrolled {} item(s) up  |  PgUp/PgDn or wheel on conversation",
+            runtime.conversation_scroll_items
+        )
+    } else if is_gui_conversation_focused() {
+        String::from("Conversation focused  |  PgUp/PgDn or wheel to scroll")
     } else {
-        String::from(selected_session_caption())
+        String::from("Ready")
     };
+    let primary = truncate_text_chars(
+        primary_source.as_str(),
+        footer.bounds.width.saturating_sub(24) / crate::gui_font::CHAR_ADVANCE,
+    );
     draw_text(surface, footer.bounds.x + 12, footer.bounds.y + 7, primary.as_str(), 0x9cc5ff, 1);
 }
 
@@ -1886,6 +1954,7 @@ fn redraw_gui_chat_area(surface: BootstrapSurfaceState, log_lines: &[(String, u8
     let chat_y = chat_object.bounds.y;
     let chat_w = chat_object.bounds.width;
     let chat_h = chat_object.bounds.height;
+    let scroll_skip = GUI_SCENE_RUNTIME.lock().conversation_scroll_items;
     let chat_bg = if matches!(chat_object.interaction, GuiInteractionState::Focused) {
         0x16181c
     } else {
@@ -1909,6 +1978,12 @@ fn redraw_gui_chat_area(surface: BootstrapSurfaceState, log_lines: &[(String, u8
         );
         return;
     }
+
+    let total_messages = session_message_specs(current_gui_object_state().0, log_lines).len();
+    let visible_messages = message_nodes
+        .iter()
+        .filter(|node| matches!(node.kind, GuiNodeKind::Message))
+        .count();
 
     for node in message_nodes {
         match node.style {
@@ -1934,6 +2009,49 @@ fn redraw_gui_chat_area(surface: BootstrapSurfaceState, log_lines: &[(String, u8
             _ => {}
         }
     }
+
+    draw_gui_conversation_scrollbar(
+        surface,
+        chat_x,
+        chat_y,
+        chat_w,
+        chat_h,
+        total_messages,
+        visible_messages,
+        scroll_skip,
+    );
+}
+
+fn draw_gui_conversation_scrollbar(
+    surface: BootstrapSurfaceState,
+    chat_x: usize,
+    chat_y: usize,
+    chat_w: usize,
+    chat_h: usize,
+    total_messages: usize,
+    visible_messages: usize,
+    scroll_skip: usize,
+) {
+    if total_messages <= visible_messages || visible_messages == 0 {
+        return;
+    }
+
+    let track_x = chat_x + chat_w.saturating_sub(10);
+    let track_y = chat_y + 12;
+    let track_h = chat_h.saturating_sub(24);
+    if track_h < 24 {
+        return;
+    }
+
+    fill_rect(surface, track_x, track_y, 4, track_h, 0x232323);
+
+    let max_scroll = total_messages.saturating_sub(visible_messages).max(1);
+    let thumb_h = ((visible_messages * track_h) / total_messages).clamp(24, track_h);
+    let travel = track_h.saturating_sub(thumb_h);
+    let thumb_offset = (scroll_skip.min(max_scroll) * travel) / max_scroll;
+    let thumb_y = track_y + travel.saturating_sub(thumb_offset);
+
+    fill_rect(surface, track_x, thumb_y, 4, thumb_h, 0x5f6f87);
 }
 
 fn redraw_gui_input_composer(surface: BootstrapSurfaceState, input_line: &str) {
@@ -1964,7 +2082,7 @@ fn redraw_gui_input_composer(surface: BootstrapSurfaceState, input_line: &str) {
         .find(|node| matches!(node.kind, GuiNodeKind::TextInput))
         .map(|node| node.label.as_str())
         .unwrap_or("");
-    let wrapped = wrap_text(message, composer_w.saturating_sub(28) / crate::gui_font::CHAR_ADVANCE);
+        let wrapped = wrap_text(message, composer_w.saturating_sub(28) / crate::gui_font::CHAR_ADVANCE);
     let mut y = composer_y + 34;
     if message.is_empty() {
         draw_text(
@@ -1975,7 +2093,7 @@ fn redraw_gui_input_composer(surface: BootstrapSurfaceState, input_line: &str) {
             0x9a9a9a,
             1,
         );
-        if matches!(composer.interaction, GuiInteractionState::Focused) {
+        if matches!(composer.interaction, GuiInteractionState::Focused) && gui_caret_visible() {
             draw_gui_composer_caret(surface, composer_x + 12, composer_y + 34);
         }
     } else {
@@ -1986,11 +2104,11 @@ fn redraw_gui_input_composer(surface: BootstrapSurfaceState, input_line: &str) {
             draw_text(surface, composer_x + 12, y, line.as_str(), 0x79ff79, 1);
             last_line_x = composer_x + 12;
             last_line_y = y;
-            last_line_len = line.chars().count();
+            last_line_len = crate::gui_font::text_pixel_advance(line.as_str());
             y += 16;
         }
-        if matches!(composer.interaction, GuiInteractionState::Focused) {
-            let caret_x = last_line_x + last_line_len * crate::gui_font::CHAR_ADVANCE + 2;
+        if matches!(composer.interaction, GuiInteractionState::Focused) && gui_caret_visible() {
+            let caret_x = last_line_x + last_line_len + 2;
             draw_gui_composer_caret(surface, caret_x, last_line_y);
         }
     }
@@ -1999,6 +2117,23 @@ fn redraw_gui_input_composer(surface: BootstrapSurfaceState, input_line: &str) {
 fn draw_gui_composer_caret(surface: BootstrapSurfaceState, x: usize, y: usize) {
     let caret_h = crate::gui_font::LINE_HEIGHT.saturating_sub(2);
     fill_rect(surface, x, y + 1, 2, caret_h, 0xe8f0ff);
+}
+
+fn gui_caret_visible() -> bool {
+    let ticks = crate::task::timer::TICKS.load(core::sync::atomic::Ordering::Relaxed);
+    let phase = (ticks / (crate::task::timer::TICKS_PER_SECOND / 2).max(1)) % 2;
+    phase == 0
+}
+
+fn is_gui_composer_focused() -> bool {
+    let state = GUI_OBJECTS.lock();
+    matches!(state.focused, Some(GuiObjectId::Composer)) && matches!(session_target(), DisplaySessionTarget::GuiSession)
+}
+
+pub fn is_gui_conversation_focused() -> bool {
+    let state = GUI_OBJECTS.lock();
+    matches!(state.focused, Some(GuiObjectId::Conversation))
+        && matches!(session_target(), DisplaySessionTarget::GuiSession)
 }
 
 fn gui_composer_height(surface: BootstrapSurfaceState, input_line: &str) -> usize {
@@ -2037,7 +2172,7 @@ fn compose_status_line(target: DisplaySessionTarget, fallback: &str) -> String {
 }
 
 fn composer_message_text(input_line: &str) -> &str {
-    input_line.strip_prefix("input> ").unwrap_or(input_line).trim()
+    input_line.strip_prefix("input> ").unwrap_or(input_line)
 }
 
 fn build_gui_scene(
@@ -2093,9 +2228,9 @@ fn build_gui_scene(
         interaction: GuiInteractionState::Idle,
         bounds: ContractRect {
             x: 20,
-            y: layout.content_top + 50,
+            y: layout.content_top + 66,
             width: 220,
-            height: 180,
+            height: 188,
         },
         object_ref: Some(String::from("session.list")),
         label: String::from("Sessions"),
@@ -2143,7 +2278,7 @@ fn build_gui_scene(
             height: layout.composer_h,
         },
         object_ref: Some(String::from("composer:primary")),
-        label: String::from("Ask OpenRhiza"),
+        label: String::new(),
     });
     nodes.push(GuiNode {
         handle: gui_handle(31),
@@ -2272,15 +2407,27 @@ fn append_message_nodes(
     let mut used_height = 0usize;
     let scroll_skip = GUI_SCENE_RUNTIME.lock().conversation_scroll_items;
     for spec in messages.iter().rev().skip(scroll_skip) {
-        let max_chars = if spec.is_user { 84 } else { 132 };
-        let wrapped = wrap_text(spec.text.as_str(), max_chars);
-        let bubble_h = wrapped.len().max(1) * crate::gui_font::LINE_HEIGHT + if spec.is_user { 18 } else { 10 };
+        let max_cells = if spec.is_user { 84 } else { 132 };
+        let mut wrapped = wrap_text(spec.text.as_str(), max_cells);
+        let mut visible_lines = wrapped.len().max(1);
+        if visible_lines > GUI_MESSAGE_RENDER_LINE_LIMIT {
+            wrapped.truncate(GUI_MESSAGE_RENDER_LINE_LIMIT);
+            if let Some(last_line) = wrapped.last_mut() {
+                let mut truncated = truncate_text_chars(last_line.as_str(), max_cells.saturating_sub(1));
+                if !truncated.ends_with('…') {
+                    truncated.push('…');
+                }
+                *last_line = truncated;
+            }
+            visible_lines = GUI_MESSAGE_RENDER_LINE_LIMIT;
+        }
+        let bubble_h = visible_lines * crate::gui_font::LINE_HEIGHT + if spec.is_user { 18 } else { 10 };
         if used_height + bubble_h + 12 > chat_h.saturating_sub(16) {
             break;
         }
         let max_line_len = wrapped
             .iter()
-            .map(|line| line.chars().count())
+            .map(|line| crate::gui_font::text_display_cells(line.as_str()))
             .max()
             .unwrap_or(0);
         let natural_w = max_line_len
@@ -2291,7 +2438,9 @@ fn append_message_nodes(
         } else {
             chat_w.saturating_sub(24)
         };
-        rendered.push((spec.clone(), bubble_w, bubble_h));
+        let mut rendered_spec = spec.clone();
+        rendered_spec.text = wrapped.join("\n");
+        rendered.push((rendered_spec, bubble_w, bubble_h));
         used_height += bubble_h + 12;
     }
     rendered.reverse();
@@ -2320,14 +2469,38 @@ fn append_message_nodes(
 
 fn session_message_specs(selected: GuiObjectId, log_lines: &[(String, u8)]) -> Vec<GuiMessageSpec> {
     match selected {
-        GuiObjectId::SessionOpenRhiza => collect_gui_chat_messages(log_lines, 14)
-            .into_iter()
-            .map(|(is_user, text, _color)| GuiMessageSpec {
-                is_user,
-                style: if is_user { GuiStyleClass::UserMessage } else { GuiStyleClass::AssistantMessage },
-                text,
-            })
-            .collect(),
+        GuiObjectId::SessionOpenRhiza => {
+            let history = GUI_CHAT_HISTORY.lock();
+            if history.is_empty() {
+                collect_gui_chat_messages(log_lines, 14)
+                    .into_iter()
+                    .map(|(is_user, text, _color)| GuiMessageSpec {
+                        is_user,
+                        style: if is_user {
+                            GuiStyleClass::UserMessage
+                        } else {
+                            GuiStyleClass::AssistantMessage
+                        },
+                        text,
+                    })
+                    .collect()
+            } else {
+                history
+                    .iter()
+                    .rev()
+                    .take(20)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .map(|message| GuiMessageSpec {
+                        is_user: message.is_user,
+                        style: message.style,
+                        text: message.text,
+                    })
+                    .collect()
+            }
+        }
         GuiObjectId::SessionSandboxGui => vec![
             GuiMessageSpec {
                 is_user: false,
@@ -2457,7 +2630,7 @@ fn draw_wrapped_text_in_rect(
         / crate::gui_font::CHAR_ADVANCE;
     let wrapped = wrap_text(node.label.as_str(), max_chars);
     let mut y = node.bounds.y + inset_y;
-    for line in wrapped.iter().take(8) {
+    for line in wrapped.iter().take(GUI_MESSAGE_RENDER_LINE_LIMIT) {
         draw_text(surface, node.bounds.x + inset_x, y, line.as_str(), color, 1);
         y += crate::gui_font::LINE_HEIGHT;
         if y + crate::gui_font::LINE_HEIGHT >= node.bounds.y + node.bounds.height {
@@ -2516,55 +2689,74 @@ fn selected_session_ref(id: GuiObjectId) -> &'static str {
 
 fn selected_session_caption() -> &'static str {
     match GUI_OBJECTS.lock().selected_session {
-        GuiObjectId::SessionOpenRhiza => "OpenRhiza conversation",
-        GuiObjectId::SessionSandboxGui => "Sandbox GUI bridge",
+        GuiObjectId::SessionOpenRhiza => "OpenRhiza ready",
+        GuiObjectId::SessionSandboxGui => "Sandbox GUI",
         GuiObjectId::SessionWideConsole => "Wide console",
         GuiObjectId::SessionRecoveryShell => "Recovery shell",
-        GuiObjectId::Conversation => "Conversation session",
-        GuiObjectId::Composer => "Composer session",
+        GuiObjectId::Conversation => "Conversation",
+        GuiObjectId::Composer => "Composer",
     }
 }
 
-fn wrap_text(text: &str, max_chars: usize) -> Vec<String> {
-    let max_chars = max_chars.max(8);
+fn truncate_text_chars(text: &str, max_cells: usize) -> String {
+    if max_cells == 0 {
+        return String::new();
+    }
+
+    let total = crate::gui_font::text_display_cells(text);
+    if total <= max_cells {
+        return String::from(text);
+    }
+
+    if max_cells <= 1 {
+        return String::from("…");
+    }
+
+    let mut out = String::new();
+    let mut used = 0usize;
+    for ch in text.chars() {
+        let width = crate::gui_font::display_cells(ch);
+        if used + width > max_cells.saturating_sub(1) {
+            break;
+        }
+        out.push(ch);
+        used += width;
+    }
+    out.push('…');
+    out
+}
+
+fn wrap_text(text: &str, max_cells: usize) -> Vec<String> {
+    let max_cells = max_cells.max(8);
     let mut lines = Vec::new();
     for paragraph in text.split('\n') {
-        let mut current = String::new();
-        for word in paragraph.split_whitespace() {
-            if current.is_empty() {
-                current.push_str(word);
-                continue;
-            }
-            if current.chars().count() + 1 + word.chars().count() > max_chars {
-                lines.push(current);
-                current = String::from(word);
-            } else {
-                current.push(' ');
-                current.push_str(word);
-            }
-        }
-
-        if current.is_empty() && !paragraph.is_empty() {
-            let mut buffer = String::new();
-            let mut count = 0usize;
-            for ch in paragraph.chars() {
-                buffer.push(ch);
-                count += 1;
-                if count >= max_chars {
-                    lines.push(buffer);
-                    buffer = String::new();
-                    count = 0;
-                }
-            }
-            if !buffer.is_empty() {
-                lines.push(buffer);
-            }
-        } else if !current.is_empty() {
-            lines.push(current);
-        }
-
         if paragraph.is_empty() {
             lines.push(String::new());
+            continue;
+        }
+
+        let mut current = String::new();
+        let mut current_width = 0usize;
+        for ch in paragraph.chars() {
+            let width = crate::gui_font::display_cells(ch);
+            if current_width + width > max_cells && !current.is_empty() {
+                lines.push(current);
+                current = String::new();
+                current_width = 0;
+            }
+
+            current.push(ch);
+            current_width += width;
+
+            if current_width >= max_cells {
+                lines.push(current);
+                current = String::new();
+                current_width = 0;
+            }
+        }
+
+        if !current.is_empty() {
+            lines.push(current);
         }
     }
 
@@ -2633,7 +2825,7 @@ fn draw_text(surface: BootstrapSurfaceState, x: usize, y: usize, text: &str, rgb
         if let Some(alpha) = glyph {
             draw_alpha_glyph(surface, cursor_x, y, alpha, rgb, scale);
         }
-        cursor_x += crate::gui_font::CHAR_ADVANCE * scale;
+        cursor_x += crate::gui_font::pixel_advance_for_char(ch) * scale;
         if cursor_x + (crate::gui_font::CHAR_ADVANCE * scale) >= surface.width {
             break;
         }

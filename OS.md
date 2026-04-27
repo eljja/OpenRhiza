@@ -72,6 +72,7 @@ Do not stop after generation. Continue through validation, application, and repo
 - Treat non-core drivers, filesystem logic, skills, workflows, and generated programs as sandbox components by default.
 - Treat object isolation as mandatory for those sandbox components. Activation, validation, and rollback should happen per object rather than by mutating unrelated global behavior.
 - Treat console expansion, framebuffer transition, compositor startup, and GUI session logic as sandbox skills or workflows unless the machine would otherwise lose basic recovery display output.
+- Treat font ingestion, font conversion, atlas generation, and typography asset selection as host-side or sandbox-owned skills and workflows, not as kernel-core logic.
 - Treat display mode switching and framebuffer-console implementation as sandbox-owned behavior behind a small display handoff ABI whenever possible.
 - Treat wide-console targets such as `1920x1080` and GUI session bring-up as sandbox display sessions first, with explicit validation and rollback state.
 - Keep only a recovery text shell and display handoff state in the core. Do not let the core become the long-term home of compositor or expanded-console logic.
@@ -145,6 +146,7 @@ Do not stop after generation. Continue through validation, application, and repo
 - Keep programs small, inspectable, and replaceable.
 - Test generated software before trusting it.
 - Upload useful software and metadata back to OpenRhiza.com when appropriate.
+- Treat reusable GUI font assets and atlas builders as capability objects that can be queried, generated, validated, cached, and replaced without altering the core.
 
 ## Evaluation policy
 

@@ -33,6 +33,7 @@ pub mod display;
 pub mod gui_font;
 pub mod gui_contract;
 pub mod gui_lvgl_bridge;
+pub mod hangul;
 pub mod task;
 pub mod security;
 pub mod e1000;
@@ -1130,12 +1131,14 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
                 crate::net::destroy_socket(client.handle());
                 if (200..300).contains(&response.status_code) {
                     if let Some(text) = extract_first_text_field(&response.body) {
+                        let sanitized_text = sanitize_gemini_display_text(text.as_str());
                         if let Some(request) = &gemini_request {
                             crate::api_v1::record_last_gemini_response(
                                 gemini_model_name(request.model_index),
                                 text.as_str(),
                             );
                         }
+                        crate::display::record_gui_assistant_message(sanitized_text.as_str());
                         if let Some(match_key) = gemini_auto_upload_match_key.take() {
                             match crate::api_v1::queue_driver_registry_command(
                                 crate::api_v1::DriverRegistryCommand::UploadGenerated {
@@ -1153,7 +1156,8 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
                             }
                         }
                     }
-                    log_gemini_response(&response);
+                    let allow_machine_actions = pending_orchestration_prompt.is_some();
+                    log_gemini_response(&response, allow_machine_actions);
                     gemini_client = None;
                     gemini_request = None;
                     pending_orchestration_prompt = None;
@@ -1172,7 +1176,15 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
                     gemini_client = gemini_ip.and_then(|ip| spawn_gemini_client(ip, &next_request));
                     gemini_request = Some(next_request);
                 } else {
-                    log_gemini_response(&response);
+                    crate::display::record_gui_system_message(
+                        format!(
+                            "Gemini request returned status {} and no further fallback is available.",
+                            response.status_code
+                        )
+                        .as_str(),
+                    );
+                    let allow_machine_actions = pending_orchestration_prompt.is_some();
+                    log_gemini_response(&response, allow_machine_actions);
                     gemini_client = None;
                     gemini_request = None;
                     pending_orchestration_prompt = None;
@@ -1196,6 +1208,9 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
                     gemini_request = Some(next_request);
                 } else {
                     crate::println!("[Gemini] request failed: {}", error);
+                    crate::display::record_gui_system_message(
+                        format!("Gemini request failed: {}", error).as_str(),
+                    );
                     gemini_client = None;
                     gemini_request = None;
                     pending_orchestration_prompt = None;
@@ -2457,12 +2472,12 @@ fn extract_json_string_decoded(body: &str, key: &str) -> Option<String> {
     let start = body.find(pattern.as_str())? + pattern.len();
     let bytes = body.as_bytes();
     let mut index = start;
-    let mut out = String::new();
+    let mut out = alloc::vec::Vec::new();
 
     while index < bytes.len() {
         let byte = bytes[index];
         if byte == b'"' {
-            return Some(out);
+            return String::from_utf8(out).ok();
         }
 
         if byte == b'\\' {
@@ -2471,18 +2486,27 @@ fn extract_json_string_decoded(body: &str, key: &str) -> Option<String> {
                 return None;
             }
             match bytes[index] {
-                b'"' => out.push('"'),
-                b'\\' => out.push('\\'),
-                b'n' => out.push('\n'),
-                b'r' => out.push('\r'),
-                b't' => out.push('\t'),
-                other => out.push(other as char),
+                b'"' => out.push(b'"'),
+                b'\\' => out.push(b'\\'),
+                b'n' => out.push(b'\n'),
+                b'r' => out.push(b'\r'),
+                b't' => out.push(b'\t'),
+                b'u' => {
+                    let value = decode_json_u16_escape(bytes, index + 1)?;
+                    if let Some(ch) = core::char::from_u32(value as u32) {
+                        let mut utf8 = [0u8; 4];
+                        let encoded = ch.encode_utf8(&mut utf8);
+                        out.extend_from_slice(encoded.as_bytes());
+                    }
+                    index += 4;
+                }
+                other => out.push(other),
             }
             index += 1;
             continue;
         }
 
-        out.push(byte as char);
+        out.push(byte);
         index += 1;
     }
 
@@ -2551,12 +2575,15 @@ fn summarize_registry_ids(ids: &[String], limit: usize) -> String {
     summary
 }
 
-fn log_gemini_response(response: &crate::https::ApiResponse) {
+fn log_gemini_response(response: &crate::https::ApiResponse, allow_machine_actions: bool) {
     crate::result_println!("[Gemini] response status: {}", response.status_code);
 
     if let Some(text) = extract_first_text_field(&response.body) {
-        crate::result_println!("[Gemini] {}", text);
-        execute_gemini_machine_actions(text.as_str());
+        let sanitized = sanitize_gemini_display_text(text.as_str());
+        crate::result_println!("[Gemini] {}", sanitized);
+        if allow_machine_actions {
+            execute_gemini_machine_actions(text.as_str());
+        }
         return;
     }
 
@@ -2567,6 +2594,80 @@ fn log_gemini_response(response: &crate::https::ApiResponse) {
             response.body.len()
         ),
     }
+}
+
+fn sanitize_gemini_display_text(text: &str) -> String {
+    let mut out = alloc::vec::Vec::new();
+    let mut in_fence = false;
+    let mut fence_lines = alloc::vec::Vec::new();
+
+    let flush_fence = |out: &mut alloc::vec::Vec<String>, fence_lines: &mut alloc::vec::Vec<String>| {
+        if fence_lines.is_empty() {
+            return;
+        }
+        let joined = fence_lines.join("\n");
+        let looks_like_machine_action = joined.contains("\"action\"")
+            || joined.contains("\"handle\"")
+            || joined.contains("\"interaction\"")
+            || joined.contains("\"bounds\"")
+            || joined.contains("\"style\"")
+            || joined.contains("\"label\"");
+        if !looks_like_machine_action {
+            out.extend(fence_lines.drain(..));
+        } else {
+            fence_lines.clear();
+        }
+    };
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("```") {
+            if in_fence {
+                in_fence = false;
+                flush_fence(&mut out, &mut fence_lines);
+            } else {
+                in_fence = true;
+                fence_lines.clear();
+            }
+            continue;
+        }
+
+        if in_fence {
+            fence_lines.push(String::from(line));
+            continue;
+        }
+
+        let looks_like_machine_line = (trimmed.starts_with('{') || trimmed.starts_with('}'))
+            || trimmed.starts_with("\"action\"")
+            || trimmed.starts_with("\"handle\"")
+            || trimmed.starts_with("\"interaction\"")
+            || trimmed.starts_with("\"bounds\"")
+            || trimmed.starts_with("\"style\"")
+            || trimmed.starts_with("\"label\"");
+        if looks_like_machine_line {
+            continue;
+        }
+
+        out.push(String::from(line));
+    }
+
+    if in_fence {
+        flush_fence(&mut out, &mut fence_lines);
+    }
+
+    let mut compact = alloc::vec::Vec::new();
+    let mut previous_blank = false;
+    for line in out {
+        let blank = line.trim().is_empty();
+        if blank && previous_blank {
+            continue;
+        }
+        previous_blank = blank;
+        compact.push(line);
+    }
+
+    let joined = compact.join("\n");
+    String::from(joined.trim())
 }
 
 fn execute_gemini_machine_actions(text: &str) {
@@ -3127,31 +3228,52 @@ fn extract_first_text_field(body: &[u8]) -> Option<String> {
     }
     cursor += 1;
 
-    let mut out = String::new();
-    let mut escaped = false;
+    let mut out = alloc::vec::Vec::new();
+    let mut index = cursor;
 
-    for &byte in &body[cursor..] {
-        if escaped {
-            match byte {
-                b'n' => out.push('\n'),
-                b'r' => out.push('\r'),
-                b't' => out.push('\t'),
-                b'"' => out.push('"'),
-                b'\\' => out.push('\\'),
-                _ => out.push(byte as char),
-            }
-            escaped = false;
-            continue;
-        }
-
+    while index < body.len() {
+        let byte = body[index];
         match byte {
-            b'\\' => escaped = true,
-            b'"' => return Some(out),
-            _ => out.push(byte as char),
+            b'\\' => {
+                index += 1;
+                let escape = *body.get(index)?;
+                match escape {
+                    b'n' => out.push(b'\n'),
+                    b'r' => out.push(b'\r'),
+                    b't' => out.push(b'\t'),
+                    b'"' => out.push(b'"'),
+                    b'\\' => out.push(b'\\'),
+                    b'u' => {
+                        let value = decode_json_u16_escape(body, index + 1)?;
+                        if let Some(ch) = core::char::from_u32(value as u32) {
+                            let mut utf8 = [0u8; 4];
+                            let encoded = ch.encode_utf8(&mut utf8);
+                            out.extend_from_slice(encoded.as_bytes());
+                        }
+                        index += 4;
+                    }
+                    _ => out.push(escape),
+                }
+            }
+            b'"' => return String::from_utf8(out).ok(),
+            _ => out.push(byte),
         }
+        index += 1;
     }
 
     None
+}
+
+fn decode_json_u16_escape(bytes: &[u8], start: usize) -> Option<u16> {
+    if start + 4 > bytes.len() {
+        return None;
+    }
+
+    let mut value = 0u16;
+    for &digit in &bytes[start..start + 4] {
+        value = (value << 4) | decode_hex_nibble(digit)? as u16;
+    }
+    Some(value)
 }
 
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {

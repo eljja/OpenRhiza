@@ -20,6 +20,7 @@ const CT_CHANGE_CIPHER_SPEC: u8 = 20;
 const CT_ALERT: u8 = 21;
 const CT_HANDSHAKE: u8 = 22;
 const CT_APPLICATION_DATA: u8 = 23;
+const TLS13_MAX_PLAINTEXT: usize = 16 * 1024;
 
 // Handshake Types
 const HT_CLIENT_HELLO: u8 = 1;
@@ -139,11 +140,14 @@ impl TlsClient {
     pub fn send_app_data(&mut self, data: &[u8]) {
         if self.state != TlsState::Ready { return; }
         if let Some(ref mut keys) = self.app_keys {
-            let mut inner = Vec::with_capacity(data.len() + 1);
-            inner.extend_from_slice(data);
-            inner.push(CT_APPLICATION_DATA);
-            let encrypted = encrypt_record(keys, CT_APPLICATION_DATA, &inner);
-            self.send_buf.extend_from_slice(&encrypted);
+            let max_chunk = TLS13_MAX_PLAINTEXT.saturating_sub(1);
+            for chunk in data.chunks(max_chunk.max(1)) {
+                let mut inner = Vec::with_capacity(chunk.len() + 1);
+                inner.extend_from_slice(chunk);
+                inner.push(CT_APPLICATION_DATA);
+                let encrypted = encrypt_record(keys, CT_APPLICATION_DATA, &inner);
+                self.send_buf.extend_from_slice(&encrypted);
+            }
         }
     }
 

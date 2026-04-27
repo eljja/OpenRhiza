@@ -30,6 +30,7 @@ OpenRhiza does not yet have:
 - a rich session/chat model
 - a production-quality GUI toolkit path
 - a fully stable compositor-seed stage after the bootstrap GUI handoff
+- a fully self-hosted font import and atlas validation workflow inside the guest runtime
 
 ## Two-track strategy
 
@@ -62,6 +63,12 @@ Why this path matters:
 - It matches the object-isolation rule.
 - It gives the AI a clean way to inspect and mutate the UI as data.
 - It is much lighter than embedding a web stack.
+
+Typography rule:
+
+- font parsing and atlas generation should not expand the core
+- the core should consume validated atlas assets
+- importing TTF, OTF, TTC, OTC, WOFF, and WOFF2 should happen through a host-side or sandbox-owned font skill/workflow
 
 ### Track B: LVGL-style Bridge
 
@@ -219,6 +226,7 @@ Target workflow:
 
 - core display handoff rules: [DISPLAY_ABI.md](D:/python/github/OpenRhiza/OpenRhiza/DISPLAY_ABI.md)
 - OS baseline rules: [OS.md](D:/python/github/OpenRhiza/OpenRhiza/OS.md)
+- font import workflow: [FONT_SKILL.md](D:/python/github/OpenRhiza/OpenRhiza/FONT_SKILL.md)
 - scene/object contract code: [src/gui_contract.rs](D:/python/github/OpenRhiza/OpenRhiza/src/gui_contract.rs)
 - LVGL-style scene bridge scaffold: [src/gui_lvgl_bridge.rs](D:/python/github/OpenRhiza/OpenRhiza/src/gui_lvgl_bridge.rs)
 - current bootstrap renderer and object hit-test path: [src/display.rs](D:/python/github/OpenRhiza/OpenRhiza/src/display.rs)

@@ -31,6 +31,8 @@ lazy_static! {
         input_buffer: [b' '; INPUT_CAPACITY],
         input_len: 0,
         input_cursor: 0,
+        ime_preview: [0; 4],
+        ime_preview_len: 0,
         log_lines: [[b' '; VGA_WIDTH]; MAX_LOG_LINES],
         log_line_colors: [LOG_COLOR; MAX_LOG_LINES],
         log_line_count: 1,
@@ -84,6 +86,8 @@ pub struct VgaWriter {
     input_buffer: [u8; INPUT_CAPACITY],
     input_len: usize,
     input_cursor: usize,
+    ime_preview: [u8; 4],
+    ime_preview_len: usize,
     log_lines: [[u8; VGA_WIDTH]; MAX_LOG_LINES],
     log_line_colors: [u8; MAX_LOG_LINES],
     log_line_count: usize,
@@ -173,7 +177,7 @@ impl VgaWriter {
 
     fn active_input_rows(&self) -> usize {
         let total_cells = INPUT_PROMPT.len()
-            .saturating_add(self.input_len)
+            .saturating_add(self.total_input_display_len())
             .saturating_add(1);
         ((total_cells.saturating_add(VGA_WIDTH - 1)) / VGA_WIDTH)
             .clamp(1, MAX_INPUT_ROWS)
@@ -185,6 +189,48 @@ impl VgaWriter {
 
     fn log_end_row(&self) -> usize {
         self.input_start_row().saturating_sub(1)
+    }
+
+    fn preview_len(&self) -> usize {
+        self.ime_preview_len
+    }
+
+    fn total_input_display_len(&self) -> usize {
+        self.input_len.saturating_add(self.preview_len())
+    }
+
+    fn previous_char_boundary(&self, mut index: usize) -> usize {
+        if index == 0 {
+            return 0;
+        }
+        index -= 1;
+        while index > 0 && (self.input_buffer[index] & 0b1100_0000) == 0b1000_0000 {
+            index -= 1;
+        }
+        index
+    }
+
+    fn next_char_boundary(&self, mut index: usize) -> usize {
+        if index >= self.input_len {
+            return self.input_len;
+        }
+        index += 1;
+        while index < self.input_len && (self.input_buffer[index] & 0b1100_0000) == 0b1000_0000 {
+            index += 1;
+        }
+        index
+    }
+
+    fn clear_ime_preview(&mut self) {
+        self.ime_preview = [0; 4];
+        self.ime_preview_len = 0;
+    }
+
+    fn set_ime_preview_bytes(&mut self, bytes: &[u8]) {
+        self.clear_ime_preview();
+        let len = bytes.len().min(self.ime_preview.len());
+        self.ime_preview[..len].copy_from_slice(&bytes[..len]);
+        self.ime_preview_len = len;
     }
 
     fn log_visible_rows(&self) -> usize {
@@ -310,15 +356,24 @@ impl VgaWriter {
     }
 
     pub fn push_input_char(&mut self, byte: u8) {
-        if self.input_len >= INPUT_CAPACITY {
+        let one = [byte];
+        self.push_input_text_bytes(&one);
+    }
+
+    pub fn push_input_text(&mut self, text: &str) {
+        self.push_input_text_bytes(text.as_bytes());
+    }
+
+    fn push_input_text_bytes(&mut self, bytes: &[u8]) {
+        if bytes.is_empty() || self.input_len.saturating_add(bytes.len()) > INPUT_CAPACITY {
             return;
         }
         for i in (self.input_cursor..self.input_len).rev() {
-            self.input_buffer[i + 1] = self.input_buffer[i];
+            self.input_buffer[i + bytes.len()] = self.input_buffer[i];
         }
-        self.input_buffer[self.input_cursor] = byte;
-        self.input_len += 1;
-        self.input_cursor += 1;
+        self.input_buffer[self.input_cursor..self.input_cursor + bytes.len()].copy_from_slice(bytes);
+        self.input_len += bytes.len();
+        self.input_cursor += bytes.len();
         self.render_input_line();
     }
 
@@ -326,12 +381,14 @@ impl VgaWriter {
         if self.input_cursor == 0 {
             return;
         }
+        let start = self.previous_char_boundary(self.input_cursor);
+        let removed = self.input_cursor.saturating_sub(start);
         for i in self.input_cursor..self.input_len {
-            self.input_buffer[i - 1] = self.input_buffer[i];
+            self.input_buffer[i - removed] = self.input_buffer[i];
         }
-        self.input_len -= 1;
-        self.input_cursor -= 1;
-        self.input_buffer[self.input_len] = b' ';
+        self.input_len -= removed;
+        self.input_cursor = start;
+        self.input_buffer[self.input_len..self.input_len + removed].fill(b' ');
         self.render_input_line();
     }
 
@@ -347,6 +404,7 @@ impl VgaWriter {
         self.input_buffer[..self.input_len].fill(b' ');
         self.input_len = 0;
         self.input_cursor = 0;
+        self.clear_ime_preview();
         self.history_index = None;
         self.history_snapshot.fill(b' ');
         self.history_snapshot_len = 0;
@@ -370,24 +428,26 @@ impl VgaWriter {
         if self.input_cursor >= self.input_len {
             return;
         }
-        for i in self.input_cursor + 1..self.input_len {
-            self.input_buffer[i - 1] = self.input_buffer[i];
+        let next = self.next_char_boundary(self.input_cursor);
+        let removed = next.saturating_sub(self.input_cursor);
+        for i in next..self.input_len {
+            self.input_buffer[i - removed] = self.input_buffer[i];
         }
-        self.input_len -= 1;
-        self.input_buffer[self.input_len] = b' ';
+        self.input_len -= removed;
+        self.input_buffer[self.input_len..self.input_len + removed].fill(b' ');
         self.render_input_line();
     }
 
     pub fn cursor_left(&mut self) {
         if self.input_cursor > 0 {
-            self.input_cursor -= 1;
+            self.input_cursor = self.previous_char_boundary(self.input_cursor);
             self.render_input_line();
         }
     }
 
     pub fn cursor_right(&mut self) {
         if self.input_cursor < self.input_len {
-            self.input_cursor += 1;
+            self.input_cursor = self.next_char_boundary(self.input_cursor);
             self.render_input_line();
         }
     }
@@ -456,6 +516,7 @@ impl VgaWriter {
         self.input_buffer[..self.input_len].fill(b' ');
         self.input_len = 0;
         self.input_cursor = 0;
+        self.clear_ime_preview();
         self.render_input_line();
     }
 
@@ -525,13 +586,28 @@ impl VgaWriter {
             };
         }
 
+        for idx in 0..self.ime_preview_len {
+            let absolute = INPUT_PROMPT.len() + self.input_len + idx;
+            if absolute >= total_cells {
+                break;
+            }
+
+            let row = input_start_row + absolute / VGA_WIDTH;
+            let col = absolute % VGA_WIDTH;
+            let byte = self.ime_preview[idx];
+            self.buffer.chars[row][col] = ScreenChar {
+                ascii_character: if (0x20..=0x7e).contains(&byte) { byte } else { 0xfe },
+                color_code: self.color_code,
+            };
+        }
+
         self.update_hardware_cursor();
         crate::display::notify_surface_dirty();
     }
 
     fn update_hardware_cursor(&self) {
         let input_start_row = self.input_start_row();
-        let cursor_absolute = INPUT_PROMPT.len() + self.input_cursor;
+        let cursor_absolute = INPUT_PROMPT.len() + self.input_cursor + self.ime_preview_len;
         let row = input_start_row + cursor_absolute / VGA_WIDTH;
         let col = cursor_absolute % VGA_WIDTH;
 
@@ -676,6 +752,7 @@ impl VgaWriter {
 
     fn set_input_from_bytes(&mut self, value: &[u8], value_len: usize) {
         self.input_buffer.fill(b' ');
+        self.clear_ime_preview();
         let copy_len = value_len.min(INPUT_CAPACITY).min(value.len());
         self.input_buffer[..copy_len].copy_from_slice(&value[..copy_len]);
         self.input_len = copy_len;
@@ -818,7 +895,11 @@ impl VgaWriter {
             log_lines.push((text, color));
         }
 
-        let input_text = String::from_utf8_lossy(&self.input_buffer[..self.input_len]).into_owned();
+        let mut input_text = String::from_utf8_lossy(&self.input_buffer[..self.input_len]).into_owned();
+        if self.ime_preview_len > 0 {
+            let preview = String::from_utf8_lossy(&self.ime_preview[..self.ime_preview_len]);
+            input_text.push_str(preview.as_ref());
+        }
         ExternalSurfaceSnapshot {
             status_line,
             header_line: String::from("Recovery shell remains available while sandbox display sessions are validated."),
@@ -952,6 +1033,22 @@ pub fn debug_set_input_line(text: &str) {
         .lock()
         .set_input_from_bytes(text.as_bytes(), text.len());
     crate::display::notify_surface_dirty();
+}
+
+pub fn set_ime_preview(text: &str) {
+    let mut writer = WRITER.lock();
+    writer.set_ime_preview_bytes(text.as_bytes());
+    writer.render_input_line();
+}
+
+pub fn clear_ime_preview() {
+    let mut writer = WRITER.lock();
+    writer.clear_ime_preview();
+    writer.render_input_line();
+}
+
+pub fn commit_input_text(text: &str) {
+    WRITER.lock().push_input_text(text);
 }
 
 pub const fn user_echo_color() -> u8 {

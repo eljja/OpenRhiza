@@ -1,0 +1,19 @@
+{
+  "source_font": "D:\\python\\github\\OpenRhiza\\OpenRhiza\\assets\\fonts\\NotoSansKR-Regular.ttf",
+  "charset": "gui_kr",
+  "glyph_width": 16,
+  "glyph_height": 24,
+  "font_size": 18,
+  "baseline_offset_y": 2,
+  "collection_index": 0,
+  "glyph_count": 11318,
+  "atlas_bytes": 4346112,
+  "supported_source_extensions": [
+    ".ttf",
+    ".otf",
+    ".ttc",
+    ".otc",
+    ".woff",
+    ".woff2"
+  ]
+}

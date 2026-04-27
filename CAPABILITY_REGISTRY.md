@@ -24,6 +24,7 @@ The registry should also preserve the object model of those capabilities where r
 - drivers should expose bounded activation targets
 - workflows should expose explicit steps and rollback boundaries
 - skills should describe narrow abilities rather than global behavior patches
+- semantic index builders and graph refreshers should be explicit capability objects, not invisible background magic
 
 ## Why This Model Exists
 
@@ -139,6 +140,7 @@ When the user asks for something, OpenRhiza should prefer:
 
 This applies across drivers, skills, programs, and workflows.
 It also applies to display, compositor, and GUI evolution: registry skill first, sandbox validation second, core promotion last.
+It should later also apply to filesystem semantic graph layers: sidecar graph object first, bounded refresh second, raw full scan only when necessary.
 
 The same principle applies to interface work:
 

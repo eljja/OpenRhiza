@@ -34,6 +34,7 @@ pub enum KeyEvent {
     CtrlK,
     /// Function keys (F1-F12, encoded as 1-12)
     FunctionKey(u8),
+    ToggleHangul,
     /// Modifier-only event (Shift, Ctrl, Alt by themselves), usually ignored
     ModifierOnly,
 }
@@ -41,6 +42,8 @@ pub enum KeyEvent {
 /// State machine that tracks modifier and lock-key state.
 pub struct KeyboardState {
     pub shift_pressed: bool,
+    pub left_shift_pressed: bool,
+    pub right_shift_pressed: bool,
     pub ctrl_pressed: bool,
     pub alt_pressed: bool,
     pub caps_lock: bool,
@@ -52,6 +55,8 @@ impl KeyboardState {
     pub const fn new() -> Self {
         Self {
             shift_pressed: false,
+            left_shift_pressed: false,
+            right_shift_pressed: false,
             ctrl_pressed: false,
             alt_pressed: false,
             caps_lock: false,
@@ -77,8 +82,14 @@ impl KeyboardState {
         // --- Modifier keys (both make and break) ---
         match (extended, make_code) {
             // Left Shift (0x2A), Right Shift (0x36)
-            (false, 0x2A) | (false, 0x36) => {
-                self.shift_pressed = !is_break;
+            (false, 0x2A) => {
+                self.left_shift_pressed = !is_break;
+                self.shift_pressed = self.left_shift_pressed || self.right_shift_pressed;
+                return if is_break { None } else { Some(KeyEvent::ModifierOnly) };
+            }
+            (false, 0x36) => {
+                self.right_shift_pressed = !is_break;
+                self.shift_pressed = self.left_shift_pressed || self.right_shift_pressed;
                 return if is_break { None } else { Some(KeyEvent::ModifierOnly) };
             }
             // Left Ctrl (0x1D), Right Ctrl (E0 1D)
@@ -140,6 +151,7 @@ impl KeyboardState {
             0x0E => return Some(KeyEvent::Backspace),
             0x0F => return Some(KeyEvent::Tab),
             0x1C => return Some(KeyEvent::Enter),
+            0x70 => return Some(KeyEvent::ToggleHangul),
             // Function Keys F1~F10
             0x3B => return Some(KeyEvent::FunctionKey(1)),
             0x3C => return Some(KeyEvent::FunctionKey(2)),
@@ -259,7 +271,12 @@ impl KeyboardState {
             0x35 => if effective_shift { b'?' } else { b'/' },
 
             // Space
-            0x39 => b' ',
+            0x39 => {
+                if self.left_shift_pressed && !self.ctrl_pressed && !self.alt_pressed {
+                    return Some(KeyEvent::ToggleHangul);
+                }
+                b' '
+            },
 
             _ => return None,
         };

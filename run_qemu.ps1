@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory = $true, Position = 0)]
     [string]$BootImage,
     [ValidateSet("usb", "ps2")]
-    [string]$KeyboardTransport = "usb",
+    [string]$KeyboardTransport = "ps2",
     [ValidateSet("gtk", "sdl")]
     [string]$DisplayBackend = "gtk"
 )
@@ -203,6 +203,31 @@ function Install-SeedSkillSlot {
     [System.IO.File]::WriteAllBytes($targetPath, $buffer)
 }
 
+function Assert-WasmMagic {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path)) {
+        throw "Missing Wasm artifact at '$Path'."
+    }
+
+    $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+    try {
+        if ($stream.Length -lt 4) {
+            throw "Wasm artifact too small: '$Path'."
+        }
+        $magic = New-Object byte[] 4
+        [void]$stream.Read($magic, 0, 4)
+        if ($magic[0] -ne 0x00 -or $magic[1] -ne 0x61 -or $magic[2] -ne 0x73 -or $magic[3] -ne 0x6D) {
+            throw "Invalid Wasm magic in '$Path'."
+        }
+    } finally {
+        $stream.Dispose()
+    }
+}
+
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "DRVMAP.TXT") -Header "# OpenRhiza active driver map`n" -Size 512
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "SKILLCCH.TXT") -Header "# OpenRhiza local skill cache`n" -Size 512
 Merge-SkillCacheSeedMap -Path (Join-Path $driverDisk "SKILLCCH.TXT")
@@ -233,6 +258,12 @@ Install-SeedSkillSlot -SourceName "SKFBUF.WAS" -TargetName "SK002.WAS" -Size 655
 Install-SeedSkillSlot -SourceName "SKCOMP.WAS" -TargetName "SK003.WAS" -Size 65536
 Install-SeedSkillSlot -SourceName "SKREG.WAS" -TargetName "SK004.WAS" -Size 65536
 Install-SeedSkillSlot -SourceName "SKMUT.WAS" -TargetName "SK005.WAS" -Size 65536
+Assert-WasmMagic -Path (Join-Path $driverDisk "SK000.WAS")
+Assert-WasmMagic -Path (Join-Path $driverDisk "SK001.WAS")
+Assert-WasmMagic -Path (Join-Path $driverDisk "SK002.WAS")
+Assert-WasmMagic -Path (Join-Path $driverDisk "SK003.WAS")
+Assert-WasmMagic -Path (Join-Path $driverDisk "SK004.WAS")
+Assert-WasmMagic -Path (Join-Path $driverDisk "SK005.WAS")
 
 function Stop-OpenRhizaSession {
     Get-Process -Name "qemu-system-x86_64" -ErrorAction SilentlyContinue |

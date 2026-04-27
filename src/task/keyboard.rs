@@ -59,6 +59,7 @@ impl core::future::Future for ScancodeStream {
 pub async fn keyboard_task() {
     crate::println!("[Task] keyboard_task started");
     let mut keyboard = crate::keyboard::KeyboardState::new();
+    let mut hangul = crate::hangul::HangulIme::new();
     let mut is_extended = false;
     let mut shift_pressed = false;
     let mut scancode_log_count = 0usize;
@@ -129,30 +130,133 @@ pub async fn keyboard_task() {
 
         if let Some(event) = keyboard.process_scancode(scancode) {
             match event {
-                crate::keyboard::KeyEvent::Char(byte) => handle_input_byte(byte),
-                crate::keyboard::KeyEvent::Enter => submit_cli_command(),
-                crate::keyboard::KeyEvent::Backspace => WRITER.lock().pop_input_char(),
+                crate::keyboard::KeyEvent::Char(byte) => handle_key_char(byte, &mut hangul),
+                crate::keyboard::KeyEvent::Enter => {
+                    commit_hangul_pending(&mut hangul);
+                    submit_cli_command();
+                }
+                crate::keyboard::KeyEvent::Backspace => {
+                    if hangul.enabled() && hangul.backspace() {
+                        update_hangul_preview(&hangul);
+                    } else {
+                        WRITER.lock().pop_input_char();
+                    }
+                }
                 crate::keyboard::KeyEvent::ArrowUp => WRITER.lock().history_up(),
                 crate::keyboard::KeyEvent::ArrowDown => WRITER.lock().history_down(),
-                crate::keyboard::KeyEvent::ArrowLeft => WRITER.lock().cursor_left(),
-                crate::keyboard::KeyEvent::ArrowRight => WRITER.lock().cursor_right(),
-                crate::keyboard::KeyEvent::Home => WRITER.lock().home(),
-                crate::keyboard::KeyEvent::End => WRITER.lock().end(),
-                crate::keyboard::KeyEvent::Delete => WRITER.lock().delete_char(),
-                crate::keyboard::KeyEvent::PageUp => WRITER.lock().scroll_up(10),
-                crate::keyboard::KeyEvent::PageDown => WRITER.lock().scroll_down(10),
+                crate::keyboard::KeyEvent::ArrowLeft => {
+                    commit_hangul_pending(&mut hangul);
+                    WRITER.lock().cursor_left();
+                }
+                crate::keyboard::KeyEvent::ArrowRight => {
+                    commit_hangul_pending(&mut hangul);
+                    WRITER.lock().cursor_right();
+                }
+                crate::keyboard::KeyEvent::Home => {
+                    commit_hangul_pending(&mut hangul);
+                    WRITER.lock().home();
+                }
+                crate::keyboard::KeyEvent::End => {
+                    commit_hangul_pending(&mut hangul);
+                    WRITER.lock().end();
+                }
+                crate::keyboard::KeyEvent::Delete => {
+                    commit_hangul_pending(&mut hangul);
+                    WRITER.lock().delete_char();
+                }
+                crate::keyboard::KeyEvent::PageUp => {
+                    if crate::display::is_gui_conversation_focused() {
+                        let _ = crate::display::scroll_gui_conversation("up", 3);
+                    } else {
+                        WRITER.lock().scroll_up(10);
+                    }
+                }
+                crate::keyboard::KeyEvent::PageDown => {
+                    if crate::display::is_gui_conversation_focused() {
+                        let _ = crate::display::scroll_gui_conversation("down", 3);
+                    } else {
+                        WRITER.lock().scroll_down(10);
+                    }
+                }
+                crate::keyboard::KeyEvent::ToggleHangul => toggle_hangul_mode(&mut hangul),
                 crate::keyboard::KeyEvent::CtrlC => {
+                    commit_hangul_pending(&mut hangul);
                     crate::println!("^C");
                     WRITER.lock().cancel_line();
                 }
-                crate::keyboard::KeyEvent::CtrlL => WRITER.lock().clear_log_area(),
-                crate::keyboard::KeyEvent::CtrlU => WRITER.lock().clear_before_cursor(),
-                crate::keyboard::KeyEvent::CtrlK => WRITER.lock().clear_after_cursor(),
-                crate::keyboard::KeyEvent::CtrlW => WRITER.lock().delete_word(),
+                crate::keyboard::KeyEvent::CtrlL => {
+                    commit_hangul_pending(&mut hangul);
+                    WRITER.lock().clear_log_area();
+                }
+                crate::keyboard::KeyEvent::CtrlU => {
+                    commit_hangul_pending(&mut hangul);
+                    WRITER.lock().clear_before_cursor();
+                }
+                crate::keyboard::KeyEvent::CtrlK => {
+                    commit_hangul_pending(&mut hangul);
+                    WRITER.lock().clear_after_cursor();
+                }
+                crate::keyboard::KeyEvent::CtrlW => {
+                    commit_hangul_pending(&mut hangul);
+                    WRITER.lock().delete_word();
+                }
                 _ => {}
             }
         }
     }
+}
+
+fn handle_key_char(byte: u8, hangul: &mut crate::hangul::HangulIme) {
+    if byte == 0x3F {
+        return;
+    }
+
+    let ch = byte as char;
+    if !hangul.enabled() {
+        handle_input_byte(byte);
+        return;
+    }
+
+    let step = hangul.process_ascii(ch);
+    if !step.commit.is_empty() {
+        crate::vga::commit_input_text(step.commit.as_str());
+    }
+    apply_hangul_preview(step.preview);
+}
+
+fn apply_hangul_preview(preview: Option<char>) {
+    if let Some(ch) = preview {
+        let mut text = alloc::string::String::new();
+        text.push(ch);
+        crate::vga::set_ime_preview(text.as_str());
+    } else {
+        crate::vga::clear_ime_preview();
+    }
+}
+
+fn update_hangul_preview(hangul: &crate::hangul::HangulIme) {
+    apply_hangul_preview(hangul.preview_char());
+}
+
+fn commit_hangul_pending(hangul: &mut crate::hangul::HangulIme) {
+    let committed = hangul.commit_pending();
+    if !committed.is_empty() {
+        crate::vga::commit_input_text(committed.as_str());
+    }
+    crate::vga::clear_ime_preview();
+}
+
+fn toggle_hangul_mode(hangul: &mut crate::hangul::HangulIme) {
+    let committed = hangul.take_commit_before_toggle();
+    if !committed.is_empty() {
+        crate::vga::commit_input_text(committed.as_str());
+    }
+    let enabled = hangul.toggle();
+    crate::vga::clear_ime_preview();
+    crate::result_println!(
+        "[IME] {} mode",
+        if enabled { "Hangul" } else { "English" }
+    );
 }
 
 fn handle_input_byte(byte: u8) {
@@ -313,6 +417,7 @@ fn handle_cli_command(command: &str) {
             _ => crate::result_println!("[CLI] Unknown local command. Use /help."),
         }
     } else {
+        crate::display::record_gui_user_prompt(command);
         queue_gemini_prompt(alloc::string::String::from(command));
     }
 

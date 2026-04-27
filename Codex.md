@@ -30,6 +30,8 @@ When there is a conflict, prefer these files in this order:
 5. [MODULE_MAP.md](D:/python/github/OpenRhiza/OpenRhiza/MODULE_MAP.md)
 6. [KNOWN_ISSUES.md](D:/python/github/OpenRhiza/OpenRhiza/KNOWN_ISSUES.md)
 7. [BUILD_AND_TEST.md](D:/python/github/OpenRhiza/OpenRhiza/BUILD_AND_TEST.md)
+8. [PROGRAM_COMPATIBILITY_GOALS.md](D:/python/github/OpenRhiza/OpenRhiza/PROGRAM_COMPATIBILITY_GOALS.md)
+9. [SEMANTIC_GRAPH_LAYER.md](D:/python/github/OpenRhiza/OpenRhiza/SEMANTIC_GRAPH_LAYER.md)
 
 Historical Gemini files should not override these.
 
@@ -112,6 +114,8 @@ These are the main live follow-up items:
 2. Storage write path
 3. TLS path integration into the active Nexus fetch path
 4. Stronger capability promotion/evaluation/report loop
+5. Program compatibility through sandboxed compatibility skills rather than core expansion
+6. Sidecar semantic graph layer over managed filesystems so the OS can query structured file knowledge before raw scans
 
 ## 5. Current Known Important Caveats
 

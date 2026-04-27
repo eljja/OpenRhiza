@@ -1250,6 +1250,7 @@ fn hid_to_scancode(hid_usage: u8) -> (bool, u8) {
         0x61 => (false, 0x49), // Keypad 9 / Page Up
         0x62 => (false, 0x52), // Keypad 0 / Insert
         0x63 => (false, 0x53), // Keypad . / Delete
+        0x90 => (false, 0x70), // Keyboard LANG1 / Han-Yeong
         0x49 => (true, 0x52),  // Insert
         0xE0 => (false, 0x1D), // Left Ctrl (fallback)
         0xE1 => (false, 0x2A), // Left Shift (fallback)
