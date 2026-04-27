@@ -67,6 +67,7 @@ if (-not (Test-Path -LiteralPath $serialServerScript)) {
 
 $bootImagePath = (Resolve-Path -LiteralPath $BootImage).Path
 $driverDisk = Join-Path $repoRoot "rhiza_drivers"
+$fsHarnessImage = Join-Path $repoRoot "fs_harness.img"
 
 if (-not (Test-Path -LiteralPath $driverDisk)) {
     New-Item -ItemType Directory -Path $driverDisk | Out-Null
@@ -137,6 +138,7 @@ function Merge-SkillCacheSeedMap {
         "skill_gui_compositor_seed_v1" = "SK003.WAS"
         "skill_registry_lookup_v1" = "SK004.WAS"
         "skill_gui_scene_mutator_v1" = "SK005.WAS"
+        "skill_fs_image_probe_v1" = "SK006.WAS"
     }
 
     $existingText = ""
@@ -258,12 +260,14 @@ Install-SeedSkillSlot -SourceName "SKFBUF.WAS" -TargetName "SK002.WAS" -Size 655
 Install-SeedSkillSlot -SourceName "SKCOMP.WAS" -TargetName "SK003.WAS" -Size 65536
 Install-SeedSkillSlot -SourceName "SKREG.WAS" -TargetName "SK004.WAS" -Size 65536
 Install-SeedSkillSlot -SourceName "SKMUT.WAS" -TargetName "SK005.WAS" -Size 65536
+Install-SeedSkillSlot -SourceName "SKFSP.WAS" -TargetName "SK006.WAS" -Size 65536
 Assert-WasmMagic -Path (Join-Path $driverDisk "SK000.WAS")
 Assert-WasmMagic -Path (Join-Path $driverDisk "SK001.WAS")
 Assert-WasmMagic -Path (Join-Path $driverDisk "SK002.WAS")
 Assert-WasmMagic -Path (Join-Path $driverDisk "SK003.WAS")
 Assert-WasmMagic -Path (Join-Path $driverDisk "SK004.WAS")
 Assert-WasmMagic -Path (Join-Path $driverDisk "SK005.WAS")
+Assert-WasmMagic -Path (Join-Path $driverDisk "SK006.WAS")
 
 function Stop-OpenRhizaSession {
     Get-Process -Name "qemu-system-x86_64" -ErrorAction SilentlyContinue |
@@ -338,14 +342,18 @@ $qemuArgs = @(
     "-no-shutdown"
     "-display", $resolvedDisplayBackend
     "-k", "en-us"
-    "-drive", "format=raw,file=$bootImagePath"
-    "-drive", "file=fat:rw:$driverDisk,format=raw,index=2"
+    "-drive", "file=$bootImagePath,format=raw,if=ide,index=0"
+    "-drive", "file=fat:rw:$driverDisk,format=raw,if=ide,index=2"
     "-serial", "tcp:127.0.0.1:4444"
     "-monitor", "tcp:127.0.0.1:55555,server,nowait"
     "-netdev", "user,id=n1"
     "-device", "e1000,netdev=n1"
     "-device", "qemu-xhci,id=xhci"
 )
+
+if (Test-Path -LiteralPath $fsHarnessImage) {
+    $qemuArgs += @("-drive", "file=$fsHarnessImage,format=raw,index=3,if=ide,media=disk")
+}
 
 if ($KeyboardTransport -eq "usb") {
     $qemuArgs += @(

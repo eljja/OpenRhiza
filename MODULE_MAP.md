@@ -143,19 +143,28 @@ Nexus trust anchor and signature verification.
 
 ### `src/storage.rs`
 
-ATA PIO read-only bootstrap storage path.
+ATA PIO bootstrap storage path.
 
 Responsibilities:
 
 - read sectors from the secondary ATA bus
+- identify secondary master and secondary slave ATA devices
 - distinguish MBR from FAT boot sectors
 - locate cached capability artifacts and fixed skill slots
 - extract payloads into a `Vec<u8>`
 - trim padded fixed-slot Wasm files back to their actual module length
+- provide bounded write support for the active bootstrap FAT floor and optional harness use
 
-Limitation:
+### `src/storage_host.rs`
 
-- no write path yet
+Bounded storage host ABI for sandbox filesystem work.
+
+Responsibilities:
+
+- expose the optional `fs_harness.img` device as an object-like block target
+- report block count, writability, filesystem hint, and scratch region
+- translate sandbox block requests into bounded secondary-slave ATA reads/writes
+- keep the active recovery FAT16 disk separate from filesystem skill validation
 
 ### `src/e1000.rs`
 
@@ -218,7 +227,7 @@ Windows QEMU launcher used by the current `cargo run` flow.
 Responsibilities:
 
 - launch QEMU in the desktop session
-- attach the boot image, FAT driver disk, serial TCP bridge, `e1000`, and USB input devices
+- attach the boot image, FAT driver disk, optional raw filesystem harness disk, serial TCP bridge, `e1000`, and USB input devices
 - seed fixed skill slots from the local driver artifacts
 - launch the serial log viewer
 
@@ -233,6 +242,12 @@ Font atlas generation helper for the bootstrap GUI.
 ### `tools/strip_wasm_custom_sections.py`
 
 Utility that strips Wasm custom sections before artifacts are copied into the driver disk.
+
+### `tools/build_fs_harness.py`
+
+Builds an optional raw `fs_harness.img` from a validated FAT32, exFAT, NTFS, or ext2/ext3/ext4 source image.
+
+The output appends a scratch region and metadata footer so sandbox filesystem skills can validate bounded write/read/restore in OpenRhiza without mutating the active recovery storage floor.
 
 ### `host_brain.py`
 

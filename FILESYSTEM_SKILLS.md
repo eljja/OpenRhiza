@@ -53,6 +53,7 @@ Filesystem support should be modeled as isolated capability objects.
 
 Recommended initial objects:
 
+- `skill_fs_image_probe_v1`
 - `skill_fs_fat32_bridge_v1`
 - `skill_fs_exfat_bridge_v1`
 - `skill_fs_ntfs_bridge_v1`
@@ -89,6 +90,15 @@ Later.
 - explicit request surface
 - object-scoped mount or image access
 - still outside the minimal core
+
+### Layer B0: In-OS Image Harness Bridge
+
+Now.
+
+- bounded raw block host ABI
+- optional image-backed harness disk
+- sandbox probe skill for FAT32/exFAT/NTFS/ext2/ext3/ext4 signatures
+- scratch-region write/read/restore validation inside OpenRhiza itself
 
 ### Layer C: Optional Promotion
 
@@ -148,3 +158,12 @@ The current deliverable is a host-assisted lab tool that:
 - emits structured validation reports
 
 This allows OpenRhiza to progress toward multi-filesystem support without destabilizing the active GUI, input, or recovery runtime.
+
+In addition, the repo now includes the first internal OpenRhiza-side bridge bootstrap:
+
+- storage host ABI
+- skill filesystem bridge interface
+- optional harness disk builder
+- `skill_fs_image_probe_v1`
+
+This is not yet a full in-OS mount/file API, but it is a real in-OS execution path for sandboxed filesystem capability work.

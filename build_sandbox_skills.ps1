@@ -43,6 +43,12 @@ $targets = @(
         Root = Join-Path $repoRoot "sandbox-skills\gui_scene_mutator_seed"
         Artifact = "gui_scene_mutator_seed.wasm"
         FatName = "SKMUT.WAS"
+    },
+    @{
+        Name = "fs_image_probe_bootstrap"
+        Root = Join-Path $repoRoot "sandbox-skills\fs_image_probe_bootstrap"
+        Artifact = "fs_image_probe_bootstrap.wasm"
+        FatName = "SKFSP.WAS"
     }
 )
 
@@ -90,6 +96,7 @@ $slotMap = [ordered]@{
     "SKCOMP.WAS" = "SK003.WAS"
     "SKREG.WAS" = "SK004.WAS"
     "SKMUT.WAS" = "SK005.WAS"
+    "SKFSP.WAS" = "SK006.WAS"
 }
 
 foreach ($entry in $slotMap.GetEnumerator()) {

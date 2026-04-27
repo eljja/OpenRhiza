@@ -96,6 +96,12 @@ The most direct Windows GUI test command is:
 pwsh.exe -ExecutionPolicy Bypass -File .\run_qemu.ps1 target\x86_64-unknown-none\debug\bootimage-OpenRhiza.bin
 ```
 
+Optional filesystem harness build:
+
+```powershell
+python .\tools\build_fs_harness.py --source .\.fslab\ext4.img --fs ext4 --output .\fs_harness.img
+```
+
 ## Current QEMU Layout
 
 The current QEMU flow attaches:
@@ -111,6 +117,13 @@ The FAT driver disk is not just a payload cache now. It is also the seed capabil
 - fixed skill slots `SK000.WAS` through `SK005.WAS`
 - local capability cache text files
 - boot autorun input
+
+If `fs_harness.img` exists at the repo root, QEMU also attaches it as an optional secondary-slave raw harness disk for sandbox filesystem testing.
+
+Inside OpenRhiza, the current developer-facing harness commands are:
+
+- `/fs-harness-status`
+- `/fs-harness-probe`
 
 ## Current Visible Runtime
 
@@ -185,6 +198,7 @@ Confirm that:
 - `SKCOMP.WAS`
 - `SKREG.WAS`
 - `SKMUT.WAS`
+- `SKFSP.WAS`
 
 are updated under `rhiza_drivers/`.
 

@@ -12,13 +12,14 @@ const SKILL_SLOT_TEXT: [&str; 8] = [
     "SK006.WAS",
     "SK007.WAS",
 ];
-const SEED_SKILL_MAP: [(&str, &str); 6] = [
+const SEED_SKILL_MAP: [(&str, &str); 7] = [
     ("skill_display_console_mode_v1", "SK000.WAS"),
     ("skill_gui_session_bootstrap_v1", "SK001.WAS"),
     ("skill_display_framebuffer_mode_v1", "SK002.WAS"),
     ("skill_gui_compositor_seed_v1", "SK003.WAS"),
     ("skill_registry_lookup_v1", "SK004.WAS"),
     ("skill_gui_scene_mutator_v1", "SK005.WAS"),
+    ("skill_fs_image_probe_v1", "SK006.WAS"),
 ];
 
 #[derive(Clone, Debug)]

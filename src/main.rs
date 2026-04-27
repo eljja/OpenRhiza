@@ -27,6 +27,7 @@ pub mod allocator;
 pub mod net;
 pub mod vga;
 pub mod storage;
+pub mod storage_host;
 pub mod https;
 pub mod dns;
 pub mod display;

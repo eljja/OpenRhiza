@@ -288,7 +288,7 @@ fn handle_cli_command(command: &str) {
 
     if let Some(local_command) = command.strip_prefix('/') {
         match local_command {
-            "help" => crate::result_println!("[CLI] Local commands: /help, /clear, /status, /display-status, /gui-scene, /gui-mutations, /gui-session <openrhiza|sandbox|wide|recovery>, /gui-focus <conversation|composer|none>, /gui-scroll <up|down|bottom> [count], /gui-compose-demo, /gui-label <handle> <text>, /gui-style <handle> <style>, /gui-bounds <handle> <x> <y> <width> <height>, /gui-interaction <handle> <idle|hovered|focused|active|disabled>, /gui-reset <handle|all>, /nexus-fetch, /api-register, /api-register-http, /http-health, /https-health, /https-root, /api-hw, /api-driver, /api-software, /api-skill, /api-workflow, /api-policy, /api-eval, /api-all, /gemini-test, /gemini-gui-test, /driver-map, /driver-runtime-status, /driver-promote <match_key>, /skill-cache, /skill-download <skill_id>, /skill-load <skill_id>, /skill-run <skill_id>, /skill-unload <skill_id>, /skill-activate <skill_id>, /driver-generate <match_key>, /driver-upload <match_key>, /driver-download <driver_id> [match_key], /driver-comment <driver_id> <text>, /driver-vote <driver_id> up|down, /driver-bindings, /driver-activate <match_key> <driver_id>, /driver-rollback <match_key>, /sandbox-mouse-load, /sandbox-keyboard-load, /input-routing-status, /input-activate <keyboard|mouse>, /input-rollback <keyboard|mouse>"),
+            "help" => crate::result_println!("[CLI] Local commands: /help, /clear, /status, /display-status, /gui-scene, /gui-mutations, /gui-session <openrhiza|sandbox|wide|recovery>, /gui-focus <conversation|composer|none>, /gui-scroll <up|down|bottom> [count], /gui-compose-demo, /gui-label <handle> <text>, /gui-style <handle> <style>, /gui-bounds <handle> <x> <y> <width> <height>, /gui-interaction <handle> <idle|hovered|focused|active|disabled>, /gui-reset <handle|all>, /fs-harness-status, /fs-harness-probe, /nexus-fetch, /api-register, /api-register-http, /http-health, /https-health, /https-root, /api-hw, /api-driver, /api-software, /api-skill, /api-workflow, /api-policy, /api-eval, /api-all, /gemini-test, /gemini-gui-test, /driver-map, /driver-runtime-status, /driver-promote <match_key>, /skill-cache, /skill-download <skill_id>, /skill-load <skill_id>, /skill-run <skill_id>, /skill-unload <skill_id>, /skill-activate <skill_id>, /driver-generate <match_key>, /driver-upload <match_key>, /driver-download <driver_id> [match_key], /driver-comment <driver_id> <text>, /driver-vote <driver_id> up|down, /driver-bindings, /driver-activate <match_key> <driver_id>, /driver-rollback <match_key>, /sandbox-mouse-load, /sandbox-keyboard-load, /input-routing-status, /input-activate <keyboard|mouse>, /input-rollback <keyboard|mouse>"),
             "clear" => WRITER.lock().clear_log_area(),
             "status" => {
                 crate::result_println!("[CLI] Keyboard input ready.");
@@ -296,6 +296,8 @@ fn handle_cli_command(command: &str) {
                 crate::result_println!("[CLI] Plain text without '/' is sent to Gemini.");
             }
             "display-status" => show_display_status(),
+            "fs-harness-status" => show_fs_harness_status(),
+            "fs-harness-probe" => run_fs_harness_probe(),
             "gui-scene" => show_gui_scene(),
             "gui-mutations" => show_gui_mutations(),
             _ if local_command.starts_with("gui-session ") => {
@@ -695,6 +697,25 @@ fn show_skill_cache() {
 fn show_display_status() {
     for line in crate::display::status_block().lines() {
         crate::result_println!("{}", line);
+    }
+}
+
+fn show_fs_harness_status() {
+    crate::result_println!("{}", crate::storage_host::status_block());
+}
+
+fn run_fs_harness_probe() {
+    crate::result_println!("{}", crate::storage_host::probe_report());
+    match crate::skill_runtime::queue_load("skill_fs_image_probe_v1") {
+        Ok(fat_name) => crate::result_println!(
+            "[Storage Host] Queued filesystem harness probe skill from {}",
+            fat_name
+        ),
+        Err(error) => crate::result_println!("[Storage Host] {}", error),
+    }
+    match crate::skill_runtime::queue_run("skill_fs_image_probe_v1") {
+        Ok(()) => crate::result_println!("[Storage Host] Queued filesystem harness probe skill run."),
+        Err(error) => crate::result_println!("[Storage Host] {}", error),
     }
 }
 

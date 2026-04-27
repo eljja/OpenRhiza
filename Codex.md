@@ -32,6 +32,9 @@ When there is a conflict, prefer these files in this order:
 7. [BUILD_AND_TEST.md](D:/python/github/OpenRhiza/OpenRhiza/BUILD_AND_TEST.md)
 8. [PROGRAM_COMPATIBILITY_GOALS.md](D:/python/github/OpenRhiza/OpenRhiza/PROGRAM_COMPATIBILITY_GOALS.md)
 9. [SEMANTIC_GRAPH_LAYER.md](D:/python/github/OpenRhiza/OpenRhiza/SEMANTIC_GRAPH_LAYER.md)
+10. [STORAGE_HOST_ABI.md](D:/python/github/OpenRhiza/OpenRhiza/STORAGE_HOST_ABI.md)
+11. [SKILL_FS_BRIDGE.md](D:/python/github/OpenRhiza/OpenRhiza/SKILL_FS_BRIDGE.md)
+12. [STORAGE_IMAGE_HARNESS.md](D:/python/github/OpenRhiza/OpenRhiza/STORAGE_IMAGE_HARNESS.md)
 
 Historical Gemini files should not override these.
 
@@ -71,6 +74,8 @@ As of late April 2026, Codex-side work has already pushed OpenRhiza through thes
   - `SK003.WAS` -> GUI compositor seed
   - `SK004.WAS` -> registry lookup
   - `SK005.WAS` -> GUI scene mutator
+  - `SK006.WAS` -> filesystem image probe bootstrap
+- optional `fs_harness.img` secondary-slave raw disk path for sandbox filesystem validation
 - FAT read path adjusted so fixed-slot artifacts can be found more reliably
 - padded Wasm slots trimmed back to real module length before parsing
 - boot autorun stabilized enough to reach the GUI bootstrap path again
@@ -112,10 +117,29 @@ These are the main live follow-up items:
 
 1. Multi-capability Wasm/runtime ownership cleanup
 2. Storage write path
-3. TLS path integration into the active Nexus fetch path
-4. Stronger capability promotion/evaluation/report loop
-5. Program compatibility through sandboxed compatibility skills rather than core expansion
-6. Sidecar semantic graph layer over managed filesystems so the OS can query structured file knowledge before raw scans
+3. Optional image-backed storage harness -> sandbox filesystem bridge -> real file operations progression
+4. TLS path integration into the active Nexus fetch path
+5. Stronger capability promotion/evaluation/report loop
+6. Program compatibility through sandboxed compatibility skills rather than core expansion
+7. Sidecar semantic graph layer over managed filesystems so the OS can query structured file knowledge before raw scans
+
+## 3.1 Filesystem Bridge Milestone
+
+Current storage/filesystem progress now includes:
+
+- external validation lab for FAT32, exFAT, NTFS, ext2, ext3, ext4
+- `STORAGE_HOST_ABI.md`
+- `SKILL_FS_BRIDGE.md`
+- `STORAGE_IMAGE_HARNESS.md`
+- optional in-OS `fs_harness.img`
+- `skill_fs_image_probe_v1`
+
+The current in-OS milestone is not full mount/file APIs yet.
+It is:
+
+- raw block exposure from core
+- sandbox filesystem family detection
+- bounded scratch write/read/restore validation
 
 ## 5. Current Known Important Caveats
 

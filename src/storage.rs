@@ -3,65 +3,156 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use crate::arch::x86_64::port::{read_port_u8, read_port_u16, write_port_u8, write_port_u16};
 
-// Simple polling ATA PIO mode driver for Secondary Master (Port 0x170)
-pub fn read_sector_ata_secondary(lba: u32, buffer: &mut [u8; 512]) {
-    let port_base = 0x170; // Secondary IDE Bus
-    
-    // Select drive and LBA mode
-    write_port_u8(port_base + 6, 0xE0 | ((lba >> 24) & 0x0F) as u8);
-    write_port_u8(port_base + 2, 1); // Sector Count: 1
-    write_port_u8(port_base + 3, (lba & 0xFF) as u8); // LBA Low
-    write_port_u8(port_base + 4, ((lba >> 8) & 0xFF) as u8); // LBA Mid
-    write_port_u8(port_base + 5, ((lba >> 16) & 0xFF) as u8); // LBA High
-    write_port_u8(port_base + 7, 0x20); // Command: Read Sector with Retry
-
-    // Poll for ready (BSY cleared and DRQ set)
-    for _ in 0..10_000 {
-        let status = read_port_u8(port_base + 7);
-        if (status & 0x80) == 0 && (status & 0x08) != 0 {
-            break;
-        }
-    }
-
-    // Read 256 words = 512 bytes
-    for i in 0..256 {
-        let word = read_port_u16(port_base + 0);
-        buffer[i * 2] = (word & 0xFF) as u8;
-        buffer[i * 2 + 1] = (word >> 8) as u8;
-    }
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SecondaryAtaDevice {
+    Master,
+    Slave,
 }
 
-pub fn write_sector_ata_secondary(lba: u32, buffer: &[u8; 512]) -> bool {
-    let port_base = 0x170; // Secondary IDE Bus
+#[derive(Clone, Copy, Debug)]
+pub struct AtaIdentifyInfo {
+    pub sector_count: u32,
+}
 
-    write_port_u8(port_base + 6, 0xE0 | ((lba >> 24) & 0x0F) as u8);
-    write_port_u8(port_base + 2, 1);
-    write_port_u8(port_base + 3, (lba & 0xFF) as u8);
-    write_port_u8(port_base + 4, ((lba >> 8) & 0xFF) as u8);
-    write_port_u8(port_base + 5, ((lba >> 16) & 0xFF) as u8);
-    write_port_u8(port_base + 7, 0x30); // Write Sector
+fn secondary_drive_head(device: SecondaryAtaDevice, lba: u32) -> u8 {
+    let drive_bit = match device {
+        SecondaryAtaDevice::Master => 0x00,
+        SecondaryAtaDevice::Slave => 0x10,
+    };
+    0xE0 | drive_bit | ((lba >> 24) & 0x0F) as u8
+}
 
+fn wait_secondary_ready(port_base: u16) -> bool {
     for _ in 0..10_000 {
         let status = read_port_u8(port_base + 7);
         if (status & 0x80) == 0 && (status & 0x08) != 0 {
-            break;
+            return true;
         }
     }
+    false
+}
 
-    for i in 0..256 {
-        let lo = buffer[i * 2] as u16;
-        let hi = (buffer[i * 2 + 1] as u16) << 8;
-        write_port_u16(port_base + 0, lo | hi);
-    }
-
+fn wait_secondary_idle(port_base: u16) -> bool {
     for _ in 0..10_000 {
         let status = read_port_u8(port_base + 7);
         if (status & 0x80) == 0 {
             return (status & 0x01) == 0;
         }
     }
-
     false
+}
+
+pub fn read_sector_ata_secondary_device(
+    device: SecondaryAtaDevice,
+    lba: u32,
+    buffer: &mut [u8; 512],
+) {
+    let port_base = 0x170; // Secondary IDE Bus
+
+    write_port_u8(port_base + 6, secondary_drive_head(device, lba));
+    write_port_u8(port_base + 2, 1); // Sector Count: 1
+    write_port_u8(port_base + 3, (lba & 0xFF) as u8); // LBA Low
+    write_port_u8(port_base + 4, ((lba >> 8) & 0xFF) as u8); // LBA Mid
+    write_port_u8(port_base + 5, ((lba >> 16) & 0xFF) as u8); // LBA High
+    write_port_u8(port_base + 7, 0x20); // Command: Read Sector with Retry
+
+    let _ = wait_secondary_ready(port_base);
+
+    for i in 0..256 {
+        let word = read_port_u16(port_base);
+        buffer[i * 2] = (word & 0xFF) as u8;
+        buffer[i * 2 + 1] = (word >> 8) as u8;
+    }
+}
+
+// Simple polling ATA PIO mode driver for Secondary Master (Port 0x170)
+pub fn read_sector_ata_secondary(lba: u32, buffer: &mut [u8; 512]) {
+    read_sector_ata_secondary_device(SecondaryAtaDevice::Master, lba, buffer);
+}
+
+pub fn write_sector_ata_secondary_device(
+    device: SecondaryAtaDevice,
+    lba: u32,
+    buffer: &[u8; 512],
+) -> bool {
+    let port_base = 0x170; // Secondary IDE Bus
+
+    write_port_u8(port_base + 6, secondary_drive_head(device, lba));
+    write_port_u8(port_base + 2, 1);
+    write_port_u8(port_base + 3, (lba & 0xFF) as u8);
+    write_port_u8(port_base + 4, ((lba >> 8) & 0xFF) as u8);
+    write_port_u8(port_base + 5, ((lba >> 16) & 0xFF) as u8);
+    write_port_u8(port_base + 7, 0x30); // Write Sector
+
+    let _ = wait_secondary_ready(port_base);
+
+    for i in 0..256 {
+        let lo = buffer[i * 2] as u16;
+        let hi = (buffer[i * 2 + 1] as u16) << 8;
+        write_port_u16(port_base, lo | hi);
+    }
+
+    wait_secondary_idle(port_base)
+}
+
+pub fn write_sector_ata_secondary(lba: u32, buffer: &[u8; 512]) -> bool {
+    write_sector_ata_secondary_device(SecondaryAtaDevice::Master, lba, buffer)
+}
+
+pub fn flush_secondary_ata_device(device: SecondaryAtaDevice) -> bool {
+    let port_base = 0x170; // Secondary IDE Bus
+    write_port_u8(port_base + 6, secondary_drive_head(device, 0));
+    write_port_u8(port_base + 7, 0xE7); // CACHE FLUSH
+    wait_secondary_idle(port_base)
+}
+
+pub fn identify_secondary_ata_device(device: SecondaryAtaDevice) -> Option<AtaIdentifyInfo> {
+    let port_base = 0x170; // Secondary IDE Bus
+    write_port_u8(port_base + 6, secondary_drive_head(device, 0));
+    write_port_u8(port_base + 2, 0);
+    write_port_u8(port_base + 3, 0);
+    write_port_u8(port_base + 4, 0);
+    write_port_u8(port_base + 5, 0);
+    write_port_u8(port_base + 7, 0xEC); // IDENTIFY DEVICE
+
+    let initial_status = read_port_u8(port_base + 7);
+    if initial_status == 0 {
+        return None;
+    }
+
+    for _ in 0..10_000 {
+        let status = read_port_u8(port_base + 7);
+        let lba_mid = read_port_u8(port_base + 4);
+        let lba_high = read_port_u8(port_base + 5);
+        if lba_mid != 0 || lba_high != 0 {
+            return None;
+        }
+        if (status & 0x01) != 0 {
+            return None;
+        }
+        if (status & 0x80) == 0 && (status & 0x08) != 0 {
+            break;
+        }
+    }
+
+    let mut words = [0u16; 256];
+    for word in &mut words {
+        *word = read_port_u16(port_base);
+    }
+
+    let lba28_count = (words[60] as u32) | ((words[61] as u32) << 16);
+    let lba48_low32 = (words[100] as u32) | ((words[101] as u32) << 16);
+    let sector_count = if lba48_low32 != 0 {
+        lba48_low32
+    } else {
+        lba28_count
+    };
+
+    if sector_count == 0 {
+        None
+    } else {
+        Some(AtaIdentifyInfo { sector_count })
+    }
 }
 
 #[derive(Clone, Copy, Debug)]

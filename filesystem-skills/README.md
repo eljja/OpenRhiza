@@ -7,6 +7,7 @@ They are design and implementation objects for the next storage compatibility ph
 
 Current objects:
 
+- `skill_fs_image_probe_v1.md`
 - `skill_fs_fat32_bridge_v1.md`
 - `skill_fs_exfat_bridge_v1.md`
 - `skill_fs_ntfs_bridge_v1.md`
@@ -32,3 +33,9 @@ That tool currently validates:
 - remount persistence
 
 without changing the active OpenRhiza GUI/runtime behavior.
+
+In addition, the repo now contains the first internal OpenRhiza-side bridge bootstrap:
+
+- [D:\python\github\OpenRhiza\OpenRhiza\filesystem-skills\skill_fs_image_probe_v1.md](D:\python\github\OpenRhiza\OpenRhiza\filesystem-skills\skill_fs_image_probe_v1.md)
+
+That skill uses the bounded storage host ABI and the optional image-backed harness disk to probe filesystem signatures and validate scratch-region block writes from inside OpenRhiza itself.

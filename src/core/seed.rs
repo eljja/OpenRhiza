@@ -356,6 +356,98 @@ impl OpenRhizaSeed {
         )
         .map_err(|_| String::from("Failed to link os_gui_set_object_label"))?;
 
+        linker.func_wrap("env", "os_storage_list_images", |_caller: Caller<'_, ()>| -> u32 {
+            crate::storage_host::list_images()
+        }).map_err(|_| String::from("Failed to link os_storage_list_images"))?;
+
+        linker.func_wrap("env", "os_storage_open_image", |_caller: Caller<'_, ()>, index: u32| -> u32 {
+            crate::storage_host::open_image(index)
+        }).map_err(|_| String::from("Failed to link os_storage_open_image"))?;
+
+        linker.func_wrap("env", "os_storage_get_block_count", |_caller: Caller<'_, ()>, handle: u32| -> u32 {
+            crate::storage_host::block_count(handle)
+        }).map_err(|_| String::from("Failed to link os_storage_get_block_count"))?;
+
+        linker.func_wrap("env", "os_storage_get_filesystem_block_count", |_caller: Caller<'_, ()>, handle: u32| -> u32 {
+            crate::storage_host::filesystem_block_count(handle)
+        }).map_err(|_| String::from("Failed to link os_storage_get_filesystem_block_count"))?;
+
+        linker.func_wrap("env", "os_storage_get_scratch_start_lba", |_caller: Caller<'_, ()>, handle: u32| -> u32 {
+            crate::storage_host::scratch_start_lba(handle)
+        }).map_err(|_| String::from("Failed to link os_storage_get_scratch_start_lba"))?;
+
+        linker.func_wrap("env", "os_storage_get_scratch_block_count", |_caller: Caller<'_, ()>, handle: u32| -> u32 {
+            crate::storage_host::scratch_block_count(handle)
+        }).map_err(|_| String::from("Failed to link os_storage_get_scratch_block_count"))?;
+
+        linker.func_wrap("env", "os_storage_is_writable", |_caller: Caller<'_, ()>, handle: u32| -> u32 {
+            crate::storage_host::writable(handle) as u32
+        }).map_err(|_| String::from("Failed to link os_storage_is_writable"))?;
+
+        linker.func_wrap("env", "os_storage_get_fs_hint", |_caller: Caller<'_, ()>, handle: u32| -> u32 {
+            crate::storage_host::fs_hint_code(handle)
+        }).map_err(|_| String::from("Failed to link os_storage_get_fs_hint"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_storage_read_blocks",
+            |mut caller: Caller<'_, ()>, handle: u32, lba: u32, count: u32, ptr: u32, max_len: u32| -> u32 {
+                let total_bytes = count.saturating_mul(crate::storage_host::STORAGE_BLOCK_SIZE);
+                if total_bytes == 0 || max_len < total_bytes {
+                    return 0;
+                }
+
+                let mut bytes = alloc::vec![0u8; total_bytes as usize];
+                if crate::storage_host::read_blocks(handle, lba, count, &mut bytes).is_err() {
+                    return 0;
+                }
+
+                let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) else {
+                    return 0;
+                };
+
+                if memory.write(&mut caller, ptr as usize, &bytes).is_ok() {
+                    total_bytes
+                } else {
+                    0
+                }
+            },
+        ).map_err(|_| String::from("Failed to link os_storage_read_blocks"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_storage_write_blocks",
+            |caller: Caller<'_, ()>, handle: u32, lba: u32, count: u32, ptr: u32, len: u32| -> u32 {
+                let total_bytes = count.saturating_mul(crate::storage_host::STORAGE_BLOCK_SIZE);
+                if total_bytes == 0 || len < total_bytes {
+                    return 0;
+                }
+
+                let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) else {
+                    return 0;
+                };
+
+                let mut bytes = alloc::vec![0u8; total_bytes as usize];
+                if memory.read(&caller, ptr as usize, &mut bytes).is_err() {
+                    return 0;
+                }
+
+                if crate::storage_host::write_blocks(handle, lba, count, &bytes).is_ok() {
+                    1
+                } else {
+                    0
+                }
+            },
+        ).map_err(|_| String::from("Failed to link os_storage_write_blocks"))?;
+
+        linker.func_wrap("env", "os_storage_flush_image", |_caller: Caller<'_, ()>, handle: u32| -> u32 {
+            if crate::storage_host::flush_image(handle).is_ok() {
+                1
+            } else {
+                0
+            }
+        }).map_err(|_| String::from("Failed to link os_storage_flush_image"))?;
+
         let instance = linker.instantiate(&mut store, &module)
             .map_err(|e| format!("Instantiate failed: {}", e))?
             .start(&mut store)
