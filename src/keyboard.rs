@@ -81,13 +81,17 @@ impl KeyboardState {
 
         // --- Modifier keys (both make and break) ---
         match (extended, make_code) {
-            // Left Shift (0x2A), Right Shift (0x36)
-            (false, 0x2A) => {
+            // Left Shift (0x2A), Right Shift (0x36).
+            //
+            // Some virtualized input backends emit E0-prefixed synthetic shift
+            // transitions around translated keys. Treat those as real modifier
+            // state changes so Shift+/ remains reliable across QEMU backends.
+            (_, 0x2A) => {
                 self.left_shift_pressed = !is_break;
                 self.shift_pressed = self.left_shift_pressed || self.right_shift_pressed;
                 return if is_break { None } else { Some(KeyEvent::ModifierOnly) };
             }
-            (false, 0x36) => {
+            (_, 0x36) => {
                 self.right_shift_pressed = !is_break;
                 self.shift_pressed = self.left_shift_pressed || self.right_shift_pressed;
                 return if is_break { None } else { Some(KeyEvent::ModifierOnly) };

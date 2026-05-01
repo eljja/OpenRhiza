@@ -50,11 +50,12 @@ This file tracks the current state of the repository after the May 1, 2026 runti
 
 - Location: `src/arch/x86_64/usb.rs`, `run_qemu.ps1`
 - Current state:
-  - left Shift is observed and decoded correctly
-  - right Shift is not consistently delivered to the guest as a distinct HID modifier in the current Windows plus QEMU setup
-  - recent serial captures showed plain `a` input without the expected right-Shift modifier byte
+  - guest-side decoder self-test passes for `0x36/0xB6` right Shift and `Shift+/ -> ?`
+  - guest-side decoder also accepts E0-prefixed synthetic Shift transitions as a QEMU-backend compatibility fallback
+  - QEMU monitor synthetic left Shift emits `0x2A 0x35 ... 0xAA` and decodes `Shift+/` as `?`
+  - physical right Shift is still not consistently delivered to the guest as a distinct modifier in the current Windows plus QEMU setup
 - Impact: uppercase and symbol entry through the right Shift key is unreliable during interactive VGA CLI testing
-- Suggested fix: continue investigating the QEMU input backend and compare raw HID reports across Windows host paths
+- Suggested fix: use `/keyboard-debug on` to capture decoded guest events, compare GTK vs SDL display backends, and keep PS/2 vs USB transport separated during tests
 
 ### KI-006: USB numpad translation is incomplete in the current Windows QEMU USB keyboard path
 

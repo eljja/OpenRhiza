@@ -1,5 +1,5 @@
 use alloc::sync::Arc;
-use core::sync::atomic::AtomicBool;
+use core::sync::atomic::{AtomicBool, Ordering};
 use core::task::Waker;
 use core::{
     pin::Pin,
@@ -18,6 +18,7 @@ lazy_static! {
 }
 
 pub static KEYMAP_OVERRIDE_ACTIVE: AtomicBool = AtomicBool::new(false);
+pub static KEYBOARD_DEBUG_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 pub fn add_scancode(scancode: u8) {
     if let Ok(_) = SCANCODE_QUEUE.push(scancode) {
@@ -79,7 +80,7 @@ pub async fn keyboard_task() {
             scancode_log_count = 0;
         }
 
-        if KEYMAP_OVERRIDE_ACTIVE.load(core::sync::atomic::Ordering::Relaxed) {
+        if KEYMAP_OVERRIDE_ACTIVE.load(Ordering::Relaxed) {
             if scancode == 0xE0 {
                 is_extended = true;
                 continue;
@@ -106,7 +107,7 @@ pub async fn keyboard_task() {
             }
 
             match (is_extended, real_scancode) {
-                (false, 0x2A) | (false, 0x36) => {
+                (_, 0x2A) | (_, 0x36) => {
                     shift_pressed = !is_break;
                     is_extended = false;
                     continue;
@@ -128,7 +129,23 @@ pub async fn keyboard_task() {
             continue;
         }
 
-        if let Some(event) = keyboard.process_scancode(scancode) {
+        let event = keyboard.process_scancode(scancode);
+        if KEYBOARD_DEBUG_ACTIVE.load(Ordering::Relaxed) {
+            crate::serial_println!(
+                "[Keyboard Debug] sc={:#04X} event={:?} shift={} lshift={} rshift={} ctrl={} alt={} num={} caps={}",
+                scancode,
+                event,
+                keyboard.shift_pressed as u8,
+                keyboard.left_shift_pressed as u8,
+                keyboard.right_shift_pressed as u8,
+                keyboard.ctrl_pressed as u8,
+                keyboard.alt_pressed as u8,
+                keyboard.num_lock as u8,
+                keyboard.caps_lock as u8
+            );
+        }
+
+        if let Some(event) = event {
             match event {
                 crate::keyboard::KeyEvent::Char(byte) => handle_key_char(byte, &mut hangul),
                 crate::keyboard::KeyEvent::Enter => {
@@ -288,12 +305,17 @@ fn handle_cli_command(command: &str) {
 
     if let Some(local_command) = command.strip_prefix('/') {
         match local_command {
-            "help" => crate::result_println!("[CLI] Local commands: /help, /clear, /status, /scheduler-status, /smp-status, /wasm-status, /semantic-status, /registry-context, /autonomy-status, /autonomy-mode <off|assist|council>, /autonomy-interval <minutes>, /autonomy-run-now, /display-status, /gui-scene, /gui-mutations, /gui-session <openrhiza|sandbox|wide|recovery>, /gui-focus <conversation|composer|none>, /gui-scroll <up|down|bottom> [count], /gui-compose-demo, /gui-label <handle> <text>, /gui-style <handle> <style>, /gui-bounds <handle> <x> <y> <width> <height>, /gui-interaction <handle> <idle|hovered|focused|active|disabled>, /gui-reset <handle|all>, /fs-harness-status, /fs-harness-probe, /fs-bridge-status, /driver-host-status, /nexus-fetch, /api-register, /api-register-http, /http-health, /https-health, /https-root, /api-hw, /api-driver, /api-software, /api-skill, /api-workflow, /api-policy, /api-eval, /api-all, /gemini-test, /gemini-gui-test, /driver-map, /driver-runtime-status, /driver-promote <match_key>, /skill-cache, /skill-download <skill_id>, /skill-load <skill_id>, /skill-run <skill_id>, /skill-unload <skill_id>, /skill-activate <skill_id>, /driver-generate <match_key>, /driver-upload <match_key>, /driver-download <driver_id> [match_key], /driver-comment <driver_id> <text>, /driver-vote <driver_id> up|down, /driver-bindings, /driver-activate <match_key> <driver_id>, /driver-rollback <match_key>, /sandbox-mouse-load, /sandbox-keyboard-load, /input-routing-status, /input-activate <keyboard|mouse>, /input-rollback <keyboard|mouse>"),
+            "help" => crate::result_println!("[CLI] Local commands: /help, /clear, /status, /keyboard-debug <on|off>, /keyboard-selftest, /scheduler-status, /smp-status, /wasm-status, /semantic-status, /registry-context, /autonomy-status, /autonomy-mode <off|assist|council>, /autonomy-interval <minutes>, /autonomy-run-now, /display-status, /gui-scene, /gui-mutations, /gui-session <openrhiza|sandbox|wide|recovery>, /gui-focus <conversation|composer|none>, /gui-scroll <up|down|bottom> [count], /gui-compose-demo, /gui-label <handle> <text>, /gui-style <handle> <style>, /gui-bounds <handle> <x> <y> <width> <height>, /gui-interaction <handle> <idle|hovered|focused|active|disabled>, /gui-reset <handle|all>, /fs-harness-status, /fs-harness-probe, /fs-bridge-status, /driver-host-status, /nexus-fetch, /api-register, /api-register-http, /http-health, /https-health, /https-root, /api-hw, /api-driver, /api-software, /api-skill, /api-workflow, /api-policy, /api-eval, /api-all, /gemini-test, /gemini-gui-test, /driver-map, /driver-runtime-status, /driver-promote <match_key>, /skill-cache, /skill-download <skill_id>, /skill-load <skill_id>, /skill-run <skill_id>, /skill-unload <skill_id>, /skill-activate <skill_id>, /driver-generate <match_key>, /driver-upload <match_key>, /driver-download <driver_id> [match_key], /driver-comment <driver_id> <text>, /driver-vote <driver_id> up|down, /driver-bindings, /driver-activate <match_key> <driver_id>, /driver-rollback <match_key>, /sandbox-mouse-load, /sandbox-keyboard-load, /input-routing-status, /input-activate <keyboard|mouse>, /input-rollback <keyboard|mouse>"),
             "clear" => WRITER.lock().clear_log_area(),
             "status" => {
                 crate::result_println!("[CLI] Keyboard input ready.");
                 crate::result_println!("[CLI] Serial debug logs remain on COM1 only.");
                 crate::result_println!("[CLI] Plain text without '/' is sent to Gemini.");
+            }
+            "keyboard-selftest" => keyboard_selftest(),
+            _ if local_command.starts_with("keyboard-debug ") => {
+                let mode = local_command["keyboard-debug ".len()..].trim();
+                set_keyboard_debug(mode);
             }
             "scheduler-status" => show_scheduler_status(),
             "smp-status" => show_smp_status(),
@@ -445,6 +467,84 @@ fn handle_cli_command(command: &str) {
 
 pub fn execute_virtual_cli_command(command: &str) {
     handle_cli_command(command);
+}
+
+fn set_keyboard_debug(mode: &str) {
+    match mode {
+        "on" => {
+            KEYBOARD_DEBUG_ACTIVE.store(true, Ordering::Relaxed);
+            crate::result_println!("[Keyboard Debug] decoded-event serial logging enabled.");
+        }
+        "off" => {
+            KEYBOARD_DEBUG_ACTIVE.store(false, Ordering::Relaxed);
+            crate::result_println!("[Keyboard Debug] decoded-event serial logging disabled.");
+        }
+        _ => crate::result_println!("[Keyboard Debug] usage: /keyboard-debug <on|off>"),
+    }
+}
+
+fn keyboard_selftest() {
+    use crate::keyboard::{KeyEvent, KeyboardState};
+
+    let mut state = KeyboardState::new();
+    let rshift_down = state.process_scancode(0x36);
+    let rshift_slash = state.process_scancode(0x35);
+    let rshift_up = state.process_scancode(0xB6);
+    let slash_plain = state.process_scancode(0x35);
+
+    let mut left_state = KeyboardState::new();
+    let lshift_down = left_state.process_scancode(0x2A);
+    let lshift_slash = left_state.process_scancode(0x35);
+    let lshift_up = left_state.process_scancode(0xAA);
+
+    let mut extended_state = KeyboardState::new();
+    let ext_prefix = extended_state.process_scancode(0xE0);
+    let ext_shift_down = extended_state.process_scancode(0x36);
+    let ext_shift_slash = extended_state.process_scancode(0x35);
+    let ext_up_prefix = extended_state.process_scancode(0xE0);
+    let ext_shift_up = extended_state.process_scancode(0xB6);
+
+    let ok = matches!(rshift_down, Some(KeyEvent::ModifierOnly))
+        && matches!(rshift_slash, Some(KeyEvent::Char(b'?')))
+        && rshift_up.is_none()
+        && matches!(slash_plain, Some(KeyEvent::Char(b'/')))
+        && matches!(lshift_down, Some(KeyEvent::ModifierOnly))
+        && matches!(lshift_slash, Some(KeyEvent::Char(b'?')))
+        && lshift_up.is_none()
+        && ext_prefix.is_none()
+        && matches!(ext_shift_down, Some(KeyEvent::ModifierOnly))
+        && matches!(ext_shift_slash, Some(KeyEvent::Char(b'?')))
+        && ext_up_prefix.is_none()
+        && ext_shift_up.is_none();
+
+    crate::result_println!(
+        "[Keyboard Selftest] right_shift_down={:?} right_shift_slash={:?} right_shift_up={:?}",
+        rshift_down,
+        rshift_slash,
+        rshift_up
+    );
+    crate::result_println!(
+        "[Keyboard Selftest] left_shift_down={:?} left_shift_slash={:?} left_shift_up={:?}",
+        lshift_down,
+        lshift_slash,
+        lshift_up
+    );
+    crate::result_println!(
+        "[Keyboard Selftest] slash_plain={:?} result={}",
+        slash_plain,
+        if ok { "pass" } else { "fail" }
+    );
+    crate::result_println!(
+        "[Keyboard Selftest] extended_shift_down={:?} extended_shift_slash={:?} extended_shift_up={:?}",
+        ext_shift_down,
+        ext_shift_slash,
+        ext_shift_up
+    );
+    if ok {
+        crate::result_println!(
+            "[Keyboard Selftest] OS decoder accepts RShift scancode 0x36/0xB6 and Shift+/ -> '?'."
+        );
+    }
 }
 
 fn queue_api_command(command: crate::api_v1::ServiceApiCommand, label: &str) {
