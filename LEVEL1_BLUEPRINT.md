@@ -73,25 +73,34 @@ That means the practical design has shifted toward:
 - exception handling
 - Wasm sandbox
 - serial development bridge
-- VGA text output
+- recovery text output and high-resolution bootstrap GUI handoff
 - PCI enumeration
 - APIC-based interrupt setup
 - async executor
 - native xHCI keyboard path
+- native USB mouse path
 - Ed25519 trust anchor for Nexus payloads
+- native `e1000` network path into `smoltcp`
+- in-repo TLS 1.3 API client path
+- multiple named Wasm modules with bounded polling
+- fixed-slot FAT16 cache reads and verified writes
 
-### Implemented but not yet fully promoted into the live runtime
+### Implemented but still bootstrap-grade
 
-- native `e1000`
-- in-repo TLS 1.3 client
 - software crypto stack
+- sandbox input driver handoff
+- GUI scene object mutation imports
+- autonomy mode and council prompt flow
+- SMP discovery and heartbeat stubs
 
 ### Still missing or partial
 
 - DHCP and DNS
-- persistent storage writes
-- multi-driver Wasm management
-- clear production transport path
+- general writable filesystem support beyond fixed-slot FAT16 cache files
+- per-module Wasm CPU/memory quota accounting
+- production-grade certificate and hostname validation
+- full AP startup and per-core scheduling
+- stale-cycle recovery for autonomy council execution
 
 ## 5. Practical Guidance
 

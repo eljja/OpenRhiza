@@ -3,6 +3,8 @@
 > Historical note:
 > This readiness analysis is preserved for historical reference.
 > It does not override the current authoritative runtime documents.
+> Current reality has changed: the OS now has multiple named Wasm modules with bounded polling, direct TLS-backed API calls, a high-resolution bootstrap GUI, and fixed-slot FAT16 writes.
+> Gaps listed below are useful as historical risk framing, not as the present task list.
 
 ---
 
@@ -24,19 +26,20 @@
 
 ### 🔴 Critical PR-blocking Gaps (Stale Features vs Reality)
 
-#### Gap-1: Sole Wasm Driver Limit
-- **Symptom**: Only one Wasm driver operates concurrently.
-- **Impact**: Breaking the core vision declaration of "Native AI controlling diverse hardware simultaneously." Our newly separated Storage and Video Wasm drivers cannot be run alongside the NIC.
-- **Action Needed**: Introduce multi-capability driver registries onto `OpenRhizaSeed`.
+#### Historical Gap-1: Sole Wasm Driver Limit
+- **Historical Symptom**: Only one Wasm driver operated concurrently.
+- **Current Status**: Multiple named Wasm modules with bounded polling now exist, but per-module quotas, isolation metrics, and lifecycle accounting remain bootstrap-grade.
+- **Action Needed**: Harden multi-capability registries and resource accounting onto `OpenRhizaSeed`.
 
-#### Gap-2: TLS 1.3 is Offline
-- **Reality Check**: We have a full software TLS 1.3 stack in `src/tls.rs` alongside software cryptography (`src/crypto/*`). However, the live `src/https.rs` Nexus fetch path is not yet utilizing it.
-- **Action Needed**: Replace or wrap `https.rs` with the `tls.rs` client before public launch.
+#### Historical Gap-2: TLS 1.3 Was Offline
+- **Historical Reality Check**: The repository had a full software TLS 1.3 stack, but the live fetch path did not use it.
+- **Current Status**: The OpenRhiza/Gemini API path uses in-repo TLS. Production-grade certificate and hostname validation still need hardening before public release.
+- **Action Needed**: Unify all service fetches through the generic TLS/API response path.
 
-#### Gap-3: No Persistent Storage Writes (ATA/NVMe)
-- **Reality Check**: The bootloader can read the cache to find payloads, but we do not have an ATA or NVMe write path implemented in the kernel.
-- **Impact**: AI-generated responses and downloaded Wasm blobs disappear upon reboot.
-- **Action Needed**: Establish a write function to persist fetched payloads locally.
+#### Historical Gap-3: No Persistent Storage Writes (ATA/NVMe)
+- **Historical Reality Check**: The bootloader could read the cache to find payloads, but the kernel could not write them.
+- **Current Status**: ATA sector writes, verification, cache flush, and fixed-slot FAT16 file updates exist. General dynamic filesystem writes do not.
+- **Action Needed**: Move FAT32/exFAT/NTFS/ext behavior behind filesystem bridge skills and validate through image-backed harnesses.
 
 #### Gap-4: Basic Hardcoding Leftovers
 - The right-shift key is still dropping on the QEMU Windows driver path.

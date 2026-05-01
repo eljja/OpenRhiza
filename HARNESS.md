@@ -17,6 +17,8 @@ The current codebase focuses on the bootstrap layers:
 - Signed Nexus payload verification through Ed25519
 - Bootstrap framebuffer and `1920x1080` GUI handoff
 - Object-scoped GUI mutation path
+- bounded multi-module Wasm polling
+- autonomy mode substrate with user-controlled off/assist/council modes
 
 The long-term direction remains:
 
@@ -68,6 +70,7 @@ This section is intentionally about the code that exists today, not the idealize
 
 - Full software TLS 1.3 stack in `src/tls.rs`
 - Software crypto primitives for SHA-256, AES-GCM, HKDF, and P-256 ECDH
+- SMP AP startup and per-core scheduling
 
 ### Still legacy, partial, or stale
 
@@ -113,9 +116,9 @@ Recommended handoff sequence:
 
 ## 5. Current Residual Risks
 
-- Only one Wasm driver instance is stored in `OpenRhizaSeed`
-- `https.rs` is not actually performing a TLS-backed HTTPS transaction yet
-- ATA is still read-only
+- Wasm supports multiple named modules, but accounting, quotas, and health isolation are still bootstrap-grade
+- dedicated Nexus fetch still needs unification with the generic TLS/API response path
+- filesystem family logic is not yet a general in-OS mount/file API and must remain sandbox-owned
 - Right Shift does not yet behave distinctly in the current Windows QEMU USB keyboard path
 - Several modules still rely on low-level global state and raw pointers, even though the warning cleanup work is complete
 
@@ -123,20 +126,22 @@ Recommended handoff sequence:
 
 ### Priority 1
 
-- Wire the in-repo TLS client into the Nexus fetch path, or explicitly keep the current path as plain HTTP during development
+- QEMU regression test the latest scheduler/autonomy/UTF-8 stabilization pass
+- Add autonomy stale-cycle timeout recovery
+- Wire dedicated Nexus fetch into the generic TLS/API response path
 - Finish the QEMU right-Shift investigation with raw HID report comparison on Windows
 
 ### Priority 2
 
-- Support multiple Wasm driver instances or a proper driver registry
-- Add ATA write support for persistent cache storage
+- Add per-module Wasm accounting, trap tracking, and health state
+- Complete sandbox filesystem bridge smoke tests for FAT32, exFAT, NTFS, ext2, ext3, and ext4
+- Strengthen local semantic graph indexing over managed filesystem contents
 
 ### Priority 3
 
 - DHCP and DNS
 - Better documentation around native vs host-assisted driver loading
 - Cleanup of stale legacy modules
-- Continue shrinking redraw scope and remaining GUI flicker
 - Stabilize the compositor-seed follow-up stage
 
 ## 7. Code Review Checklist

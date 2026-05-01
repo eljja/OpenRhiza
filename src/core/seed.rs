@@ -1,10 +1,16 @@
 // src/core/seed.rs
 use crate::arch::x86_64::discovery::SystemIdentity;
+use alloc::vec;
 use alloc::vec::Vec;
 use alloc::string::String;
 use alloc::format;
+use lazy_static::lazy_static;
+use spin::Mutex;
 use wasmi::{Caller, Engine, Linker, Module, Store, Instance};
 use crate::input_handoff::HidDeviceKind;
+
+const INPUT_POLL_BUDGET_PER_TICK: usize = 4;
+const CAPABILITY_POLL_BUDGET_PER_TICK: usize = 4;
 
 pub enum ExecutionResult {
     Success(String),
@@ -20,12 +26,34 @@ pub struct WasmState {
 pub struct LoadedWasmModule {
     pub module_key: String,
     pub state: WasmState,
+    pub poll_count: u64,
+    pub trap_count: u64,
+    pub last_active_tick: u64,
+    pub last_error: Option<String>,
+    pub byte_len: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct WasmModuleHealth {
+    pub module_key: String,
+    pub poll_count: u64,
+    pub trap_count: u64,
+    pub last_active_tick: u64,
+    pub byte_len: usize,
+    pub loaded: bool,
+    pub last_error: Option<String>,
+}
+
+lazy_static! {
+    static ref WASM_HEALTH_SNAPSHOT: Mutex<Vec<WasmModuleHealth>> = Mutex::new(Vec::new());
 }
 
 pub struct OpenRhizaSeed {
     pub identity: SystemIdentity,
     pub log_buffer: Vec<String>,
     pub wasm_modules: Vec<LoadedWasmModule>,
+    next_network_poll_index: usize,
+    next_input_poll_index: usize,
 }
 
 impl OpenRhizaSeed {
@@ -34,6 +62,8 @@ impl OpenRhizaSeed {
             identity,
             log_buffer: Vec::new(),
             wasm_modules: Vec::new(),
+            next_network_poll_index: 0,
+            next_input_poll_index: 0,
         }
     }
 
@@ -44,7 +74,8 @@ impl OpenRhizaSeed {
     pub fn execute_named_wasm_sandbox(&mut self, module_key: &str, wasm_bytes: &[u8]) -> ExecutionResult {
         match self.instantiate_wasm(wasm_bytes) {
             Ok(state) => {
-                self.upsert_module_state(module_key, state);
+                self.upsert_module_state(module_key, state, wasm_bytes.len());
+                self.refresh_health_snapshot();
                 let msg = format!("Wasm Execution Success! sandbox module initialized. Engine running.");
                 self.log_buffer.push(msg.clone());
                 ExecutionResult::Success(msg)
@@ -52,6 +83,7 @@ impl OpenRhizaSeed {
             Err(e) => {
                 let err_msg = format!("Wasm Sandbox Trap (Panic): {}", e);
                 self.log_buffer.push(err_msg.clone());
+                self.record_module_trap(module_key, err_msg.clone());
                 ExecutionResult::Panic(err_msg)
             }
         }
@@ -62,34 +94,24 @@ impl OpenRhizaSeed {
     }
 
     fn instantiate_wasm(&mut self, wasm_bytes: &[u8]) -> Result<WasmState, String> {
+        crate::driver_host::install_identity(&self.identity);
+
         let engine = Engine::default();
         let module = Module::new(&engine, wasm_bytes).map_err(|e| format!("Failed to parse Wasm: {}", e))?;
         let mut store = Store::new(&engine, ());
         let mut linker = <Linker<()>>::new(&engine);
 
         linker.func_wrap("env", "read_mmio", |_caller: Caller<'_, ()>, addr: u32| -> u32 {
-            unsafe { 
-                let virt_addr = crate::arch::x86_64::discovery::PHYS_MEM_OFFSET + (addr as u64);
-                core::ptr::read_volatile(virt_addr as usize as *const u32) 
-            }
+            let _ = addr;
+            0
         }).map_err(|_| String::from("Failed to link read_mmio"))?;
 
         linker.func_wrap("env", "write_mmio", |_caller: Caller<'_, ()>, addr: u32, val: u32| {
-            unsafe { 
-                let virt_addr = crate::arch::x86_64::discovery::PHYS_MEM_OFFSET + (addr as u64);
-                core::ptr::write_volatile(virt_addr as usize as *mut u32, val) 
-            }
+            let _ = (addr, val);
         }).map_err(|_| String::from("Failed to link write_mmio"))?;
 
         linker.func_wrap("env", "alloc_dma_page", |_caller: Caller<'_, ()>| -> u32 {
-            unsafe {
-                let phys_addr = crate::arch::x86_64::discovery::DMA_BASE + crate::arch::x86_64::discovery::DMA_OFFSET;
-                crate::arch::x86_64::discovery::DMA_OFFSET += 4096;
-                let virt_addr = crate::arch::x86_64::discovery::PHYS_MEM_OFFSET + (phys_addr as u64);
-                core::ptr::write_bytes(virt_addr as usize as *mut u8, 0, 4096);
-                crate::println!("[OS DMA] Allocated 4KB physical page at {:#010X} for AI Wasm", phys_addr);
-                phys_addr
-            }
+            0
         }).map_err(|_| String::from("Failed to link alloc_dma_page"))?;
 
         linker.func_wrap("env", "os_rx_packet", |caller: Caller<'_, ()>, ptr: u32, len: u32| {
@@ -218,6 +240,261 @@ impl OpenRhizaSeed {
                 crate::result_println!("{}", text.trim_end_matches('\n'));
             }
         }).map_err(|_| String::from("Failed to link os_log"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_driver_activate_binding",
+            |caller: Caller<'_, ()>, key_ptr: u32, key_len: u32, id_ptr: u32, id_len: u32| -> u32 {
+                let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) else {
+                    return 0;
+                };
+
+                let mut key_bytes = alloc::vec![0u8; key_len.min(96) as usize];
+                let mut id_bytes = alloc::vec![0u8; id_len.min(96) as usize];
+                if memory.read(&caller, key_ptr as usize, &mut key_bytes).is_err() {
+                    return 0;
+                }
+                if memory.read(&caller, id_ptr as usize, &mut id_bytes).is_err() {
+                    return 0;
+                }
+
+                let Ok(match_key) = core::str::from_utf8(&key_bytes) else {
+                    return 0;
+                };
+                let Ok(driver_id) = core::str::from_utf8(&id_bytes) else {
+                    return 0;
+                };
+                if match_key.trim().is_empty() || driver_id.trim().is_empty() {
+                    return 0;
+                }
+
+                crate::driver_runtime::activate_binding(
+                    match_key.trim(),
+                    driver_id.trim(),
+                    "sandbox-driver-skill",
+                );
+                1
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_driver_activate_binding"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_driver_claim_device",
+            |caller: Caller<'_, ()>,
+             key_ptr: u32,
+             key_len: u32,
+             id_ptr: u32,
+             id_len: u32,
+             _caps: u32|
+             -> u32 {
+                let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) else {
+                    return 0;
+                };
+
+                let mut key_bytes = alloc::vec![0u8; key_len.min(96) as usize];
+                let mut id_bytes = alloc::vec![0u8; id_len.min(96) as usize];
+                if memory.read(&caller, key_ptr as usize, &mut key_bytes).is_err() {
+                    return 0;
+                }
+                if memory.read(&caller, id_ptr as usize, &mut id_bytes).is_err() {
+                    return 0;
+                }
+
+                let Ok(match_key) = core::str::from_utf8(&key_bytes) else {
+                    return 0;
+                };
+                let Ok(driver_id) = core::str::from_utf8(&id_bytes) else {
+                    return 0;
+                };
+
+                crate::driver_host::claim_device(match_key.trim(), driver_id.trim())
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_driver_claim_device"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_driver_mmio_read32",
+            |_caller: Caller<'_, ()>, handle: u32, offset: u32| -> u32 {
+                crate::driver_host::mmio_read32(handle, offset)
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_driver_mmio_read32"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_driver_mmio_write32",
+            |_caller: Caller<'_, ()>, handle: u32, offset: u32, value: u32| -> u32 {
+                crate::driver_host::mmio_write32(handle, offset, value)
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_driver_mmio_write32"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_driver_pio_read8",
+            |_caller: Caller<'_, ()>, handle: u32, offset: u32| -> u32 {
+                crate::driver_host::pio_read8(handle, offset)
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_driver_pio_read8"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_driver_pio_read16",
+            |_caller: Caller<'_, ()>, handle: u32, offset: u32| -> u32 {
+                crate::driver_host::pio_read16(handle, offset)
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_driver_pio_read16"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_driver_pio_read32",
+            |_caller: Caller<'_, ()>, handle: u32, offset: u32| -> u32 {
+                crate::driver_host::pio_read32(handle, offset)
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_driver_pio_read32"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_driver_pio_write8",
+            |_caller: Caller<'_, ()>, handle: u32, offset: u32, value: u32| -> u32 {
+                crate::driver_host::pio_write8(handle, offset, value)
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_driver_pio_write8"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_driver_pio_write16",
+            |_caller: Caller<'_, ()>, handle: u32, offset: u32, value: u32| -> u32 {
+                crate::driver_host::pio_write16(handle, offset, value)
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_driver_pio_write16"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_driver_pio_write32",
+            |_caller: Caller<'_, ()>, handle: u32, offset: u32, value: u32| -> u32 {
+                crate::driver_host::pio_write32(handle, offset, value)
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_driver_pio_write32"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_driver_pci_config_read32",
+            |_caller: Caller<'_, ()>, handle: u32, offset: u32| -> u32 {
+                crate::driver_host::pci_config_read32(handle, offset)
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_driver_pci_config_read32"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_driver_pci_config_write32",
+            |_caller: Caller<'_, ()>, handle: u32, offset: u32, value: u32| -> u32 {
+                crate::driver_host::pci_config_write32(handle, offset, value)
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_driver_pci_config_write32"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_driver_dma_alloc",
+            |_caller: Caller<'_, ()>, handle: u32, byte_len: u32, align: u32| -> u32 {
+                crate::driver_host::dma_alloc(handle, byte_len, align)
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_driver_dma_alloc"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_driver_dma_phys",
+            |_caller: Caller<'_, ()>, handle: u32, dma_handle: u32| -> u32 {
+                crate::driver_host::dma_phys(handle, dma_handle)
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_driver_dma_phys"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_driver_dma_len",
+            |_caller: Caller<'_, ()>, handle: u32, dma_handle: u32| -> u32 {
+                crate::driver_host::dma_len(handle, dma_handle)
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_driver_dma_len"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_driver_dma_write",
+            |caller: Caller<'_, ()>,
+             handle: u32,
+             dma_handle: u32,
+             dma_offset: u32,
+             ptr: u32,
+             len: u32|
+             -> u32 {
+                let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) else {
+                    return 0;
+                };
+                let mut bytes = alloc::vec![0u8; len.min(65536) as usize];
+                if memory.read(&caller, ptr as usize, &mut bytes).is_err() {
+                    return 0;
+                }
+                crate::driver_host::dma_write(handle, dma_handle, dma_offset, &bytes)
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_driver_dma_write"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_driver_dma_read",
+            |mut caller: Caller<'_, ()>,
+             handle: u32,
+             dma_handle: u32,
+             dma_offset: u32,
+             ptr: u32,
+             len: u32|
+             -> u32 {
+                let Some(memory) = caller.get_export("memory").and_then(|e| e.into_memory()) else {
+                    return 0;
+                };
+                let mut bytes = alloc::vec![0u8; len.min(65536) as usize];
+                let copied = crate::driver_host::dma_read(handle, dma_handle, dma_offset, &mut bytes);
+                if copied == 0 {
+                    return 0;
+                }
+                if memory.write(&mut caller, ptr as usize, &bytes[..copied as usize]).is_err() {
+                    return 0;
+                }
+                copied
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_driver_dma_read"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_driver_irq_poll",
+            |_caller: Caller<'_, ()>, handle: u32| -> u32 {
+                crate::driver_host::irq_poll(handle)
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_driver_irq_poll"))?;
+
+        linker.func_wrap(
+            "env",
+            "os_driver_irq_ack",
+            |_caller: Caller<'_, ()>, handle: u32, mask: u32| -> u32 {
+                crate::driver_host::irq_ack(handle, mask)
+            },
+        )
+        .map_err(|_| String::from("Failed to link os_driver_irq_ack"))?;
 
         linker.func_wrap(
             "env",
@@ -460,20 +737,54 @@ impl OpenRhizaSeed {
         Ok(WasmState { engine, store, instance })
     }
 
-    fn upsert_module_state(&mut self, module_key: &str, state: WasmState) {
+    fn upsert_module_state(&mut self, module_key: &str, state: WasmState, byte_len: usize) {
+        let tick = crate::task::timer::TICKS.load(core::sync::atomic::Ordering::Relaxed) as u64;
         if let Some(existing) = self
             .wasm_modules
             .iter_mut()
             .find(|module| module.module_key == module_key)
         {
             existing.state = state;
+            existing.byte_len = byte_len;
+            existing.last_active_tick = tick;
+            existing.last_error = None;
             return;
         }
 
         self.wasm_modules.push(LoadedWasmModule {
             module_key: String::from(module_key),
             state,
+            poll_count: 0,
+            trap_count: 0,
+            last_active_tick: tick,
+            last_error: None,
+            byte_len,
         });
+    }
+
+    fn record_module_trap(&mut self, module_key: &str, error: String) {
+        let tick = crate::task::timer::TICKS.load(core::sync::atomic::Ordering::Relaxed) as u64;
+        if let Some(existing) = self
+            .wasm_modules
+            .iter_mut()
+            .find(|module| module.module_key == module_key)
+        {
+            existing.trap_count = existing.trap_count.saturating_add(1);
+            existing.last_active_tick = tick;
+            existing.last_error = Some(error);
+        } else {
+            *WASM_HEALTH_SNAPSHOT.lock() = vec![WasmModuleHealth {
+                module_key: String::from(module_key),
+                poll_count: 0,
+                trap_count: 1,
+                last_active_tick: tick,
+                byte_len: 0,
+                loaded: false,
+                last_error: Some(error),
+            }];
+            return;
+        }
+        self.refresh_health_snapshot();
     }
 
     pub fn unload_named_wasm_sandbox(&mut self, module_key: &str) -> bool {
@@ -486,6 +797,14 @@ impl OpenRhizaSeed {
         };
 
         self.wasm_modules.remove(index);
+        if !self.wasm_modules.is_empty() {
+            self.next_network_poll_index %= self.wasm_modules.len();
+            self.next_input_poll_index %= self.wasm_modules.len();
+        } else {
+            self.next_network_poll_index = 0;
+            self.next_input_poll_index = 0;
+        }
+        self.refresh_health_snapshot();
         true
     }
 
@@ -509,15 +828,35 @@ impl OpenRhizaSeed {
         let state = &mut module.state;
 
         if let Ok(func) = state.instance.get_typed_func::<(), i32>(&state.store, export) {
-            let value = func
-                .call(&mut state.store, ())
-                .map_err(|e| format!("{} trapped: {}", export, e))?;
+            let value = match func.call(&mut state.store, ()) {
+                Ok(value) => value,
+                Err(e) => {
+                    let error = format!("{} trapped: {}", export, e);
+                    module.trap_count = module.trap_count.saturating_add(1);
+                    module.last_error = Some(error.clone());
+                    self.refresh_health_snapshot();
+                    return Err(error);
+                }
+            };
+            module.poll_count = module.poll_count.saturating_add(1);
+            module.last_active_tick = crate::task::timer::TICKS.load(core::sync::atomic::Ordering::Relaxed) as u64;
+            module.last_error = None;
+            self.refresh_health_snapshot();
             return Ok(Some(value));
         }
 
         if let Ok(func) = state.instance.get_typed_func::<(), ()>(&state.store, export) {
-            func.call(&mut state.store, ())
-                .map_err(|e| format!("{} trapped: {}", export, e))?;
+            if let Err(e) = func.call(&mut state.store, ()) {
+                let error = format!("{} trapped: {}", export, e);
+                module.trap_count = module.trap_count.saturating_add(1);
+                module.last_error = Some(error.clone());
+                self.refresh_health_snapshot();
+                return Err(error);
+            }
+            module.poll_count = module.poll_count.saturating_add(1);
+            module.last_active_tick = crate::task::timer::TICKS.load(core::sync::atomic::Ordering::Relaxed) as u64;
+            module.last_error = None;
+            self.refresh_health_snapshot();
             return Ok(None);
         }
 
@@ -525,21 +864,11 @@ impl OpenRhizaSeed {
     }
 
     pub fn poll_wasm_network(&mut self) {
-        for module in &mut self.wasm_modules {
-            let state = &mut module.state;
-            if let Ok(poll) = state.instance.get_typed_func::<(), ()>(&state.store, "poll_net") {
-                let _ = poll.call(&mut state.store, ());
-            }
-        }
+        self.poll_round_robin("poll_net", false, CAPABILITY_POLL_BUDGET_PER_TICK);
     }
 
     pub fn poll_wasm_input(&mut self) {
-        for module in &mut self.wasm_modules {
-            let state = &mut module.state;
-            if let Ok(poll) = state.instance.get_typed_func::<(), ()>(&state.store, "poll_input_driver") {
-                let _ = poll.call(&mut state.store, ());
-            }
-        }
+        self.poll_round_robin("poll_input_driver", true, INPUT_POLL_BUDGET_PER_TICK);
     }
 
     pub fn poll_hardware_event(&self) -> Option<u8> {
@@ -549,6 +878,98 @@ impl OpenRhizaSeed {
     pub fn poll_host_data(&self) -> Option<u8> {
         crate::arch::x86_64::serial::poll_receive()
     }
+
+    pub fn loaded_module_keys(&self) -> Vec<String> {
+        let mut keys = Vec::with_capacity(self.wasm_modules.len());
+        for module in &self.wasm_modules {
+            keys.push(module.module_key.clone());
+        }
+        keys
+    }
+
+    pub fn module_count(&self) -> usize {
+        self.wasm_modules.len()
+    }
+
+    fn poll_round_robin(&mut self, export: &str, input_only: bool, budget: usize) {
+        if self.wasm_modules.is_empty() {
+            return;
+        }
+
+        let len = self.wasm_modules.len();
+        let start = if input_only {
+            self.next_input_poll_index % len
+        } else {
+            self.next_network_poll_index % len
+        };
+
+        let mut polled = 0usize;
+        let mut scanned = 0usize;
+        for offset in 0..len {
+            let index = (start + offset) % len;
+            scanned += 1;
+            let is_input_module = self.wasm_modules[index]
+                .module_key
+                .starts_with("input:");
+            if is_input_module != input_only {
+                continue;
+            }
+
+            let state = &mut self.wasm_modules[index].state;
+            if let Ok(poll) = state.instance.get_typed_func::<(), ()>(&state.store, export) {
+                let tick = crate::task::timer::TICKS.load(core::sync::atomic::Ordering::Relaxed) as u64;
+                let module = &mut self.wasm_modules[index];
+                match poll.call(&mut module.state.store, ()) {
+                    Ok(()) => {
+                        module.poll_count = module.poll_count.saturating_add(1);
+                        module.last_active_tick = tick;
+                        module.last_error = None;
+                    }
+                    Err(error) => {
+                        module.trap_count = module.trap_count.saturating_add(1);
+                        module.last_active_tick = tick;
+                        module.last_error = Some(format!("{} trapped: {}", export, error));
+                    }
+                }
+                polled += 1;
+                if input_only {
+                    self.next_input_poll_index = (index + 1) % len;
+                } else {
+                    self.next_network_poll_index = (index + 1) % len;
+                }
+                self.refresh_health_snapshot();
+                if polled >= budget {
+                    return;
+                }
+            }
+        }
+
+        if polled > 0 {
+            return;
+        }
+
+        if input_only {
+            self.next_input_poll_index = (start + scanned.max(1)) % len;
+        } else {
+            self.next_network_poll_index = (start + scanned.max(1)) % len;
+        }
+    }
+
+    fn refresh_health_snapshot(&self) {
+        let mut snapshot = WASM_HEALTH_SNAPSHOT.lock();
+        snapshot.clear();
+        for module in &self.wasm_modules {
+            snapshot.push(WasmModuleHealth {
+                module_key: module.module_key.clone(),
+                poll_count: module.poll_count,
+                trap_count: module.trap_count,
+                last_active_tick: module.last_active_tick,
+                byte_len: module.byte_len,
+                loaded: true,
+                last_error: module.last_error.clone(),
+            });
+        }
+    }
 }
 
 fn input_module_key(kind: HidDeviceKind) -> &'static str {
@@ -556,4 +977,37 @@ fn input_module_key(kind: HidDeviceKind) -> &'static str {
         HidDeviceKind::Keyboard => "input:keyboard",
         HidDeviceKind::Mouse => "input:mouse",
     }
+}
+
+pub fn wasm_health_snapshot() -> Vec<WasmModuleHealth> {
+    WASM_HEALTH_SNAPSHOT.lock().clone()
+}
+
+pub fn wasm_health_report() -> String {
+    let snapshot = wasm_health_snapshot();
+    if snapshot.is_empty() {
+        return String::from("[Wasm Runtime] no sandbox modules are loaded.");
+    }
+
+    let mut out = format!("[Wasm Runtime] loaded_modules={}\n", snapshot.len());
+    for module in snapshot.iter().take(16) {
+        out.push_str(
+            format!(
+                "- {} loaded={} bytes={} polls={} traps={} last_tick={}",
+                module.module_key,
+                module.loaded as u8,
+                module.byte_len,
+                module.poll_count,
+                module.trap_count,
+                module.last_active_tick
+            )
+            .as_str(),
+        );
+        if let Some(error) = module.last_error.as_deref() {
+            out.push_str(" error=");
+            out.push_str(error);
+        }
+        out.push('\n');
+    }
+    out
 }

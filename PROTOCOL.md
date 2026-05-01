@@ -83,3 +83,9 @@ The current `main.rs` boot path still recognizes:
 
 At the same time, the kernel now also contains native keyboard and native xHCI logic, so the serial protocol
 is no longer the only route for early input and experimentation.
+
+Current preferred usage:
+
+- serial is primarily for debug logs and legacy bring-up experiments
+- normal AI interaction should happen through the guest prompt path and direct OpenRhiza/Gemini API path
+- generated capabilities should increasingly move through OpenRhiza.com, local seed slots, and sandbox validation rather than ad-hoc serial injection

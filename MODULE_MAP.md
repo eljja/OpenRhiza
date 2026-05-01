@@ -43,7 +43,7 @@ Active responsibilities:
 - create the Wasm seed runtime
 - initialize the network stack
 - start the async executor
-- coordinate boot autorun, skill loads, display transitions, GUI mutations, and display refresh
+- coordinate boot autorun, autonomy task, skill loads, display transitions, GUI mutations, and display refresh
 
 ### `src/core/seed.rs`
 
@@ -54,10 +54,11 @@ Responsibilities:
 - parse and instantiate Wasm modules
 - expose host functions for MMIO, DMA, packet flow, display requests, and GUI mutation requests
 - call driver and skill entry points
+- run bounded round-robin polling across named input and capability modules
 
 Important limitation:
 
-- capability multiplexing is still incomplete in some runtime paths, and older single-instance assumptions are not fully gone yet
+- capability multiplexing now supports multiple named modules, but per-module quota/accounting/isolation remain bootstrap-grade rather than final
 
 ### `src/task/keyboard.rs`
 
@@ -123,19 +124,37 @@ Responsibilities:
 
 ### `src/https.rs`
 
-Current Nexus transport client used by the live runtime.
+Current API transport client used by the live runtime.
 
 Responsibilities:
 
-- open a TCP socket through `smoltcp`
-- send an HTTP request
+- open a socket through `smoltcp`
+- drive OpenRhiza/Gemini requests through the in-repo TLS path
 - accumulate response bytes
-- parse response headers
-- extract the signature header
+- parse response headers and expose them to higher layers
 
 Important limitation:
 
-- despite the file name, it is not yet wired through `src/tls.rs`
+- `ApiClient` and active OpenRhiza/Gemini HTTPS calls now run through `src/tls.rs`
+- Nexus fetch still follows a dedicated client path and is not yet fully unified with the generic API transport surface
+
+### `src/autonomy.rs`
+
+Bootstrap autonomy runtime and council coordinator.
+
+Current responsibilities:
+
+- persist autonomy mode and interval
+- default autonomy to `off`
+- expose `assist` and `council` mode state
+- build role-separated Gemini prompts for practical, analytical, and bold agents
+- summarize council votes without executing machine-action JSON
+- keep user control over mode and interval
+
+Important limitation:
+
+- most autonomy planning and evidence gathering should move into sandbox skills/workflows over time
+- stale-cycle timeout recovery is still a follow-up hardening item
 
 ### `src/security.rs`
 
@@ -181,8 +200,23 @@ In-repo software TLS 1.3 client implementation.
 
 Current status:
 
-- present in source
-- not yet connected to the active `https` flow
+- active for OpenRhiza API and Gemini HTTPS requests
+- still needs final unification with the dedicated Nexus fetch client
+
+### `src/smp.rs`
+
+Bootstrap SMP and per-core runtime substrate.
+
+Current responsibilities:
+
+- track discovered logical core count
+- track boot-core APIC identity
+- record runtime heartbeats
+- expose the current SMP bootstrap status while AP bring-up is still a stub
+
+Important limitation:
+
+- OpenRhiza still runs as a single-core runtime in practice
 
 ### `src/crypto/*`
 

@@ -36,7 +36,7 @@ The immutable or near-immutable core should stay minimal:
 - survival display path
 - survival keyboard path
 - minimal network path
-- minimal storage read path
+- minimal storage read/write floor for recovery cache slots
 - sandbox loader and isolation boundary
 
 If a component is not part of basic system survival, it should be a candidate for hot-swap.

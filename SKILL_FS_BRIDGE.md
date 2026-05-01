@@ -73,6 +73,15 @@ Its purpose is to:
 - validate bounded block write/read/restore against the harness scratch region
 - produce structured log output without touching the active recovery storage floor
 
+Current OS-side inspection commands:
+
+- `/fs-harness-status`
+- `/fs-harness-probe`
+- `/fs-bridge-status`
+- `/semantic-status`
+
+These commands intentionally expose bridge status without turning the core into a filesystem implementation.
+
 ## 5. Promotion Rules
 
 A bridge should only be trusted for broader read/write use after:

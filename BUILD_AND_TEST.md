@@ -1,6 +1,6 @@
 # OpenRhiza Build, Run, and Verification Guide
 
-This document describes the current build and test flow for the `main` branch as of late April 2026.
+This document describes the current build and test flow for the `main` branch as of May 1, 2026.
 
 It reflects the code that is actually active now:
 
@@ -10,6 +10,9 @@ It reflects the code that is actually active now:
 - sandbox display skills and GUI mutation path
 - native `e1000` and USB input bring-up
 - Nexus capability lookup plus signature verification
+- in-repo TLS path for OpenRhiza/Gemini API calls
+- autonomy mode bootstrap commands
+- scheduler dropped-wake recovery and bounded Wasm polling
 
 Authoritative note:
 
@@ -114,7 +117,10 @@ The current QEMU flow attaches:
 
 The FAT driver disk is not just a payload cache now. It is also the seed capability disk used for:
 
-- fixed skill slots `SK000.WAS` through `SK005.WAS`
+- fixed skill slots:
+  `SK000.WAS` display console, `SK001.WAS` GUI session, `SK002.WAS` framebuffer mode,
+  `SK003.WAS` GUI compositor seed, `SK004.WAS` registry lookup,
+  `SK005.WAS` GUI scene mutator, and `SK006.WAS` filesystem image probe
 - local capability cache text files
 - boot autorun input
 
@@ -124,6 +130,22 @@ Inside OpenRhiza, the current developer-facing harness commands are:
 
 - `/fs-harness-status`
 - `/fs-harness-probe`
+- `/fs-bridge-status`
+
+Useful runtime inspection commands:
+
+- `/display-status`
+- `/gui-scene`
+- `/scheduler-status`
+- `/smp-status`
+- `/wasm-status`
+- `/semantic-status`
+- `/registry-context`
+- `/autonomy-status`
+- `/skill-load skill_gui_modern_shell_v1`
+- `/skill-run skill_gui_modern_shell_v1`
+
+Plain input without `/` routes to Gemini. Slash-prefixed input is the recovery and inspection surface.
 
 ## Current Visible Runtime
 
@@ -168,7 +190,7 @@ Found N PCI devices:
 You may also see:
 
 - FAT driver-disk lookup logs
-- skill loading logs for `SK000.WAS`, `SK001.WAS`, and follow-up stages
+- skill loading logs for `SK000.WAS` through `SK006.WAS` and follow-up stages
 - framebuffer / GUI transition logs
 - the `1920x1080` bootstrap GUI
 
@@ -229,14 +251,18 @@ Confirm:
 - recovery console boots
 - GUI handoff completes
 - GUI input and pointer remain alive
+- plain prompts reach Gemini when a build-time Gemini key is available
+- `/autonomy-status` reports default `off` mode
+- `/scheduler-status` reports wake metrics without increasing wake drops during normal idle use
 
 ## Known Current Gaps
 
-- `src/https.rs` still uses raw TCP/HTTP rather than the in-repo TLS client
-- ATA write support is still missing
-- `skill_gui_compositor_seed_v1` is not yet fully stable in the fixed-slot seed path
+- dedicated Nexus fetch still needs full unification with the generic TLS/API response path
+- filesystem family read/write support is still moving behind sandbox filesystem skills
+- `skill_gui_compositor_seed_v1` still needs fixed-slot seed-path regression testing
 - Right Shift is not yet distinct in the current Windows QEMU USB keyboard path
-- A small amount of residual GUI flicker can still occur during object-boundary pointer movement
+- long-running GUI conversation history and scroll behavior need more regression testing
+- autonomy council needs stale-cycle timeout recovery before it should be considered robust
 
 ## Troubleshooting
 

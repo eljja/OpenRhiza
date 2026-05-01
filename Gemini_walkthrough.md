@@ -3,6 +3,8 @@
 > Historical note:
 > This file records an earlier migration checkpoint.
 > It is useful as historical context, but it is not the authoritative statement of the current runtime path.
+> The current baseline supports multiple named Wasm modules with bounded polling, direct TLS API calls, and fixed-slot FAT16 cache writes.
+> The "one Wasm sandbox" and "OS cannot fetch/run" statements below are preserved only to explain the earlier checkpoint.
 
 ## Pipeline Serialization Results
 

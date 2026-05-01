@@ -1,8 +1,10 @@
 use alloc::string::String;
 use alloc::vec::Vec;
+use lazy_static::lazy_static;
+use spin::Mutex;
 
 const SKILL_MAP_FILES: [[u8; 11]; 3] = [*b"SKILLCCHTXT", *b"SKILLMAPTXT", *b"SKMAP   TXT"];
-const SKILL_SLOT_TEXT: [&str; 8] = [
+const SKILL_SLOT_TEXT: [&str; 9] = [
     "SK000.WAS",
     "SK001.WAS",
     "SK002.WAS",
@@ -11,8 +13,9 @@ const SKILL_SLOT_TEXT: [&str; 8] = [
     "SK005.WAS",
     "SK006.WAS",
     "SK007.WAS",
+    "SK008.WAS",
 ];
-const SEED_SKILL_MAP: [(&str, &str); 7] = [
+const SEED_SKILL_MAP: [(&str, &str); 9] = [
     ("skill_display_console_mode_v1", "SK000.WAS"),
     ("skill_gui_session_bootstrap_v1", "SK001.WAS"),
     ("skill_display_framebuffer_mode_v1", "SK002.WAS"),
@@ -20,12 +23,25 @@ const SEED_SKILL_MAP: [(&str, &str); 7] = [
     ("skill_registry_lookup_v1", "SK004.WAS"),
     ("skill_gui_scene_mutator_v1", "SK005.WAS"),
     ("skill_fs_image_probe_v1", "SK006.WAS"),
+    ("skill_gui_modern_shell_v1", "SK007.WAS"),
+    ("skill_qemu_driver_pack_v1", "SK008.WAS"),
 ];
 
 #[derive(Clone, Debug)]
 pub struct CachedSkillArtifact {
     pub skill_id: String,
     pub fat_name_text: String,
+}
+
+#[derive(Clone, Debug)]
+struct CachedSkillPayload {
+    skill_id: String,
+    fat_name_text: String,
+    payload: Vec<u8>,
+}
+
+lazy_static! {
+    static ref SKILL_PAYLOAD_CACHE: Mutex<Vec<CachedSkillPayload>> = Mutex::new(Vec::new());
 }
 
 pub fn load_cached_skill_map_text() -> Option<String> {
@@ -107,6 +123,46 @@ pub fn fat_name_bytes_from_text(name: &str) -> Option<[u8; 11]> {
     Some(fat)
 }
 
+pub fn preload_cached_skill_payloads(records: &[CachedSkillArtifact]) -> usize {
+    let mut loaded = 0usize;
+    for record in records {
+        if load_cached_skill_payload(record).is_some() {
+            loaded += 1;
+        }
+    }
+    loaded
+}
+
+pub fn load_cached_skill_payload(record: &CachedSkillArtifact) -> Option<Vec<u8>> {
+    {
+        let cache = SKILL_PAYLOAD_CACHE.lock();
+        if let Some(cached) = cache.iter().find(|cached| cached.skill_id == record.skill_id) {
+            return Some(cached.payload.clone());
+        }
+    }
+
+    let fat_name = fat_name_bytes_from_text(record.fat_name_text.as_str())?;
+    let payload = crate::storage::read_named_file_from_secondary_fat16(&[fat_name])?;
+    remember_skill_payload(record.skill_id.as_str(), record.fat_name_text.as_str(), payload.as_slice());
+    Some(payload)
+}
+
+fn remember_skill_payload(skill_id: &str, fat_name_text: &str, payload: &[u8]) {
+    let mut cache = SKILL_PAYLOAD_CACHE.lock();
+    if let Some(existing) = cache.iter_mut().find(|cached| cached.skill_id == skill_id) {
+        existing.fat_name_text = String::from(fat_name_text);
+        existing.payload.clear();
+        existing.payload.extend_from_slice(payload);
+        return;
+    }
+
+    cache.push(CachedSkillPayload {
+        skill_id: String::from(skill_id),
+        fat_name_text: String::from(fat_name_text),
+        payload: payload.to_vec(),
+    });
+}
+
 pub fn persist_cached_skills(records: &[CachedSkillArtifact]) -> Result<(), &'static str> {
     let mut out = String::from("# OpenRhiza local skill cache\n");
     for record in records {
@@ -163,6 +219,7 @@ pub fn persist_downloaded_skill(skill_id: &str, payload: &[u8]) -> Result<String
     let fat_name = fat_name_bytes_from_text(fat_name_text.as_str())
         .ok_or("invalid FAT file name for downloaded skill payload")?;
     crate::storage::write_named_file_to_secondary_fat16_existing(&[fat_name], payload)?;
+    remember_skill_payload(skill_id, fat_name_text.as_str(), payload);
 
     if cached.iter().all(|record| record.skill_id != skill_id) {
         cached.push(CachedSkillArtifact {

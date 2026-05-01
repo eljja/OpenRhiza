@@ -1,6 +1,6 @@
 # Persistent Driver Cache Design
 
-This document defines the recommended local persistence model for OpenRhiza after the April 2026 networking and registry milestone.
+This document defines the recommended local persistence model for OpenRhiza after the May 2026 registry, sandbox, and local-cache milestones.
 
 The goal is simple:
 
@@ -18,17 +18,22 @@ At the time of writing, the repository has:
 - native `e1000` networking
 - OpenRhiza.com registry access
 - Gemini direct access
-- a read-only ATA PIO path in `src/storage.rs`
+- ATA PIO sector read and write support in `src/storage.rs`
+- write verification and ATA cache flush after local updates
 - FAT16 payload extraction for bootstrap artifacts
+- fixed-size FAT16 file overwrite support for local skill/driver cache slots
+- runtime driver map inspection and promotion commands
 
 The repository does **not** yet have:
 
-- ATA write support
 - a general writable filesystem layer
-- a persistent local driver cache
-- a boot-time driver manifest loader
+- general file creation/allocation in FAT16
+- FAT32/exFAT/NTFS/ext read-write implementations inside OpenRhiza
+- a full manifest directory tree with dynamic allocation
+- a production boot-time manifest resolver
 
-This means the design below is the target structure, not the fully active path yet.
+This means the design below is the target structure.
+The active path is still a constrained bootstrap cache: preallocated FAT16 files can be updated safely, but OpenRhiza does not yet own a general-purpose filesystem stack.
 
 ## Design Goal
 
@@ -252,16 +257,16 @@ For runtime behavior, prefer:
 
 ### Phase 1
 
-- keep current read-only ATA PIO path
-- add local cache manifest format
-- add boot-time loader for local manifests
-- no writes yet
+- keep current ATA PIO read/write path small and auditable
+- preserve sector verification and cache flush after writes
+- keep using fixed-size cache files for early skill/driver payloads
+- expose active driver map inspection from the guest
 
 ### Phase 2
 
-- add minimal storage write path
-- create staging directory support
-- write generated artifacts and manifests
+- add a local cache manifest format
+- add boot-time loader for local manifests
+- create staging file support without dynamic allocation first
 - keep rollback copies
 
 ### Phase 3
@@ -279,9 +284,10 @@ For runtime behavior, prefer:
 
 The next concrete step should be:
 
-1. mark storage capability honestly in discovery/runtime
+1. keep storage capability reporting honest: fixed-slot FAT16 writes are available, general filesystem writes are not
 2. define the local cache manifest format in code
-3. add a read-only loader for local driver manifests
-4. keep generated drivers session-local until write support exists
+3. add a loader for local driver and skill manifests
+4. add image-backed filesystem tests that run through the OpenRhiza storage host ABI, not only host-side scripts
+5. keep generated drivers staged until validation and rollback metadata are written
 
-That path matches the repository's current reality and avoids pretending persistence already exists when it does not.
+That path matches the repository's current reality and avoids pretending a complete persistence stack exists before the sandbox filesystem bridge is proven.

@@ -28,6 +28,7 @@ pub mod net;
 pub mod vga;
 pub mod storage;
 pub mod storage_host;
+pub mod semantic_graph;
 pub mod https;
 pub mod dns;
 pub mod display;
@@ -43,10 +44,13 @@ pub mod crypto;
 pub mod tls;
 pub mod identity;
 pub mod api_v1;
+pub mod autonomy;
+pub mod smp;
 pub mod boot_automation;
 pub mod capability_cache;
 pub mod driver_cache;
 pub mod driver_runtime;
+pub mod driver_host;
 pub mod runtime_bindings;
 pub mod component_runtime;
 pub mod sandbox_lifecycle;
@@ -115,6 +119,7 @@ enum PlainHttpAction {
 struct GeminiRequest {
     prompt: String,
     model_index: usize,
+    origin: crate::api_v1::GeminiPromptOrigin,
 }
 
 const ENABLE_SERVICE_API_BOOTSTRAP: bool = false;
@@ -153,12 +158,14 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
 
     // 4. Scan the hardware and enumerate PCI devices.
     let identity = SystemIdentity::scan(boot_info);
+    crate::smp::init_bootstrap(identity.cpu_cores);
     crate::println!("Total Usable Memory: {} Bytes", identity.total_memory);
     crate::println!(
         "Storage Interface Detected: {}",
         if identity.storage_detected { "yes" } else { "no" }
     );
     crate::println!("Hardware Discovery Complete.");
+    crate::println!("[SMP] {}", crate::smp::status_block());
     crate::println!("Found {} PCI devices:", identity.pci_devices.len());
     for dev in &identity.pci_devices {
         crate::println!(
@@ -241,6 +248,11 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
                 "[Skill Runtime] Registered {} cached skills for runtime use.",
                 installed
             );
+            let payloads = crate::skill_cache::preload_cached_skill_payloads(&cached_skills);
+            crate::println!(
+                "[Skill Runtime] Preloaded {} cached skill payloads into RAM.",
+                payloads
+            );
             let scheduled = crate::skill_runtime::schedule_persisted_skill_restores();
             if scheduled > 0 {
                 crate::println!(
@@ -276,6 +288,8 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
         }
     }
 
+    crate::autonomy::load_persisted_config();
+
     crate::input_runtime::schedule_persisted_restores();
 
     let rhiza = OpenRhizaSeed::new(identity);
@@ -291,6 +305,7 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
     executor.spawn(task::Task::new(runtime_status_task()));
     executor.spawn(task::Task::new(display_refresh_task()));
     executor.spawn(task::Task::new(crate::boot_automation::boot_autorun_task()));
+    executor.spawn(task::Task::new(crate::autonomy::autonomy_task()));
     executor.spawn(task::Task::new(core_os_task(rhiza)));
     executor.run();
 }
@@ -315,6 +330,7 @@ async fn runtime_status_task() {
     loop {
         let ticks = crate::task::timer::TICKS.load(core::sync::atomic::Ordering::Relaxed);
         let seconds = ticks / crate::task::timer::TICKS_PER_SECOND;
+        crate::smp::record_heartbeat(0, ticks);
         crate::display::render_runtime(seconds);
         crate::task::timer::sleep_ticks(crate::task::timer::TICKS_PER_SECOND).await;
     }
@@ -519,7 +535,7 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
                             continue;
                         };
 
-                        let Some(fat_name) =
+                        let Some(_fat_name) =
                             crate::skill_cache::fat_name_bytes_from_text(cached.fat_name_text.as_str())
                         else {
                             crate::result_println!(
@@ -538,7 +554,7 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
                             "[Skill Runtime] Loading {} from local skill cache...",
                             cached.fat_name_text
                         );
-                        match crate::storage::read_named_file_from_secondary_fat16(&[fat_name]) {
+                        match crate::skill_cache::load_cached_skill_payload(&cached) {
                             Some(wasm) => {
                                 let module_key = crate::skill_runtime::module_key_for_skill(skill_id.as_str());
                                 match rhiza.execute_named_wasm_sandbox(module_key.as_str(), &wasm) {
@@ -892,6 +908,7 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
                     let request = GeminiRequest {
                         prompt: queued_prompt.prompt,
                         model_index: 0,
+                        origin: queued_prompt.origin,
                     };
                     if let Some(ip) = gemini_ip {
                         gemini_client = spawn_gemini_client(ip, &request);
@@ -1130,34 +1147,52 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
 
             if let Some(response) = client.take_response() {
                 crate::net::destroy_socket(client.handle());
+                let request_origin = gemini_request
+                    .as_ref()
+                    .map(|request| request.origin.clone())
+                    .unwrap_or(crate::api_v1::GeminiPromptOrigin::Interactive);
                 if (200..300).contains(&response.status_code) {
                     if let Some(text) = extract_first_text_field(&response.body) {
                         let sanitized_text = sanitize_gemini_display_text(text.as_str());
-                        if let Some(request) = &gemini_request {
-                            crate::api_v1::record_last_gemini_response(
-                                gemini_model_name(request.model_index),
-                                text.as_str(),
-                            );
-                        }
-                        crate::display::record_gui_assistant_message(sanitized_text.as_str());
-                        if let Some(match_key) = gemini_auto_upload_match_key.take() {
-                            match crate::api_v1::queue_driver_registry_command(
-                                crate::api_v1::DriverRegistryCommand::UploadGenerated {
-                                    match_key: match_key.clone(),
-                                },
-                            ) {
-                                Ok(()) => crate::result_println!(
-                                    "[Driver Runtime] Queued generated driver upload for {}",
-                                    match_key
-                                ),
-                                Err(_) => crate::result_println!(
-                                    "[Driver Runtime] Driver registry queue full; generated upload skipped for {}",
-                                    match_key
-                                ),
+                        match &request_origin {
+                            crate::api_v1::GeminiPromptOrigin::Interactive => {
+                                if let Some(request) = &gemini_request {
+                                    crate::api_v1::record_last_gemini_response(
+                                        gemini_model_name(request.model_index),
+                                        text.as_str(),
+                                    );
+                                }
+                                crate::display::record_gui_assistant_message(sanitized_text.as_str());
+                                if let Some(match_key) = gemini_auto_upload_match_key.take() {
+                                    match crate::api_v1::queue_driver_registry_command(
+                                        crate::api_v1::DriverRegistryCommand::UploadGenerated {
+                                            match_key: match_key.clone(),
+                                        },
+                                    ) {
+                                        Ok(()) => crate::result_println!(
+                                            "[Driver Runtime] Queued generated driver upload for {}",
+                                            match_key
+                                        ),
+                                        Err(_) => crate::result_println!(
+                                            "[Driver Runtime] Driver registry queue full; generated upload skipped for {}",
+                                            match_key
+                                        ),
+                                    }
+                                }
+                            }
+                            crate::api_v1::GeminiPromptOrigin::AutonomyCouncil { cycle_id, role } => {
+                                crate::autonomy::handle_council_response(*cycle_id, role.as_str(), text.as_str());
                             }
                         }
+                    } else if let crate::api_v1::GeminiPromptOrigin::AutonomyCouncil { cycle_id, role } = &request_origin {
+                        crate::autonomy::handle_council_failure(
+                            *cycle_id,
+                            role.as_str(),
+                            "Gemini returned 2xx without a usable text field.",
+                        );
                     }
-                    let allow_machine_actions = pending_orchestration_prompt.is_some();
+                    let allow_machine_actions = pending_orchestration_prompt.is_some()
+                        && matches!(request_origin, crate::api_v1::GeminiPromptOrigin::Interactive);
                     log_gemini_response(&response, allow_machine_actions);
                     gemini_client = None;
                     gemini_request = None;
@@ -1177,14 +1212,29 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
                     gemini_client = gemini_ip.and_then(|ip| spawn_gemini_client(ip, &next_request));
                     gemini_request = Some(next_request);
                 } else {
-                    crate::display::record_gui_system_message(
-                        format!(
-                            "Gemini request returned status {} and no further fallback is available.",
-                            response.status_code
-                        )
-                        .as_str(),
-                    );
-                    let allow_machine_actions = pending_orchestration_prompt.is_some();
+                    match &request_origin {
+                        crate::api_v1::GeminiPromptOrigin::Interactive => {
+                            crate::display::record_gui_system_message(
+                                format!(
+                                    "Gemini request returned status {} and no further fallback is available.",
+                                    response.status_code
+                                )
+                                .as_str(),
+                            );
+                        }
+                        crate::api_v1::GeminiPromptOrigin::AutonomyCouncil { cycle_id, role } => {
+                            crate::autonomy::handle_council_failure(
+                                *cycle_id,
+                                role.as_str(),
+                                format!(
+                                    "Gemini returned status {} with no further fallback.",
+                                    response.status_code
+                                ).as_str(),
+                            );
+                        }
+                    }
+                    let allow_machine_actions = pending_orchestration_prompt.is_some()
+                        && matches!(request_origin, crate::api_v1::GeminiPromptOrigin::Interactive);
                     log_gemini_response(&response, allow_machine_actions);
                     gemini_client = None;
                     gemini_request = None;
@@ -1196,6 +1246,10 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
                 }
             } else if let Some(error) = client.error_message() {
                 crate::net::destroy_socket(client.handle());
+                let request_origin = gemini_request
+                    .as_ref()
+                    .map(|request| request.origin.clone())
+                    .unwrap_or(crate::api_v1::GeminiPromptOrigin::Interactive);
                 if let Some(next_request) = advance_gemini_request(gemini_request.take()) {
                     let previous_model = gemini_model_name(next_request.model_index - 1);
                     let next_model = gemini_model_name(next_request.model_index);
@@ -1209,9 +1263,20 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
                     gemini_request = Some(next_request);
                 } else {
                     crate::println!("[Gemini] request failed: {}", error);
-                    crate::display::record_gui_system_message(
-                        format!("Gemini request failed: {}", error).as_str(),
-                    );
+                    match &request_origin {
+                        crate::api_v1::GeminiPromptOrigin::Interactive => {
+                            crate::display::record_gui_system_message(
+                                format!("Gemini request failed: {}", error).as_str(),
+                            );
+                        }
+                        crate::api_v1::GeminiPromptOrigin::AutonomyCouncil { cycle_id, role } => {
+                            crate::autonomy::handle_council_failure(
+                                *cycle_id,
+                                role.as_str(),
+                                format!("Gemini request failed: {}", error).as_str(),
+                            );
+                        }
+                    }
                     gemini_client = None;
                     gemini_request = None;
                     pending_orchestration_prompt = None;
@@ -1378,6 +1443,7 @@ fn start_next_prompt_orchestration_step(
     let request = GeminiRequest {
         prompt: llm_prompt,
         model_index: 0,
+        origin: crate::api_v1::GeminiPromptOrigin::Interactive,
     };
     if let Some(ip) = gemini_ip {
         *gemini_client = spawn_gemini_client(ip, &request);
@@ -3077,34 +3143,50 @@ fn extract_json_like_string(body: &str, key: &str) -> Option<String> {
     let rest = &body[start..];
     let colon = rest.find(':')?;
     let rest = &rest[colon + 1..];
-    let quote = rest.find('"')?;
-    let bytes = rest.as_bytes();
-    let mut index = quote + 1;
+    let quote = rest.find('"')? + 1;
+    let mut chars = rest[quote..].chars();
     let mut out = String::new();
     let mut escaped = false;
 
-    while index < bytes.len() {
-        let byte = bytes[index];
+    while let Some(ch) = chars.next() {
         if escaped {
-            match byte {
-                b'n' => out.push('\n'),
-                b'r' => out.push('\r'),
-                b't' => out.push('\t'),
-                b'"' => out.push('"'),
-                b'\\' => out.push('\\'),
-                _ => out.push(byte as char),
+            match ch {
+                'n' => out.push('\n'),
+                'r' => out.push('\r'),
+                't' => out.push('\t'),
+                '"' => out.push('"'),
+                '\\' => out.push('\\'),
+                'u' => {
+                    let mut value = 0u32;
+                    let mut ok = true;
+                    for _ in 0..4 {
+                        let Some(hex) = chars.next() else {
+                            ok = false;
+                            break;
+                        };
+                        let Some(digit) = hex.to_digit(16) else {
+                            ok = false;
+                            break;
+                        };
+                        value = (value << 4) | digit;
+                    }
+                    if ok {
+                        if let Some(decoded) = core::char::from_u32(value) {
+                            out.push(decoded);
+                        }
+                    }
+                }
+                _ => out.push(ch),
             }
             escaped = false;
-            index += 1;
             continue;
         }
 
-        match byte {
-            b'\\' => escaped = true,
-            b'"' => return Some(out),
-            _ => out.push(byte as char),
+        match ch {
+            '\\' => escaped = true,
+            '"' => return Some(out),
+            _ => out.push(ch),
         }
-        index += 1;
     }
 
     None

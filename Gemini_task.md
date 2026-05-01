@@ -3,6 +3,7 @@
 > Historical note:
 > This checklist captures an older migration phase.
 > Some items remain relevant, but this file should be treated as historical planning rather than current architecture truth.
+> The current baseline has multiple named Wasm modules and verified fixed-slot FAT16 writes; the remaining work is hardening quotas, lifecycle accounting, and general filesystem bridge support.
 
 - `[x]` **Phase 1: Rollback Kernel Modifications**
   - `[x]` Remove hardcoded QEMU driver modules from `src/main.rs`
@@ -20,8 +21,10 @@
   - `[x]` Validate compilation and serialize payloads using `register_nic_drivers.py`
 
 ## Next Steps / Pending Work
-- `[ ]` **Phase 4: Kernel Multi-Wasm Execution Blockers (Gap-1)**
-  - `[ ]` Resolve the single-instance Wasm limitation in `OpenRhizaSeed`. Currently, loading a storage driver overrides the NIC driver. A multi-driver registry is needed.
-- `[ ]` **Phase 5: Live OS Integration**
-  - `[ ]` Implement actual fetching logic in the kernel to dynamically request these specific `drv_generated_pci_...` payloads during PCI enumeration.
-  - `[ ]` Implement disk/ATA write support so these retrieved blobs can be persisted instead of re-downloaded every boot.
+- `[~]` **Phase 4: Kernel Multi-Wasm Execution Blockers (Gap-1)**
+  - `[x]` Add multiple named Wasm module slots with bounded polling.
+  - `[ ]` Add stronger per-module quotas, fault isolation metrics, and lifecycle accounting.
+- `[~]` **Phase 5: Live OS Integration**
+  - `[ ]` Unify generated driver fetch/download through structured OpenRhiza API calls.
+  - `[x]` Add verified fixed-slot FAT16 writes for local cache artifacts.
+  - `[ ]` Add general filesystem bridge support for dynamic file creation and richer filesystems.

@@ -94,20 +94,28 @@ What works now:
 
 - `x86_64` bare-metal boot, IDT, LAPIC, async task runtime, and recovery console
 - Wasm sandbox execution inside the kernel
+- multiple named Wasm modules with bounded round-robin polling
+- scheduler metrics and dropped-wake rescan recovery
 - OpenRhiza.com capability lookup and download path
+- OpenRhiza/Gemini API calls through the in-repo TLS path
 - local driver and skill cache seeds on the QEMU driver disk
 - staged display bring-up: recovery console -> framebuffer validation -> GUI bootstrap
 - a `1920x1080` bootstrap GUI with object-based sidebar, conversation surface, and composer
 - object-scoped GUI mutation path exposed to sandbox skills and LLM machine actions
 - live GUI input path and recovery rollback path coexisting again after deadlock fixes
+- autonomy mode substrate with user-controlled `off`, `assist`, and `council` modes
+- Korean-capable GUI text path and UTF-8-safe autonomy context extraction
 
 What is still in progress:
 
 - final compositor seed stabilization
-- complete elimination of residual GUI redraw flicker
-- richer per-object scrolling, editing, and selection
+- richer per-object scrolling, editing, selection, and long-session history retention
 - stronger self-hosted GUI development from inside the OpenRhiza console
 - tighter separation between temporary bootstrap presenters and long-term sandbox-owned GUI/runtime behavior
+- per-module Wasm accounting, health state, and capability quotas
+- sandbox filesystem bridge read/write validation for common filesystem families
+- semantic graph indexing over managed filesystem contents
+- real SMP AP startup and per-core scheduling
 
 ## 📥 Getting Started
 
@@ -141,6 +149,7 @@ Explore the depths of the root system through our engineering documents:
 - [OS.md](OS.md): The baseline operating rules that the internal OpenRhiza intelligence should follow.
 - [CAPABILITY_REGISTRY.md](CAPABILITY_REGISTRY.md): Why OpenRhiza.com is a capability registry rather than an app store.
 - [KNOWN_ISSUES.md](KNOWN_ISSUES.md): Active technical limits and unresolved runtime issues.
+- [ROADMAP.md](ROADMAP.md): Current public-readiness priorities and next work.
 - [Gemini_walkthrough.md](Gemini_walkthrough.md): The Wasm migration realism logs.
 - [Gemini.md](Gemini.md): Short-form running logs.
 

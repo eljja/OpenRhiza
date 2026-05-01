@@ -288,18 +288,35 @@ fn handle_cli_command(command: &str) {
 
     if let Some(local_command) = command.strip_prefix('/') {
         match local_command {
-            "help" => crate::result_println!("[CLI] Local commands: /help, /clear, /status, /display-status, /gui-scene, /gui-mutations, /gui-session <openrhiza|sandbox|wide|recovery>, /gui-focus <conversation|composer|none>, /gui-scroll <up|down|bottom> [count], /gui-compose-demo, /gui-label <handle> <text>, /gui-style <handle> <style>, /gui-bounds <handle> <x> <y> <width> <height>, /gui-interaction <handle> <idle|hovered|focused|active|disabled>, /gui-reset <handle|all>, /fs-harness-status, /fs-harness-probe, /nexus-fetch, /api-register, /api-register-http, /http-health, /https-health, /https-root, /api-hw, /api-driver, /api-software, /api-skill, /api-workflow, /api-policy, /api-eval, /api-all, /gemini-test, /gemini-gui-test, /driver-map, /driver-runtime-status, /driver-promote <match_key>, /skill-cache, /skill-download <skill_id>, /skill-load <skill_id>, /skill-run <skill_id>, /skill-unload <skill_id>, /skill-activate <skill_id>, /driver-generate <match_key>, /driver-upload <match_key>, /driver-download <driver_id> [match_key], /driver-comment <driver_id> <text>, /driver-vote <driver_id> up|down, /driver-bindings, /driver-activate <match_key> <driver_id>, /driver-rollback <match_key>, /sandbox-mouse-load, /sandbox-keyboard-load, /input-routing-status, /input-activate <keyboard|mouse>, /input-rollback <keyboard|mouse>"),
+            "help" => crate::result_println!("[CLI] Local commands: /help, /clear, /status, /scheduler-status, /smp-status, /wasm-status, /semantic-status, /registry-context, /autonomy-status, /autonomy-mode <off|assist|council>, /autonomy-interval <minutes>, /autonomy-run-now, /display-status, /gui-scene, /gui-mutations, /gui-session <openrhiza|sandbox|wide|recovery>, /gui-focus <conversation|composer|none>, /gui-scroll <up|down|bottom> [count], /gui-compose-demo, /gui-label <handle> <text>, /gui-style <handle> <style>, /gui-bounds <handle> <x> <y> <width> <height>, /gui-interaction <handle> <idle|hovered|focused|active|disabled>, /gui-reset <handle|all>, /fs-harness-status, /fs-harness-probe, /fs-bridge-status, /driver-host-status, /nexus-fetch, /api-register, /api-register-http, /http-health, /https-health, /https-root, /api-hw, /api-driver, /api-software, /api-skill, /api-workflow, /api-policy, /api-eval, /api-all, /gemini-test, /gemini-gui-test, /driver-map, /driver-runtime-status, /driver-promote <match_key>, /skill-cache, /skill-download <skill_id>, /skill-load <skill_id>, /skill-run <skill_id>, /skill-unload <skill_id>, /skill-activate <skill_id>, /driver-generate <match_key>, /driver-upload <match_key>, /driver-download <driver_id> [match_key], /driver-comment <driver_id> <text>, /driver-vote <driver_id> up|down, /driver-bindings, /driver-activate <match_key> <driver_id>, /driver-rollback <match_key>, /sandbox-mouse-load, /sandbox-keyboard-load, /input-routing-status, /input-activate <keyboard|mouse>, /input-rollback <keyboard|mouse>"),
             "clear" => WRITER.lock().clear_log_area(),
             "status" => {
                 crate::result_println!("[CLI] Keyboard input ready.");
                 crate::result_println!("[CLI] Serial debug logs remain on COM1 only.");
                 crate::result_println!("[CLI] Plain text without '/' is sent to Gemini.");
             }
+            "scheduler-status" => show_scheduler_status(),
+            "smp-status" => show_smp_status(),
+            "wasm-status" => show_wasm_status(),
+            "semantic-status" => show_semantic_status(),
+            "registry-context" => show_registry_context(),
+            "autonomy-status" => show_autonomy_status(),
             "display-status" => show_display_status(),
             "fs-harness-status" => show_fs_harness_status(),
             "fs-harness-probe" => run_fs_harness_probe(),
+            "fs-bridge-status" => show_fs_bridge_status(),
+            "driver-host-status" => show_driver_host_status(),
             "gui-scene" => show_gui_scene(),
             "gui-mutations" => show_gui_mutations(),
+            _ if local_command.starts_with("autonomy-mode ") => {
+                let mode = local_command["autonomy-mode ".len()..].trim();
+                set_autonomy_mode(mode);
+            }
+            _ if local_command.starts_with("autonomy-interval ") => {
+                let minutes = local_command["autonomy-interval ".len()..].trim();
+                set_autonomy_interval(minutes);
+            }
+            "autonomy-run-now" => request_autonomy_run_now(),
             _ if local_command.starts_with("gui-session ") => {
                 let name = local_command["gui-session ".len()..].trim();
                 select_gui_session(name);
@@ -568,7 +585,7 @@ fn show_driver_bindings() {
         "[Driver Runtime] Tracked runtime entries: {}",
         states.len()
     );
-    for state in states.iter().take(12) {
+    for state in states.iter().take(20) {
         crate::result_println!(
             "[Driver Runtime] {} stage={:?} current={} persisted={} source={}",
             state.match_key,
@@ -700,6 +717,79 @@ fn show_display_status() {
     }
 }
 
+fn show_scheduler_status() {
+    let snapshot = crate::task::executor::scheduler_metrics_snapshot();
+    crate::result_println!(
+        "[Scheduler] wake_events={} wake_drops={} total_polls={} completed={} batch_yields={} idle_halts={} max_queue_depth={}",
+        snapshot.wake_events,
+        snapshot.wake_drops,
+        snapshot.total_polls,
+        snapshot.completed_tasks,
+        snapshot.batch_yields,
+        snapshot.idle_halts,
+        snapshot.max_queue_depth
+    );
+}
+
+fn show_smp_status() {
+    crate::result_println!("[SMP] {}", crate::smp::status_block());
+}
+
+fn show_wasm_status() {
+    for line in crate::os_core_seed::wasm_health_report().lines() {
+        crate::result_println!("{}", line);
+    }
+}
+
+fn show_semantic_status() {
+    for line in crate::semantic_graph::status_block().lines() {
+        crate::result_println!("{}", line);
+    }
+}
+
+fn show_registry_context() {
+    match crate::api_v1::current_registry_context_block() {
+        Some(context) => {
+            for line in context.lines().take(24) {
+                crate::result_println!("{}", line);
+            }
+        }
+        None => crate::result_println!(
+            "[Registry Context] not available yet. Run /api-all or ask OpenRhiza to inspect registry context."
+        ),
+    }
+}
+
+fn show_autonomy_status() {
+    for line in crate::autonomy::status_block().lines() {
+        crate::result_println!("{}", line);
+    }
+}
+
+fn set_autonomy_mode(mode: &str) {
+    match crate::autonomy::set_mode(mode) {
+        Ok(message) => crate::result_println!("{}", message),
+        Err(error) => crate::result_println!("[Autonomy] {}", error),
+    }
+}
+
+fn set_autonomy_interval(minutes: &str) {
+    match minutes.parse::<u32>() {
+        Ok(value) => match crate::autonomy::set_interval_minutes(value) {
+            Ok(message) => crate::result_println!("{}", message),
+            Err(error) => crate::result_println!("[Autonomy] {}", error),
+        },
+        Err(_) => crate::result_println!("[Autonomy] usage: /autonomy-interval <minutes>"),
+    }
+}
+
+fn request_autonomy_run_now() {
+    match crate::autonomy::request_run_now() {
+        Ok(message) => crate::result_println!("{}", message),
+        Err(error) => crate::result_println!("[Autonomy] {}", error),
+    }
+}
+
 fn show_fs_harness_status() {
     crate::result_println!("{}", crate::storage_host::status_block());
 }
@@ -716,6 +806,21 @@ fn run_fs_harness_probe() {
     match crate::skill_runtime::queue_run("skill_fs_image_probe_v1") {
         Ok(()) => crate::result_println!("[Storage Host] Queued filesystem harness probe skill run."),
         Err(error) => crate::result_println!("[Storage Host] {}", error),
+    }
+}
+
+fn show_fs_bridge_status() {
+    crate::result_println!("[FS Bridge] interface=skill_fs_bridge_v1");
+    crate::result_println!("[FS Bridge] core_scope=raw bounded block transport only");
+    crate::result_println!("[FS Bridge] skill_target=skill_fs_image_probe_v1");
+    crate::result_println!("[FS Bridge] families=fat32,exfat,ntfs,ext2,ext3,ext4");
+    crate::result_println!("{}", crate::storage_host::status_block());
+    crate::result_println!("[FS Bridge] semantic_graph_root=.openrhiza/semantic-graph/");
+}
+
+fn show_driver_host_status() {
+    for line in crate::driver_host::status_block().lines() {
+        crate::result_println!("{}", line);
     }
 }
 

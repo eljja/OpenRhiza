@@ -20,6 +20,9 @@ OpenRhiza already has:
 - sandbox display skills that request `wide-console` and `gui-session`
 - a first retained object runtime for sidebar, conversation area, and composer hit-testing
 - object-scoped GUI mutation imports that sandbox skills and LLM machine actions can use
+- Korean-capable GUI text rendering path
+- UTF-8-safe context extraction for autonomy and GUI conversation summaries
+- reduced pointer-motion redraw churn after object-local redraw fixes
 
 OpenRhiza does not yet have:
 
@@ -31,6 +34,7 @@ OpenRhiza does not yet have:
 - a production-quality GUI toolkit path
 - a fully stable compositor-seed stage after the bootstrap GUI handoff
 - a fully self-hosted font import and atlas validation workflow inside the guest runtime
+- long-running conversation history and scroll persistence that are fully regression-tested
 
 ## Two-track strategy
 
@@ -96,6 +100,21 @@ Why it must stay secondary:
 
 - OpenRhiza should not become dependent on a heavy external toolkit in the core.
 - Any LVGL-style path must remain replaceable and sandbox-owned.
+
+### Track C: Sandbox-Owned Modern Shell Skill
+
+OpenRhiza must not carry a permanent toolkit-specific GUI session in the core.
+
+The modern shell path is now represented as `skill_gui_modern_shell_v1`, a sandbox skill that mutates existing GUI objects through the `os_gui_*` host ABI.
+
+This preserves the core boundary:
+
+- the core owns only the recovery presenter, display handoff, object handles, validation, and rollback gates
+- the skill owns layout intent, labels, focus hints, object style selection, and session-specific behavior
+- the skill can be replaced, rolled back, or regenerated without adding GUI policy to the kernel
+- future egui-like, LVGL-like, or custom OpenRhiza GUI renderers must enter as skills or renderer capabilities, not as core branches
+
+The rule is strict: if a GUI feature can run as a skill, it must not be implemented as hardcoded core UI behavior.
 
 ## Not recommended right now: full web GUI
 
@@ -255,6 +274,10 @@ There is also a local bootstrap skill for self-hosted GUI mutation testing:
 - `skill_gui_scene_mutator_v1`
   - a sandbox skill that mutates conversation/composer/footer objects through the GUI host imports
   - intended to validate that object bounds, interaction, style, and label changes can be owned by a skill instead of by the core
+- `skill_gui_modern_shell_v1`
+  - a sandbox-owned modern shell seed
+  - applies the current polished GUI layout through object-scoped mutations
+  - deliberately avoids toolkit-specific branches in `src/display.rs`
 
 This is still a bootstrap path, but it is the correct direction: GUI changes are becoming object-scoped scene mutations rather than global layout edits.
 
@@ -301,8 +324,9 @@ OpenRhiza should keep both tracks alive at the same time:
 
 ## Immediate next steps
 
-1. Finish stabilizing sidebar, conversation, and composer as explicit GUI objects with object-local redraw only.
-2. Eliminate the remaining object-boundary flicker without expanding the core renderer further.
+1. Regression test pointer, keyboard, Korean input, Gemini responses, and scroll after the latest runtime changes.
+2. Stabilize conversation history retention and scroll persistence during long sessions.
 3. Expand the LVGL-style bridge to cover the current bootstrap scene with the same object contract.
-4. Let OpenRhiza console prompts and sandbox skills mutate the GUI scene through the same object-scoped path.
-5. Replace temporary external edits with self-hosted GUI improvement loops from inside OpenRhiza.
+4. Move more GUI mutation ownership into sandbox skills instead of core helpers.
+5. Let OpenRhiza console prompts and sandbox skills mutate the GUI scene through the same object-scoped path.
+6. Replace temporary external edits with self-hosted GUI improvement loops from inside OpenRhiza.

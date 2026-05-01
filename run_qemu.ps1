@@ -139,6 +139,8 @@ function Merge-SkillCacheSeedMap {
         "skill_registry_lookup_v1" = "SK004.WAS"
         "skill_gui_scene_mutator_v1" = "SK005.WAS"
         "skill_fs_image_probe_v1" = "SK006.WAS"
+        "skill_gui_modern_shell_v1" = "SK007.WAS"
+        "skill_qemu_driver_pack_v1" = "SK008.WAS"
     }
 
     $existingText = ""
@@ -235,6 +237,7 @@ Initialize-FixedCacheFile -Path (Join-Path $driverDisk "SKILLCCH.TXT") -Header "
 Merge-SkillCacheSeedMap -Path (Join-Path $driverDisk "SKILLCCH.TXT")
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "SKCAPCHE.TXT") -Header "# OpenRhiza capability cache`ndomain=skills`nsummary=`n" -Size 512
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "SKLACTV.TXT") -Header "# OpenRhiza active skill map`n" -Size 512
+Initialize-FixedCacheFile -Path (Join-Path $driverDisk "AUTONOMY.TXT") -Header "# OpenRhiza autonomy config`nconfigured=0`nmode=off`ninterval_minutes=10`n" -Size 512
 if (Test-Path -LiteralPath (Join-Path $repoRoot "BOOT_AUTORUN.md")) {
     $bootAutorunText = Get-Content -LiteralPath (Join-Path $repoRoot "BOOT_AUTORUN.md") -Raw
     Initialize-FixedCacheFileFromText -Path (Join-Path $driverDisk "BOOTAUTO.MD") -Text $bootAutorunText -Size 2048
@@ -250,7 +253,7 @@ Initialize-FixedCacheFile -Path (Join-Path $driverDisk "WORKCCH.TXT") -Header "#
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "POLICCH.TXT") -Header "# OpenRhiza capability cache`ndomain=policies`nsummary=`n" -Size 512
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "EVALCCH.TXT") -Header "# OpenRhiza capability cache`ndomain=evaluations`nsummary=`n" -Size 512
 
-foreach ($skillSlot in @("SK000.WAS", "SK001.WAS", "SK002.WAS", "SK003.WAS", "SK004.WAS", "SK005.WAS", "SK006.WAS", "SK007.WAS")) {
+foreach ($skillSlot in @("SK000.WAS", "SK001.WAS", "SK002.WAS", "SK003.WAS", "SK004.WAS", "SK005.WAS", "SK006.WAS", "SK007.WAS", "SK008.WAS")) {
     Initialize-FixedCacheFile -Path (Join-Path $driverDisk $skillSlot) -Header "" -Size 65536
 }
 
@@ -261,6 +264,8 @@ Install-SeedSkillSlot -SourceName "SKCOMP.WAS" -TargetName "SK003.WAS" -Size 655
 Install-SeedSkillSlot -SourceName "SKREG.WAS" -TargetName "SK004.WAS" -Size 65536
 Install-SeedSkillSlot -SourceName "SKMUT.WAS" -TargetName "SK005.WAS" -Size 65536
 Install-SeedSkillSlot -SourceName "SKFSP.WAS" -TargetName "SK006.WAS" -Size 65536
+Install-SeedSkillSlot -SourceName "SKMSH.WAS" -TargetName "SK007.WAS" -Size 65536
+Install-SeedSkillSlot -SourceName "SKQDRV.WAS" -TargetName "SK008.WAS" -Size 65536
 Assert-WasmMagic -Path (Join-Path $driverDisk "SK000.WAS")
 Assert-WasmMagic -Path (Join-Path $driverDisk "SK001.WAS")
 Assert-WasmMagic -Path (Join-Path $driverDisk "SK002.WAS")
@@ -268,6 +273,8 @@ Assert-WasmMagic -Path (Join-Path $driverDisk "SK003.WAS")
 Assert-WasmMagic -Path (Join-Path $driverDisk "SK004.WAS")
 Assert-WasmMagic -Path (Join-Path $driverDisk "SK005.WAS")
 Assert-WasmMagic -Path (Join-Path $driverDisk "SK006.WAS")
+Assert-WasmMagic -Path (Join-Path $driverDisk "SK007.WAS")
+Assert-WasmMagic -Path (Join-Path $driverDisk "SK008.WAS")
 
 function Stop-OpenRhizaSession {
     Get-Process -Name "qemu-system-x86_64" -ErrorAction SilentlyContinue |

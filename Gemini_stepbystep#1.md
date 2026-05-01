@@ -3,9 +3,11 @@
 > Historical note:
 > This file captures an older step-by-step checkpoint.
 > It is useful for historical context only and should not override the current baseline docs.
+> References to bottom-row VGA CLI, host-side `host_brain.py`, or earlier active-path limitations are historical.
+> Current behavior is summarized in `README.md`, `OS.md`, `BUILD_AND_TEST.md`, `GUI_DEVELOPMENT.md`, and `ROADMAP.md`.
 
 This file is a longer-form narrative companion to `Gemini.md`.
-It has been refreshed so that the description matches the current repository state rather than the older April 2 snapshot.
+It has been preserved to show the older April checkpoint and should not be treated as the active status report.
 
 ## 0. Long-Term Direction
 
@@ -17,7 +19,7 @@ The architectural idea is still layered:
 - Layer 2+: advanced drivers, storage, accelerators, and local inference
 - Layer 4: generated interfaces and a networked exchange of verified capabilities
 
-## 1. What Exists Today
+## 1. What Existed At This Checkpoint
 
 The current repository is no longer only a "boot and print text" prototype.
 The active code path now includes:
@@ -89,6 +91,7 @@ However:
 ## 5. Recommended Next Moves
 
 - Either integrate `tls.rs` or clearly declare the current transport as development-only
-- Add persistent ATA write support
+- Historical target at this checkpoint: add persistent ATA write support.
+  Current baseline now has verified fixed-slot FAT16 writes, but not a general filesystem stack.
 - Replace single-instance Wasm storage with a driver registry
 - Finish the right-Shift investigation with raw HID capture under the current Windows QEMU path

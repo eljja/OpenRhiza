@@ -1,22 +1,32 @@
 # OpenRhiza Known Issues and Constraints
 
-This file tracks the current state of the repository after the April 2026 documentation refresh.
+This file tracks the current state of the repository after the May 1, 2026 runtime and documentation refresh.
 
 ## High Priority
 
-### KI-001: Only one Wasm driver instance can be active
+### KI-001: Wasm capability multiplexing is present, but bounded scheduling and isolation are still incomplete
 
 - Location: `src/core/seed.rs`
-- Current state: `OpenRhizaSeed` stores `wasm_state: Option<WasmState>`
-- Impact: loading a new Wasm driver replaces the previous one
-- Result: no concurrent Wasm-based NIC + USB + storage driver set
-- Suggested fix: move to a driver registry keyed by hardware or capability
+- Current state:
+  - `OpenRhizaSeed` now stores `wasm_modules: Vec<LoadedWasmModule>`
+  - named modules can coexist
+  - polling now uses bounded round-robin capability multiplexing
+- Remaining gap:
+  - there is a bootstrap poll budget, but no per-module quota, eviction policy, or memory accounting
+  - the runtime is still bootstrap-grade rather than a fully isolated multi-instance substrate
+- Impact: concurrent capabilities are possible, but long-term fairness and fault containment still need work
 
-### KI-002: ATA write support is missing
+### KI-002: ATA write support exists, but the persistent write floor is still bootstrap-grade
 
 - Location: `src/storage.rs`
-- Impact: successful drivers and payloads cannot be persisted back to disk from the kernel
-- Current status: read-only bootstrap and payload extraction only
+- Current state:
+  - bounded FAT16 writes exist
+  - sector write-back verification and cache flushes are now part of the write floor
+- Remaining gap:
+  - no journal
+  - no power-failure recovery protocol
+  - still limited to preallocated bootstrap files rather than a general filesystem layer
+- Impact: persistence works for cache/config/bootstrap records, but it is not yet a general durable storage subsystem
 
 ### KI-003: The live network path still carries legacy queue-wrapper structure
 
@@ -27,14 +37,14 @@ This file tracks the current state of the repository after the April 2026 docume
   - the `WasmEthernetDevice` wrapper still exists as the `smoltcp` integration surface
 - Impact: the NIC path is now live, but the abstraction layer still carries legacy queue-oriented naming and fallback behavior
 
-### KI-004: The Nexus fetch path is not yet wired to the in-repo TLS client
+### KI-004: The service API path uses the in-repo TLS client, but Nexus fetch still follows a dedicated transport path
 
 - Location: `src/https.rs`, `src/tls.rs`
 - Current state:
-  - `src/https.rs` opens a TCP socket, sends an HTTP request, parses headers, extracts a payload, and verifies the Ed25519 signature
-  - `src/tls.rs` contains a software TLS 1.3 implementation
-  - the two are not connected in the active flow
-- Impact: the transport path is not yet aligned with the repository's longer-term security goals
+  - `ApiClient` and Gemini/OpenRhiza HTTPS service calls run through the in-repo TLS client in `src/tls.rs`
+  - `ApiResponse` now preserves HTTP headers for higher-level transport consumers
+  - `NexusClient` still exists as a dedicated payload-and-signature fetch path
+- Impact: most active HTTPS traffic now follows the in-tree TLS stack, but the Nexus fetch flow is still a separate client path instead of a single unified transport surface
 
 ### KI-005: Right Shift is not yet distinct in the current Windows QEMU USB keyboard path
 
@@ -72,23 +82,67 @@ This file tracks the current state of the repository after the April 2026 docume
 - Impact: these files can mislead future contributors because they no longer describe the active runtime path
 - Suggested fix: either remove them or clearly isolate them as legacy references
 
-### KI-009: `skill_gui_compositor_seed_v1` still fails when loaded from `SK003.WAS`
+### KI-009: `skill_gui_compositor_seed_v1` still needs fixed-slot seed-path regression testing
 
 - Location: local seed skill path, currently surfaced during autorun and manual seed-load attempts
 - Current state:
-  - `skill_display_console_mode_v1`, `skill_display_framebuffer_mode_v1`, and `skill_gui_session_bootstrap_v1` load from fixed slots successfully
-  - `skill_gui_compositor_seed_v1` can still fail with a `bad magic number` parse error at offset `0x0`
-- Impact: bootstrap GUI can come up, but the compositor-seed follow-up stage is not yet reliable
-- Suggested fix: inspect `SK003.WAS` generation, stripping, padding, and seed-disk copy flow end-to-end
+  - `skill_display_console_mode_v1`, `skill_display_framebuffer_mode_v1`, and `skill_gui_session_bootstrap_v1` load from fixed slots successfully in the known-good path
+  - historical runs showed `skill_gui_compositor_seed_v1` bad-magic failures from `SK003.WAS`
+  - the latest runtime changes have not yet been QEMU-regression-tested end-to-end
+- Impact: bootstrap GUI can come up, but the compositor-seed follow-up stage should not be treated as fully hardened
+- Suggested fix: regression test `SK003.WAS` generation, stripping, padding, seed-disk copy, and guest load flow end-to-end
 
-### KI-010: Residual GUI flicker can still occur at object-boundary transitions
+### KI-010: GUI and conversation persistence need long-session regression testing
 
 - Location: `src/display.rs`
 - Current state:
-  - same-region pointer movement is nearly stable
-  - crossing between major GUI regions such as sidebar, conversation, and composer can still produce a small redraw flash
-- Impact: visual polish is not yet at the final target
-- Suggested fix: continue reducing redraw scope, especially around pointer overlay restore and object-boundary invalidation
+  - major pointer-motion flicker sources were reduced
+  - Korean and UTF-8 text handling were improved
+  - long Gemini conversations, scroll persistence, and message retention still need repeat testing
+- Impact: the GUI is usable in bootstrap form, but not yet a polished long-session desktop
+- Suggested fix: add repeatable QEMU scenarios for long prompt/response cycles, Korean input, page scrolling, and GUI mode transitions
+
+### KI-011: SMP substrate exists only as bootstrap state and heartbeat reporting
+
+- Location: `src/smp.rs`, `src/arch/x86_64/apic.rs`
+- Current state:
+  - logical core count is discovered
+  - boot-core APIC state is tracked
+  - runtime heartbeats can report core activity
+- Remaining gap:
+  - no AP startup
+  - no SIPI flow
+  - no per-core executor
+  - no interrupt affinity beyond bootstrap routing to core 0
+- Impact: OpenRhiza is still effectively single-core even on multi-core hardware
+
+### KI-012: Scheduler fairness improved, but execution remains cooperative and single-runner
+
+- Location: `src/task/executor.rs`
+- Current state:
+  - queue capacity increased
+  - wake-drop metrics exist, and dropped wakes request a full task rescan instead of becoming silent lost wakeups
+  - run-loop batching prevents one flood of wakeups from monopolizing the executor as easily
+- Remaining gap:
+  - no preemption
+  - no per-core queues
+  - no work stealing
+  - no task priority or CPU affinity model
+- Impact: the system is more observable and more bounded, but not yet a high-performance SMP scheduler
+
+### KI-013: Autonomy council is functional but still bootstrap-grade
+
+- Location: `src/autonomy.rs`, `src/api_v1.rs`, `src/main.rs`
+- Current state:
+  - autonomy defaults to off
+  - assist/council modes and interval are user-controlled
+  - council requests use Gemini with practical/analytical/bold roles
+  - autonomy-origin responses are separated from interactive prompts and do not execute machine actions
+- Remaining gap:
+  - no stale-cycle timeout recovery yet
+  - no sandbox-owned autonomy agents yet
+  - evidence gathering is still mostly prompt/context based rather than skill-orchestrated
+- Impact: autonomy is a useful substrate, but not yet the final autonomous OS brain
 
 ## Resolved or Partially Resolved Historical Items
 

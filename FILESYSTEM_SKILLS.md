@@ -32,7 +32,10 @@ That means:
 
 ## 3. Current Practical Strategy
 
-For now, OpenRhiza uses a **host-assisted filesystem skill lab** approach.
+For now, OpenRhiza uses a two-stage filesystem strategy:
+
+1. **Host-assisted validation lab**
+2. **In-OS image-backed sandbox harness**
 
 Why:
 
@@ -46,6 +49,7 @@ This is still consistent with OpenRhiza's model:
 - the core does not absorb all filesystem logic
 - a skill/runner/tooling layer mediates the capability
 - the capability is validated before it becomes trusted
+- the active recovery disk is not used as the test target
 
 ## 4. Capability Objects
 
@@ -82,6 +86,15 @@ Used now.
 - repeatable smoke tests
 - no changes to active OS runtime
 
+### Layer B0: In-OS Image Harness Bridge
+
+Active bootstrap path.
+
+- bounded raw block host ABI
+- optional image-backed harness disk
+- sandbox probe skill for FAT32/exFAT/NTFS/ext2/ext3/ext4 signatures
+- scratch-region write/read/restore validation inside OpenRhiza itself
+
 ### Layer B: Runtime Bridge
 
 Later.
@@ -90,15 +103,6 @@ Later.
 - explicit request surface
 - object-scoped mount or image access
 - still outside the minimal core
-
-### Layer B0: In-OS Image Harness Bridge
-
-Now.
-
-- bounded raw block host ABI
-- optional image-backed harness disk
-- sandbox probe skill for FAT32/exFAT/NTFS/ext2/ext3/ext4 signatures
-- scratch-region write/read/restore validation inside OpenRhiza itself
 
 ### Layer C: Optional Promotion
 

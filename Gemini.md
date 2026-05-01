@@ -4,6 +4,8 @@
 > This file is a legacy short-form Gemini-era project log.
 > It is not the authoritative description of the current architecture anymore.
 > Prefer `README.md`, `OS.md`, `DISPLAY_ABI.md`, `GUI_DEVELOPMENT.md`, `MODULE_MAP.md`, and `KNOWN_ISSUES.md` for current reality.
+> In particular, references below to a bottom-row CLI, `host_brain.py`, one active Wasm instance, and missing ATA writes are historical.
+> The current baseline has a high-resolution bootstrap GUI, direct OpenRhiza/Gemini API paths, multiple named Wasm modules with bounded polling, and verified fixed-slot FAT16 writes.
 
 This file is the short-form running log for the repository.
 Use `Gemini_stepbystep#1.md` for a more detailed narrative.
@@ -15,7 +17,7 @@ Use `Gemini_stepbystep#1.md` for a more detailed narrative.
 - Safety is centered on an in-kernel Wasm sandbox
 - The long-term direction still includes a Nexus-style signed knowledge and driver exchange
 
-## Current Repository State
+## Historical Repository State
 
 ### Active in the boot path
 
@@ -53,11 +55,11 @@ Use `Gemini_stepbystep#1.md` for a more detailed narrative.
 - Warning cleanup so `cargo build` is clean again
 - Signed Nexus payload verification before Wasm execution
 
-## Immediate Gaps
+## Historical Immediate Gaps
 
-- Only one Wasm instance can be active
-- ATA write path is missing
-- `tls.rs` is not yet connected to the live Nexus client
+- At this checkpoint, only one Wasm instance could be active
+- At this checkpoint, ATA write support was missing
+- At this checkpoint, `tls.rs` was not yet connected to the live Nexus client
 - Right Shift is still inconsistent in the current Windows QEMU USB keyboard path
 
 ## Working Environment

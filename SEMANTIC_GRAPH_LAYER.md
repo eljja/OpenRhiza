@@ -125,15 +125,30 @@ The source of truth remains the underlying filesystem content.
 
 ## 8. Initial Deliverable
 
-The first implementation is a host-side tool that:
+The first implementation should have two layers:
 
-- scans a filesystem root
-- builds node and edge artifacts
-- chunks text files
-- extracts simple path references
-- emits graph artifacts into a sidecar directory
+1. a host-side validation tool that:
+   - scans a filesystem root
+   - builds node and edge artifacts
+   - chunks text files
+   - extracts simple path references
+   - emits graph artifacts into a sidecar directory
+2. an OpenRhiza-side sandbox skill that:
+   - consumes a bounded directory or image view through the storage host ABI
+   - emits the same `manifest.json`, `nodes.ndjson`, and `edges.ndjson` format
+   - updates only its own graph object files
+   - returns compact object references to the LLM instead of dumping raw storage content
 
-This is intentionally outside the active OpenRhiza core.
+The host tool is useful for speed and comparison, but the OS requirement is that the same capability can run as a bounded skill inside OpenRhiza.
+The graph builder must never become a hidden core service.
+
+Current OS-side bootstrap:
+
+- `/semantic-status` reports whether the storage host ABI is visible from OpenRhiza.
+- It reports the expected graph root, artifact names, registry context availability, and loaded Wasm module count.
+- The current implementation is deliberately introspection-only in core.
+- The actual graph builder target remains `skill_semantic_graph_index_v1`.
+- Graph writes must be object-scoped under `.openrhiza/semantic-graph/` so a broken indexer cannot corrupt unrelated filesystem objects.
 
 ## 9. Long-Term Direction
 

@@ -42,6 +42,12 @@ fn wait_secondary_idle(port_base: u16) -> bool {
     false
 }
 
+fn secondary_io_delay(port_base: u16) {
+    for _ in 0..4 {
+        let _ = read_port_u8(port_base + 7);
+    }
+}
+
 pub fn read_sector_ata_secondary_device(
     device: SecondaryAtaDevice,
     lba: u32,
@@ -49,20 +55,31 @@ pub fn read_sector_ata_secondary_device(
 ) {
     let port_base = 0x170; // Secondary IDE Bus
 
+    if !wait_secondary_idle(port_base) {
+        buffer.fill(0);
+        return;
+    }
+
     write_port_u8(port_base + 6, secondary_drive_head(device, lba));
+    secondary_io_delay(port_base);
     write_port_u8(port_base + 2, 1); // Sector Count: 1
     write_port_u8(port_base + 3, (lba & 0xFF) as u8); // LBA Low
     write_port_u8(port_base + 4, ((lba >> 8) & 0xFF) as u8); // LBA Mid
     write_port_u8(port_base + 5, ((lba >> 16) & 0xFF) as u8); // LBA High
     write_port_u8(port_base + 7, 0x20); // Command: Read Sector with Retry
 
-    let _ = wait_secondary_ready(port_base);
+    if !wait_secondary_ready(port_base) {
+        buffer.fill(0);
+        return;
+    }
 
     for i in 0..256 {
         let word = read_port_u16(port_base);
         buffer[i * 2] = (word & 0xFF) as u8;
         buffer[i * 2 + 1] = (word >> 8) as u8;
     }
+
+    let _ = wait_secondary_idle(port_base);
 }
 
 // Simple polling ATA PIO mode driver for Secondary Master (Port 0x170)
@@ -77,14 +94,21 @@ pub fn write_sector_ata_secondary_device(
 ) -> bool {
     let port_base = 0x170; // Secondary IDE Bus
 
+    if !wait_secondary_idle(port_base) {
+        return false;
+    }
+
     write_port_u8(port_base + 6, secondary_drive_head(device, lba));
+    secondary_io_delay(port_base);
     write_port_u8(port_base + 2, 1);
     write_port_u8(port_base + 3, (lba & 0xFF) as u8);
     write_port_u8(port_base + 4, ((lba >> 8) & 0xFF) as u8);
     write_port_u8(port_base + 5, ((lba >> 16) & 0xFF) as u8);
     write_port_u8(port_base + 7, 0x30); // Write Sector
 
-    let _ = wait_secondary_ready(port_base);
+    if !wait_secondary_ready(port_base) {
+        return false;
+    }
 
     for i in 0..256 {
         let lo = buffer[i * 2] as u16;
@@ -97,6 +121,22 @@ pub fn write_sector_ata_secondary_device(
 
 pub fn write_sector_ata_secondary(lba: u32, buffer: &[u8; 512]) -> bool {
     write_sector_ata_secondary_device(SecondaryAtaDevice::Master, lba, buffer)
+}
+
+fn write_sector_verified_secondary(lba: u32, buffer: &[u8; 512]) -> bool {
+    for _ in 0..3 {
+        if !write_sector_ata_secondary(lba, buffer) {
+            continue;
+        }
+
+        let mut verify = [0u8; 512];
+        read_sector_ata_secondary(lba, &mut verify);
+        if verify == *buffer {
+            return true;
+        }
+    }
+
+    false
 }
 
 pub fn flush_secondary_ata_device(device: SecondaryAtaDevice) -> bool {
@@ -439,17 +479,14 @@ fn write_named_file_to_secondary_fat16_internal(
                 written += bytes;
             }
 
-            let mut write_ok = false;
-            for _ in 0..3 {
-                if write_sector_ata_secondary(cluster_lba + sector_offset, &sector) {
-                    write_ok = true;
-                    break;
-                }
-            }
-            if !write_ok {
+            if !write_sector_verified_secondary(cluster_lba + sector_offset, &sector) {
                 return Err("ATA sector write failed");
             }
         }
+    }
+
+    if !flush_secondary_ata_device(SecondaryAtaDevice::Master) {
+        return Err("ATA cache flush failed after data write");
     }
 
     if !update_directory_size {
@@ -462,15 +499,12 @@ fn write_named_file_to_secondary_fat16_internal(
     let size_offset = file.dir_entry_offset + 28;
     dir_sector[size_offset..size_offset + 4].copy_from_slice(&size_bytes);
 
-    let mut write_ok = false;
-    for _ in 0..3 {
-        if write_sector_ata_secondary(file.dir_sector_lba, &dir_sector) {
-            write_ok = true;
-            break;
-        }
-    }
-    if !write_ok {
+    if !write_sector_verified_secondary(file.dir_sector_lba, &dir_sector) {
         return Err("Failed to update FAT16 directory entry");
+    }
+
+    if !flush_secondary_ata_device(SecondaryAtaDevice::Master) {
+        return Err("ATA cache flush failed after directory update");
     }
 
     Ok(())

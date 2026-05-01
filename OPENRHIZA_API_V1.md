@@ -2,6 +2,7 @@
 
 This document defines the first machine-oriented API contract between the OpenRhiza OS and
 `openrhiza.com`.
+The service is a capability registry, not just an app store: drivers, programs, skills, workflows, policies, evaluations, and model metadata all use the same discovery-and-validation pattern.
 
 The design target is a text-friendly JSON protocol that works well for a bare-metal client,
 can be served by `openrhiza-nexus/`, and can later be mirrored into human-facing web pages.
@@ -41,6 +42,9 @@ can be served by `openrhiza-nexus/`, and can later be mirrored into human-facing
   - `http_json`
   - `signed_wasm`
   - `driver_download`
+  - `skill_download`
+  - `workflow_query`
+  - `policy_query`
 
 ## Data Shapes
 
@@ -149,7 +153,7 @@ Response:
 ```json
 {
   "success": true,
-  "server_time": "2026-04-16T12:00:00Z",
+  "server_time": "2026-05-01T12:00:00Z",
   "next_actions": []
 }
 ```
@@ -276,6 +280,105 @@ Request:
 }
 ```
 
+### `POST /api/v1/skill/query`
+
+Purpose:
+
+- request narrow capability objects the OS or LLM can invoke while solving a task
+
+Request:
+
+```json
+{
+  "protocol_version": "v1",
+  "node_id": "orhiza_pk_ed25519_01_abcd1234",
+  "capability_tags": ["display", "gui", "filesystem_probe"],
+  "runtime": {
+    "sandbox": "wasm",
+    "max_payload_bytes": 65536
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "skills": [
+    {
+      "skill_id": "skill_gui_scene_mutator_v1",
+      "display_name": "GUI Scene Mutator",
+      "delivery_type": "wasm",
+      "stability_score": 87,
+      "summary": "Mutates object-scoped GUI scenes without replacing the recovery shell."
+    }
+  ]
+}
+```
+
+### `POST /api/v1/workflow/query`
+
+Purpose:
+
+- request stepwise plans that combine skills, drivers, policies, and evaluations
+
+Request:
+
+```json
+{
+  "protocol_version": "v1",
+  "node_id": "orhiza_pk_ed25519_01_abcd1234",
+  "intent": "expand display and start GUI session",
+  "available_capabilities": ["network", "storage_fixed_slots", "gui_bootstrap"]
+}
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "workflows": [
+    {
+      "workflow_id": "workflow_gui_bootstrap_v1",
+      "summary": "Load display mode, validate compositor seed, then promote GUI session if recovery remains usable.",
+      "rollback_required": true
+    }
+  ]
+}
+```
+
+### `POST /api/v1/policy/query`
+
+Purpose:
+
+- request safety policies for activation, rollback, storage writes, autonomy, and GUI mutation
+
+Request:
+
+```json
+{
+  "protocol_version": "v1",
+  "node_id": "orhiza_pk_ed25519_01_abcd1234",
+  "domains": ["runtime_hotswap", "storage_write", "autonomy"]
+}
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "policies": [
+    {
+      "policy_id": "policy_runtime_hotswap_v1",
+      "summary": "Validate candidate in sandbox, preserve rollback target, then promote only after input and display remain alive."
+    }
+  ]
+}
+```
+
 Response:
 
 ```json
@@ -338,7 +441,7 @@ Response:
 
 Purpose:
 
-- upload driver and machine evaluation results back to the service
+- upload driver, skill, workflow, policy, and machine evaluation results back to the service
 
 Request:
 
@@ -346,6 +449,7 @@ Request:
 {
   "protocol_version": "v1",
   "node_id": "orhiza_pk_ed25519_01_abcd1234",
+  "capability_type": "driver",
   "driver_id": "drv_e1000_native_v1",
   "hardware_match_key": "pci:8086:100e",
   "stability_score": 92,
@@ -374,7 +478,7 @@ Included in v1:
 - machine profile upload
 - PCI hardware reporting
 - driver recommendations
-- software and model catalog recommendations
+- skill, workflow, policy, software, and model catalog recommendations
 - evaluation upload
 
 Deferred beyond v1:

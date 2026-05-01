@@ -101,6 +101,16 @@ pub struct QueuedGeminiPrompt {
     pub prompt: String,
     pub orchestrate: bool,
     pub auto_upload_match_key: Option<String>,
+    pub origin: GeminiPromptOrigin,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GeminiPromptOrigin {
+    Interactive,
+    AutonomyCouncil {
+        cycle_id: u64,
+        role: String,
+    },
 }
 
 lazy_static! {
@@ -371,6 +381,7 @@ pub fn queue_gemini_prompt(prompt: String) -> Result<(), String> {
         prompt,
         orchestrate: true,
         auto_upload_match_key: None,
+        origin: GeminiPromptOrigin::Interactive,
     })
     .map_err(|queued| queued.prompt)
 }
@@ -380,6 +391,7 @@ pub fn queue_direct_gemini_prompt(prompt: String) -> Result<(), String> {
         prompt,
         orchestrate: false,
         auto_upload_match_key: None,
+        origin: GeminiPromptOrigin::Interactive,
     })
     .map_err(|queued| queued.prompt)
 }
@@ -392,7 +404,25 @@ pub fn queue_generated_driver_gemini_prompt(
         prompt,
         orchestrate: false,
         auto_upload_match_key: Some(String::from(match_key)),
+        origin: GeminiPromptOrigin::Interactive,
     })
+}
+
+pub fn queue_autonomy_gemini_prompt(
+    prompt: String,
+    cycle_id: u64,
+    role: &str,
+) -> Result<(), String> {
+    GEMINI_PROMPT_QUEUE.push(QueuedGeminiPrompt {
+        prompt,
+        orchestrate: false,
+        auto_upload_match_key: None,
+        origin: GeminiPromptOrigin::AutonomyCouncil {
+            cycle_id,
+            role: String::from(role),
+        },
+    })
+    .map_err(|queued| queued.prompt)
 }
 
 pub fn queue_driver_registry_command(

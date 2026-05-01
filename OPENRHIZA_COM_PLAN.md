@@ -2,7 +2,7 @@
 
 This document captures the current plan for connecting the bare-metal OpenRhiza OS to
 `openrhiza.com` and for turning the companion `openrhiza-nexus/` project into the first
-public-facing service for nodes, hardware knowledge, drivers, software, and model metadata.
+public-facing capability registry for nodes, hardware knowledge, drivers, programs, skills, workflows, policies, evaluations, software, and model metadata.
 
 ## Goals
 
@@ -12,14 +12,17 @@ OpenRhiza should eventually be able to:
 - identify itself in a stable way across reboots
 - describe its hardware inventory in a machine-readable format
 - fetch driver recommendations and signed payloads for known hardware
+- fetch skills and workflows for display, GUI, filesystem, testing, and orchestration tasks
+- fetch policies that constrain safe activation, rollback, and autonomy behavior
 - upload stability and performance feedback for hardware and drivers
 - discover software and LLM metadata appropriate for the current machine
+- upload evaluations for drivers, skills, workflows, policies, and generated artifacts
 
 The public website should eventually be able to:
 
 - expose machine-oriented API endpoints for OpenRhiza nodes
-- expose human-oriented read-only pages for browsing hardware, drivers, software, and node statistics
-- accept and organize feedback from nodes about driver quality and hardware behavior
+- expose human-oriented read-only pages for browsing hardware, drivers, skills, workflows, policies, software, and node statistics
+- accept and organize feedback from nodes about capability quality and hardware behavior
 
 ## Architectural Decisions
 
@@ -118,6 +121,15 @@ Phase 1 target:
 - query software packages by capability tags
 - query LLM metadata by machine capability summary
 
+### D2. Capability discovery
+
+Phase 1 target:
+
+- query skills by capability tag and runtime requirement
+- query workflows by user intent and available local capabilities
+- query policies by action domain, such as storage write, runtime hot-swap, autonomy, and GUI mutation
+- prefer known-good registry capabilities before asking the LLM to generate a new one
+
 ### E. Evaluation and telemetry upload
 
 Phase 1 target:
@@ -139,6 +151,9 @@ First endpoints:
 - `POST /api/v1/node/heartbeat`
 - `POST /api/v1/hardware/report`
 - `POST /api/v1/driver/query`
+- `POST /api/v1/skill/query`
+- `POST /api/v1/workflow/query`
+- `POST /api/v1/policy/query`
 - `POST /api/v1/evaluation/upload`
 
 ### B. Data model
@@ -151,6 +166,9 @@ First persisted entities:
 - hardware_devices
 - drivers
 - driver_versions
+- skills
+- workflows
+- policies
 - evaluations
 - software_packages
 - llm_catalog
@@ -160,7 +178,7 @@ First persisted entities:
 Initial public UI goals:
 
 - browse hardware IDs and known support status
-- browse drivers and signed payload metadata
+- browse drivers, skills, workflows, policies, and signed payload metadata
 - browse software packages and model catalog entries
 - see public aggregate node statistics
 
@@ -170,8 +188,8 @@ Initial public UI goals:
 2. Implement service route skeletons in `openrhiza-nexus/`.
 3. Add OS-side machine profile and fingerprint generation.
 4. Replace single-purpose Nexus fetches with structured JSON API calls.
-5. Implement driver query end-to-end.
-6. Implement evaluation upload.
+5. Implement driver, skill, workflow, and policy query end-to-end.
+6. Implement evaluation upload for all capability types.
 7. Build the public read-only web pages on top of the same data model.
 
 ## MVP Definition
@@ -182,6 +200,7 @@ The first end-to-end milestone is complete when:
 - the OS can register a node using a public-key-based identity
 - the OS can upload a machine profile and PCI hardware inventory
 - the service can return driver recommendations for known hardware IDs
+- the service can return skill, workflow, and policy recommendations for known capability requests
 - the public website can show the same inventory and recommendation data in read-only form
 
 ## Current Repository Implications

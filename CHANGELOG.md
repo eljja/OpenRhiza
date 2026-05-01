@@ -7,7 +7,6 @@ and this project adheres to Semantic Versioning.
 
 ## [Unreleased]
 ### Added
-### Added
 - Object-scoped bootstrap GUI runtime with sidebar, conversation surface, composer, footer, and per-object focus/hover/selection tracking.
 - Shared GUI scene contract plus LVGL-style bridge scaffold so native and LVGL-like renderers can target the same scene model.
 - Sandbox GUI mutation imports:
@@ -24,6 +23,12 @@ and this project adheres to Semantic Versioning.
 - `skill_gui_scene_mutator_v1` bootstrap skill for self-hosted GUI mutation testing.
 - Noto Sans KR based GUI font pipeline and asset generation for a more modern bootstrap UI.
 - Python/PowerShell serial log viewer improvements and direct log-based debugging support.
+- Autonomy mode substrate with `/autonomy-status`, `/autonomy-mode`, `/autonomy-interval`, and `/autonomy-run-now`.
+- Gemini-backed autonomy council roles for practical, analytical, and bold planning.
+- Scheduler metrics, bounded batch execution, and dropped-wake rescan recovery.
+- Bounded round-robin polling for multiple named Wasm input/capability modules.
+- SMP bootstrap status and heartbeat reporting.
+- `ROADMAP.md` as the current public-readiness and AI OS autonomy roadmap.
 
 ### Changed
 - Reframed OpenRhiza around explicit minimal-core and sandbox-first rules across the main documentation set.
@@ -32,6 +37,9 @@ and this project adheres to Semantic Versioning.
 - Tightened display redraw behavior so GUI hover and pointer changes no longer force large layout redraws.
 - Simplified GUI status rendering to reduce redraw-triggered flicker.
 - Refined the bootstrap pointer shape and size.
+- Separated autonomy-origin Gemini responses from interactive prompts so council output cannot execute machine-action JSON.
+- Updated current documentation to treat older Gemini logs as historical rather than authoritative.
+- Updated known issues and core runtime docs for the current May 2026 runtime foundation.
 
 ### Fixed
 - Fixed a GUI/input deadlock caused by re-entering the VGA writer lock during GUI pointer interaction updates.
@@ -39,3 +47,6 @@ and this project adheres to Semantic Versioning.
 - Fixed multiple GUI flicker paths by separating layout changes from interaction-state changes and reducing redraw scope.
 - Fixed GUI bootstrap regressions where seed skills were looked up by unstable direct filenames instead of stable slot files.
 - Restored stable GUI input after removing the pointer-motion deadlock path.
+- Fixed UTF-8-unsafe autonomy GUI context truncation that could panic on Korean text.
+- Fixed autonomy council cycle setup so only successfully queued roles are expected.
+- Fixed JSON-like string parsing in autonomy and GUI action paths so UTF-8 text is not decoded byte-by-byte.

@@ -86,6 +86,7 @@ struct BootstrapOverlayState {
 #[derive(Clone)]
 struct BootstrapFrameCache {
     layout_signature: u64,
+    gui_mutation_epoch: u64,
     status_line: String,
     header_line: String,
     input_line: String,
@@ -281,6 +282,7 @@ static GUI_OBJECTS: Mutex<GuiObjectRuntime> = Mutex::new(GuiObjectRuntime::new()
 static GUI_SCENE_RUNTIME: Mutex<GuiSceneRuntimeState> = Mutex::new(GuiSceneRuntimeState::new());
 static GUI_MUTATIONS: Mutex<Vec<GuiMutation>> = Mutex::new(Vec::new());
 static GUI_CHAT_HISTORY: Mutex<Vec<GuiChatMessage>> = Mutex::new(Vec::new());
+static GUI_MUTATION_EPOCH: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 static BOOTSTRAP_SURFACE_DIRTY: AtomicBool = AtomicBool::new(true);
 static LAST_GUI_CARET_VISIBLE: AtomicBool = AtomicBool::new(true);
 
@@ -329,6 +331,57 @@ pub fn record_gui_system_message(text: &str) {
         style: GuiStyleClass::AccentText,
         text: String::from(trimmed),
     });
+}
+
+pub fn recent_gui_chat_context(max_messages: usize, max_chars: usize) -> Option<String> {
+    let history = GUI_CHAT_HISTORY.lock();
+    if history.is_empty() || max_messages == 0 || max_chars == 0 {
+        return None;
+    }
+
+    let filtered: alloc::vec::Vec<&GuiChatMessage> = history
+        .iter()
+        .filter(|message| !matches!(message.style, GuiStyleClass::AccentText))
+        .collect();
+    if filtered.is_empty() {
+        return None;
+    }
+
+    let start = filtered.len().saturating_sub(max_messages);
+    let mut out = String::new();
+
+    for message in filtered.iter().skip(start) {
+        let label = if message.is_user { "user" } else { "assistant" };
+        let text = utf8_prefix_chars(message.text.as_str(), 220);
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(label);
+        out.push_str(": ");
+        out.push_str(text.as_str());
+        if out.chars().count() >= max_chars {
+            break;
+        }
+    }
+
+    out = utf8_prefix_chars(out.as_str(), max_chars);
+
+    if out.trim().is_empty() {
+        None
+    } else {
+        Some(out)
+    }
+}
+
+fn utf8_prefix_chars(text: &str, max_chars: usize) -> String {
+    if max_chars == 0 {
+        return String::new();
+    }
+    let mut out = String::new();
+    for ch in text.chars().take(max_chars) {
+        out.push(ch);
+    }
+    out
 }
 
 pub fn active_mode() -> DisplayModeInfo {
@@ -476,6 +529,11 @@ pub fn set_gui_session_state_from_wasm(state: u32) {
 
 pub fn notify_surface_dirty() {
     BOOTSTRAP_SURFACE_DIRTY.store(true, Ordering::Relaxed);
+}
+
+fn notify_gui_mutation_changed() {
+    GUI_MUTATION_EPOCH.fetch_add(1, Ordering::Relaxed);
+    notify_surface_dirty();
 }
 
 pub fn update_pointer_motion(dx: i8, dy: i8, buttons: u8, wheel: i8, input_line: &str) {
@@ -736,7 +794,7 @@ pub fn set_gui_label(handle: u64, label: &str) -> Result<(), &'static str> {
         new_interaction: None,
         new_label: Some(String::from(label)),
     });
-    notify_surface_dirty();
+    notify_gui_mutation_changed();
     Ok(())
 }
 
@@ -752,7 +810,7 @@ pub fn set_gui_style(handle: u64, style_name: &str) -> Result<(), &'static str> 
         new_interaction: None,
         new_label: None,
     });
-    notify_surface_dirty();
+    notify_gui_mutation_changed();
     Ok(())
 }
 
@@ -776,7 +834,7 @@ pub fn set_gui_bounds(
         new_interaction: None,
         new_label: None,
     });
-    notify_surface_dirty();
+    notify_gui_mutation_changed();
     Ok(())
 }
 
@@ -793,7 +851,7 @@ pub fn set_gui_interaction(handle: u64, interaction_name: &str) -> Result<(), &'
         new_interaction: Some(interaction),
         new_label: None,
     });
-    notify_surface_dirty();
+    notify_gui_mutation_changed();
     Ok(())
 }
 
@@ -805,7 +863,7 @@ pub fn reset_gui_mutations(handle: Option<u64>) {
         mutations.clear();
     }
     drop(mutations);
-    notify_surface_dirty();
+    notify_gui_mutation_changed();
 }
 
 pub fn select_gui_session(session: &str) -> Result<(), &'static str> {
@@ -900,7 +958,7 @@ pub fn set_gui_style_code_from_wasm(handle: u32, style_code: u32) {
         new_interaction: None,
         new_label: None,
     });
-    notify_surface_dirty();
+    notify_gui_mutation_changed();
 }
 
 pub fn set_gui_bounds_from_wasm(handle: u32, x: u32, y: u32, width: u32, height: u32) {
@@ -921,7 +979,7 @@ pub fn set_gui_interaction_code_from_wasm(handle: u32, interaction_code: u32) {
         new_interaction: Some(interaction),
         new_label: None,
     });
-    notify_surface_dirty();
+    notify_gui_mutation_changed();
 }
 
 pub fn reset_gui_mutations_from_wasm(handle: u32) {
@@ -1242,9 +1300,13 @@ fn draw_bootstrap_scene(
 
     let previous = BOOTSTRAP_FRAME_CACHE.lock().clone();
     let (selected_session, hovered, focused) = current_gui_object_state();
+    let gui_mutation_epoch = GUI_MUTATION_EPOCH.load(Ordering::Relaxed);
     let layout_changed = previous
         .as_ref()
-        .map(|cache| cache.layout_signature != layout_signature)
+        .map(|cache| {
+            cache.layout_signature != layout_signature
+                || cache.gui_mutation_epoch != gui_mutation_epoch
+        })
         .unwrap_or(true);
     let interaction_changed = previous
         .as_ref()
@@ -1339,6 +1401,7 @@ fn draw_bootstrap_scene(
 
     *BOOTSTRAP_FRAME_CACHE.lock() = Some(BootstrapFrameCache {
         layout_signature,
+        gui_mutation_epoch,
         status_line: snapshot.status_line.clone(),
         header_line: snapshot.header_line.clone(),
         input_line: snapshot.input_line.clone(),
@@ -1448,14 +1511,16 @@ fn redraw_gui_interaction_delta(
         }
     }
 
+    if selected_changed {
+        redraw_gui_main_stack(surface, log_lines, input_line);
+        return;
+    }
+
     if conversation_changed {
         redraw_gui_chat_area(surface, log_lines);
     }
     if composer_changed {
         redraw_gui_input_composer(surface, input_line);
-    }
-    if selected_changed {
-        draw_gui_footer(surface, "", "");
     }
 }
 
@@ -1834,22 +1899,22 @@ struct GuiMessageSpec {
 }
 
 fn gui_layout(width: usize, height: usize, input_line: &str) -> GuiLayout {
-    let sidebar_width = 260usize;
+    let sidebar_width = 280usize;
     let content_top = 64usize;
-    let main_x = sidebar_width + 24;
-    let main_width = width.saturating_sub(main_x + 24);
-    let composer_x = 304usize;
-    let composer_w = width.saturating_sub(composer_x + 24);
+    let main_x = sidebar_width + 28;
+    let main_width = width.saturating_sub(main_x + 28);
+    let composer_x = main_x + 20;
+    let composer_w = width.saturating_sub(composer_x + 28);
     let composer_h = gui_composer_height_for_width(composer_w, input_line);
     let footer_h = 28usize;
     let footer_y = height.saturating_sub(footer_h + 18);
     let composer_y = footer_y.saturating_sub(composer_h + 20);
-    let chat_x = main_x;
-    let chat_y = 92usize;
-    let chat_w = width.saturating_sub(main_x + 24);
+    let chat_x = main_x + 20;
+    let chat_y = 104usize;
+    let chat_w = width.saturating_sub(chat_x + 28);
     let chat_h = composer_y.saturating_sub(chat_y + 16);
-    let footer_x = sidebar_width + 44;
-    let footer_w = width.saturating_sub(footer_x + 24);
+    let footer_x = composer_x;
+    let footer_w = composer_w;
     GuiLayout {
         content_top,
         main_x,
@@ -1873,46 +1938,146 @@ fn draw_gui_static_layout(surface: BootstrapSurfaceState, _panel_title: &str, _p
     sync_gui_objects(surface.width, surface.height, "input> ");
     let layout = gui_layout(surface.width, surface.height, "input> ");
     let scene = build_gui_scene(surface.width, surface.height, &[], "input> ", "", "");
-    let sidebar_width = 260usize;
+    let sidebar_width = 280usize;
     let content_bottom = surface.height.saturating_sub(24);
+    let selected = GUI_OBJECTS.lock().selected_session;
 
-    fill_rect(surface, 0, layout.content_top, sidebar_width, surface.height.saturating_sub(layout.content_top), 0x171717);
-    fill_rect(surface, sidebar_width, layout.content_top, 2, surface.height.saturating_sub(layout.content_top), 0x2b2b2b);
-    draw_text(surface, 20, layout.content_top + 8, "Sessions", 0xe8e8e8, 1);
+    fill_rect_vertical_gradient(surface, 0, layout.content_top, sidebar_width, surface.height.saturating_sub(layout.content_top), 0x12151d, 0x0e1016);
+    fill_rect(surface, sidebar_width, layout.content_top, 1, surface.height.saturating_sub(layout.content_top), 0x2a3140);
+    draw_text(surface, 24, layout.content_top + 12, "OpenRhiza", 0xf2f6ff, 1);
+    draw_text(surface, 24, layout.content_top + 36, "AI-native sessions", 0x7f8aa3, 1);
     for node in scene.nodes.iter().filter(|node| matches!(node.kind, GuiNodeKind::SessionItem)) {
         draw_sidebar_item(surface, node);
     }
 
-    fill_rect(surface, layout.main_x, layout.content_top, layout.main_width, content_bottom.saturating_sub(layout.content_top), 0x141414);
+    fill_rect_vertical_gradient(
+        surface,
+        layout.main_x,
+        layout.content_top,
+        layout.main_width,
+        content_bottom.saturating_sub(layout.content_top),
+        0x10141d,
+        0x0b0d12,
+    );
+
+    let _ = selected;
+    draw_text(surface, layout.chat_x, layout.content_top + 14, selected_session_caption(), 0xdce7ff, 1);
+}
+
+fn redraw_gui_main_stack(surface: BootstrapSurfaceState, log_lines: &[(String, u8)], input_line: &str) {
+    let layout = gui_layout(surface.width, surface.height, input_line);
+    let content_bottom = surface.height.saturating_sub(24);
+
+    fill_rect_vertical_gradient(
+        surface,
+        layout.main_x,
+        layout.content_top,
+        layout.main_width,
+        content_bottom.saturating_sub(layout.content_top),
+        0x10141d,
+        0x0b0d12,
+    );
+    draw_text(
+        surface,
+        layout.chat_x,
+        layout.content_top + 14,
+        selected_session_caption(),
+        0xdce7ff,
+        1,
+    );
+    redraw_gui_chat_area(surface, log_lines);
+    redraw_gui_input_composer(surface, input_line);
+    draw_gui_footer(surface, "", "");
 }
 
 fn draw_sidebar_item(surface: BootstrapSurfaceState, node: &GuiNode) {
     let bg = match node.interaction {
-        GuiInteractionState::Active => 0x2f3a4e,
-        GuiInteractionState::Focused => 0x263042,
-        GuiInteractionState::Hovered => 0x232323,
-        _ => 0x171717,
+        GuiInteractionState::Active => 0x233451,
+        GuiInteractionState::Focused => 0x1e2d46,
+        GuiInteractionState::Hovered => 0x1a202b,
+        _ => 0x12151d,
     };
-    fill_rect(
+    draw_soft_panel(
         surface,
         node.bounds.x,
         node.bounds.y,
         node.bounds.width,
         node.bounds.height,
         bg,
+        if matches!(node.interaction, GuiInteractionState::Active) { 0x4f8cff } else { 0x232b38 },
     );
+    if matches!(node.interaction, GuiInteractionState::Active) {
+        fill_rect(surface, node.bounds.x, node.bounds.y + 6, 3, node.bounds.height.saturating_sub(12), 0x65a6ff);
+    }
     draw_text(
         surface,
-        node.bounds.x + 12,
+        node.bounds.x + 14,
         node.bounds.y + 9,
         node.label.as_str(),
         if matches!(node.interaction, GuiInteractionState::Active | GuiInteractionState::Focused) {
-            0xffffff
+            0xf6f8ff
         } else {
-            0xb0b0b0
+            0x9ca6b8
         },
         1,
     );
+}
+
+fn draw_soft_panel(
+    surface: BootstrapSurfaceState,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+    fill: u32,
+    border: u32,
+) {
+    fill_rect(surface, x + 1, y, width.saturating_sub(2), height, fill);
+    fill_rect(surface, x, y + 1, width, height.saturating_sub(2), fill);
+    draw_rect_outline(surface, x, y, width, height, border);
+}
+
+fn draw_rect_outline(surface: BootstrapSurfaceState, x: usize, y: usize, width: usize, height: usize, rgb: u32) {
+    if width == 0 || height == 0 {
+        return;
+    }
+    fill_rect(surface, x, y, width, 1, rgb);
+    fill_rect(surface, x, y + height.saturating_sub(1), width, 1, rgb);
+    fill_rect(surface, x, y, 1, height, rgb);
+    fill_rect(surface, x + width.saturating_sub(1), y, 1, height, rgb);
+}
+
+fn fill_rect_vertical_gradient(
+    surface: BootstrapSurfaceState,
+    x: usize,
+    y: usize,
+    width: usize,
+    height: usize,
+    top: u32,
+    bottom: u32,
+) {
+    if height == 0 {
+        return;
+    }
+    for row in 0..height {
+        let weight = (row * 255 / height.max(1)) as u32;
+        let color = mix_rgb(top, bottom, weight as u8);
+        fill_rect(surface, x, y + row, width, 1, color);
+    }
+}
+
+fn mix_rgb(a: u32, b: u32, t: u8) -> u32 {
+    let t = t as u32;
+    let inv = 255u32.saturating_sub(t);
+    let ar = (a >> 16) & 0xff;
+    let ag = (a >> 8) & 0xff;
+    let ab = a & 0xff;
+    let br = (b >> 16) & 0xff;
+    let bg = (b >> 8) & 0xff;
+    let bb = b & 0xff;
+    (((ar * inv + br * t) / 255) << 16)
+        | (((ag * inv + bg * t) / 255) << 8)
+        | ((ab * inv + bb * t) / 255)
 }
 
 fn draw_gui_footer(surface: BootstrapSurfaceState, footer_primary: &str, footer_secondary: &str) {
@@ -2065,7 +2230,7 @@ fn redraw_gui_input_composer(surface: BootstrapSurfaceState, input_line: &str) {
     };
     let composer_x = composer.bounds.x;
     let composer_w = composer.bounds.width;
-    let composer_h = gui_composer_height(surface, input_line);
+    let composer_h = composer.bounds.height;
     let composer_y = composer.bounds.y;
     fill_rect(surface, composer_x, composer_y, composer_w, composer_h, 0x1c1c1c);
     fill_rect(
@@ -2136,11 +2301,6 @@ pub fn is_gui_conversation_focused() -> bool {
         && matches!(session_target(), DisplaySessionTarget::GuiSession)
 }
 
-fn gui_composer_height(surface: BootstrapSurfaceState, input_line: &str) -> usize {
-    let composer_w = surface.width.saturating_sub(304 + 24);
-    gui_composer_height_for_width(composer_w, input_line)
-}
-
 fn gui_composer_height_for_width(composer_w: usize, input_line: &str) -> usize {
     let line_count = wrap_text(
         composer_message_text(input_line),
@@ -2187,10 +2347,9 @@ fn build_gui_scene(
     let state = *GUI_OBJECTS.lock();
     let layout = gui_layout(width, height, input_line);
     let selected = state.selected_session;
-    let backend_preference = if matches!(selected, GuiObjectId::SessionSandboxGui) {
-        GuiBackendPreference::LvglStyle
-    } else {
-        GuiBackendPreference::NativeObject
+    let backend_preference = match selected {
+        GuiObjectId::SessionSandboxGui => GuiBackendPreference::LvglStyle,
+        _ => GuiBackendPreference::NativeObject,
     };
     let messages = session_message_specs(selected, log_lines);
 
@@ -2214,7 +2373,7 @@ fn build_gui_scene(
         bounds: ContractRect {
             x: 0,
             y: layout.content_top,
-            width: 260,
+            width: 280,
             height: height.saturating_sub(layout.content_top),
         },
         object_ref: Some(String::from("gui.sidebar")),
@@ -2229,8 +2388,8 @@ fn build_gui_scene(
         bounds: ContractRect {
             x: 20,
             y: layout.content_top + 66,
-            width: 220,
-            height: 188,
+            width: 232,
+            height: 244,
         },
         object_ref: Some(String::from("session.list")),
         label: String::from("Sessions"),
@@ -2255,15 +2414,6 @@ fn build_gui_scene(
         object_ref: Some(String::from(selected_session_ref(selected))),
         label: String::from(selected_session_caption()),
     });
-    append_message_nodes(
-        &mut nodes,
-        gui_handle(20),
-        layout.chat_x,
-        layout.chat_y,
-        layout.chat_w,
-        layout.chat_h,
-        &messages,
-    );
 
     nodes.push(GuiNode {
         handle: gui_handle(30),
@@ -2316,12 +2466,52 @@ fn build_gui_scene(
     });
 
     apply_gui_mutations(&mut nodes);
+    normalize_gui_scene_children(&mut nodes, &messages);
 
     GuiScene {
         scene_id: format!("bootstrap:{}:{}", selected_session_ref(selected), session_target_name(session_target())),
         backend_preference,
         nodes,
     }
+}
+
+fn normalize_gui_scene_children(nodes: &mut Vec<GuiNode>, messages: &[GuiMessageSpec]) {
+    if let Some(composer_bounds) = nodes
+        .iter()
+        .find(|node| matches!(node.kind, GuiNodeKind::Composer))
+        .map(|node| node.bounds)
+    {
+        if let Some(text_input) = nodes
+            .iter_mut()
+            .find(|node| matches!(node.kind, GuiNodeKind::TextInput))
+        {
+            text_input.bounds = ContractRect {
+                x: composer_bounds.x + 12,
+                y: composer_bounds.y + 34,
+                width: composer_bounds.width.saturating_sub(24),
+                height: composer_bounds.height.saturating_sub(40),
+            };
+        }
+    }
+
+    let Some(conversation_bounds) = nodes
+        .iter()
+        .find(|node| matches!(node.kind, GuiNodeKind::Conversation))
+        .map(|node| node.bounds)
+    else {
+        return;
+    };
+
+    nodes.retain(|node| !matches!(node.kind, GuiNodeKind::Message | GuiNodeKind::Label));
+    append_message_nodes(
+        nodes,
+        gui_handle(20),
+        conversation_bounds.x,
+        conversation_bounds.y,
+        conversation_bounds.width,
+        conversation_bounds.height,
+        messages,
+    );
 }
 
 fn apply_gui_mutations(nodes: &mut [GuiNode]) {
@@ -2647,8 +2837,8 @@ fn session_handle_key(id: GuiObjectId) -> u64 {
     match id {
         GuiObjectId::SessionOpenRhiza => 10,
         GuiObjectId::SessionSandboxGui => 11,
-        GuiObjectId::SessionWideConsole => 12,
-        GuiObjectId::SessionRecoveryShell => 13,
+        GuiObjectId::SessionWideConsole => 13,
+        GuiObjectId::SessionRecoveryShell => 14,
         GuiObjectId::Conversation => 20,
         GuiObjectId::Composer => 30,
     }

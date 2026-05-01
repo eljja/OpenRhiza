@@ -49,6 +49,18 @@ $targets = @(
         Root = Join-Path $repoRoot "sandbox-skills\fs_image_probe_bootstrap"
         Artifact = "fs_image_probe_bootstrap.wasm"
         FatName = "SKFSP.WAS"
+    },
+    @{
+        Name = "gui_modern_shell_seed"
+        Root = Join-Path $repoRoot "sandbox-skills\gui_modern_shell_seed"
+        Artifact = "gui_modern_shell_seed.wasm"
+        FatName = "SKMSH.WAS"
+    },
+    @{
+        Name = "qemu_driver_pack_seed"
+        Root = Join-Path $repoRoot "sandbox-skills\qemu_driver_pack_seed"
+        Artifact = "qemu_driver_pack_seed.wasm"
+        FatName = "SKQDRV.WAS"
     }
 )
 
@@ -97,6 +109,8 @@ $slotMap = [ordered]@{
     "SKREG.WAS" = "SK004.WAS"
     "SKMUT.WAS" = "SK005.WAS"
     "SKFSP.WAS" = "SK006.WAS"
+    "SKMSH.WAS" = "SK007.WAS"
+    "SKQDRV.WAS" = "SK008.WAS"
 }
 
 foreach ($entry in $slotMap.GetEnumerator()) {

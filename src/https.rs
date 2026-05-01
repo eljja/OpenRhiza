@@ -42,7 +42,17 @@ pub enum PlainHttpState {
 
 pub struct ApiResponse {
     pub status_code: u16,
+    pub headers: Vec<(String, String)>,
     pub body: Vec<u8>,
+}
+
+impl ApiResponse {
+    pub fn header(&self, name: &str) -> Option<&str> {
+        self.headers
+            .iter()
+            .find(|(header_name, _)| header_name.eq_ignore_ascii_case(name))
+            .map(|(_, value)| value.as_str())
+    }
 }
 
 pub struct NexusClient {
@@ -551,9 +561,11 @@ fn parse_http_response(data: Vec<u8>) -> Option<ApiResponse> {
     let body_start = find_header_terminator(&data)?;
     let header_bytes = &data[..body_start];
     let status_code = parse_status_code(header_bytes)?;
+    let headers = parse_headers(header_bytes);
 
     Some(ApiResponse {
         status_code,
+        headers,
         body: data[body_start..].to_vec(),
     })
 }
@@ -615,4 +627,28 @@ fn parse_status_code(header_bytes: &[u8]) -> Option<u16> {
             + ((digits[1] - b'0') as u16) * 10
             + ((digits[2] - b'0') as u16),
     )
+}
+
+fn parse_headers(header_bytes: &[u8]) -> Vec<(String, String)> {
+    let mut headers = Vec::new();
+    let text = match core::str::from_utf8(header_bytes) {
+        Ok(text) => text,
+        Err(_) => return headers,
+    };
+
+    for (index, line) in text.lines().enumerate() {
+        if index == 0 {
+            continue;
+        }
+        let trimmed = line.trim_end_matches('\r');
+        if trimmed.is_empty() {
+            continue;
+        }
+        let Some((name, value)) = trimmed.split_once(':') else {
+            continue;
+        };
+        headers.push((String::from(name.trim()), String::from(value.trim())));
+    }
+
+    headers
 }
