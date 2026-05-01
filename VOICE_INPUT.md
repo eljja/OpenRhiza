@@ -149,6 +149,20 @@ Planned commands:
 
 `always-listen` must require explicit user approval and should not become the default.
 
+Current implementation status:
+
+- `/voice-status`
+- `/voice <off|on|push-to-talk|always-listen>`
+- `/voice-model <model>`
+- `/voice-test`
+- `/voice-clear-buffer`
+- `skill_voice_capture_bridge_v1` seed skill
+- `workflow_voice_prompt_v1` registry sync entry
+- `policy_voice_privacy_v1` registry sync entry
+
+The current voice bridge validates the sandbox capability path only.
+It does not yet capture real microphone frames.
+
 ## Multimodal LLM Path
 
 When using Gemini or another VL/multimodal model:
@@ -190,4 +204,3 @@ A voice feature is not considered usable until it proves:
 - network failure does not hang input
 - audio buffers are bounded
 - no persistent recording happens without explicit user choice
-

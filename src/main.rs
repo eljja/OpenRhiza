@@ -45,6 +45,7 @@ pub mod tls;
 pub mod identity;
 pub mod api_v1;
 pub mod autonomy;
+pub mod voice;
 pub mod smp;
 pub mod boot_automation;
 pub mod capability_cache;
@@ -289,6 +290,7 @@ pub extern "C" fn _start(boot_info: &'static BootInfo) -> ! {
     }
 
     crate::autonomy::load_persisted_config();
+    crate::voice::load_persisted_config();
 
     crate::input_runtime::schedule_persisted_restores();
 

@@ -4,7 +4,7 @@ use lazy_static::lazy_static;
 use spin::Mutex;
 
 const SKILL_MAP_FILES: [[u8; 11]; 3] = [*b"SKILLCCHTXT", *b"SKILLMAPTXT", *b"SKMAP   TXT"];
-const SKILL_SLOT_TEXT: [&str; 9] = [
+const SKILL_SLOT_TEXT: [&str; 10] = [
     "SK000.WAS",
     "SK001.WAS",
     "SK002.WAS",
@@ -14,8 +14,9 @@ const SKILL_SLOT_TEXT: [&str; 9] = [
     "SK006.WAS",
     "SK007.WAS",
     "SK008.WAS",
+    "SK009.WAS",
 ];
-const SEED_SKILL_MAP: [(&str, &str); 9] = [
+const SEED_SKILL_MAP: [(&str, &str); 10] = [
     ("skill_display_console_mode_v1", "SK000.WAS"),
     ("skill_gui_session_bootstrap_v1", "SK001.WAS"),
     ("skill_display_framebuffer_mode_v1", "SK002.WAS"),
@@ -25,6 +26,7 @@ const SEED_SKILL_MAP: [(&str, &str); 9] = [
     ("skill_fs_image_probe_v1", "SK006.WAS"),
     ("skill_gui_modern_shell_v1", "SK007.WAS"),
     ("skill_qemu_driver_pack_v1", "SK008.WAS"),
+    ("skill_voice_capture_bridge_v1", "SK009.WAS"),
 ];
 
 #[derive(Clone, Debug)]

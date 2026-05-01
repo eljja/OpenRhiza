@@ -61,6 +61,12 @@ $targets = @(
         Root = Join-Path $repoRoot "sandbox-skills\qemu_driver_pack_seed"
         Artifact = "qemu_driver_pack_seed.wasm"
         FatName = "SKQDRV.WAS"
+    },
+    @{
+        Name = "voice_capture_bridge_seed"
+        Root = Join-Path $repoRoot "sandbox-skills\voice_capture_bridge_seed"
+        Artifact = "voice_capture_bridge_seed.wasm"
+        FatName = "SKVOICE.WAS"
     }
 )
 
@@ -111,6 +117,7 @@ $slotMap = [ordered]@{
     "SKFSP.WAS" = "SK006.WAS"
     "SKMSH.WAS" = "SK007.WAS"
     "SKQDRV.WAS" = "SK008.WAS"
+    "SKVOICE.WAS" = "SK009.WAS"
 }
 
 foreach ($entry in $slotMap.GetEnumerator()) {
