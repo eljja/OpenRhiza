@@ -1291,7 +1291,7 @@ async fn core_os_task(mut rhiza: OpenRhizaSeed) {
         while let Some(data) = rhiza.poll_host_data() {
             if data == 0xFD {
                 keymap_index = 0; 
-                *crate::task::keyboard::DYNAMIC_KEYMAP.lock() = [0x3F; 256];
+                *crate::task::keyboard::DYNAMIC_KEYMAP.lock() = [0; 256];
                 crate::task::keyboard::KEYMAP_OVERRIDE_ACTIVE.store(false, core::sync::atomic::Ordering::Relaxed);
             } else if data == 0xFB {
                 crate::println!("[*] AI is generating e1000 LAN driver... Please wait.");

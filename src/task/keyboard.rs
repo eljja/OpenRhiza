@@ -14,7 +14,7 @@ use crate::vga::WRITER;
 lazy_static! {
     pub static ref SCANCODE_QUEUE: Arc<ArrayQueue<u8>> = Arc::new(ArrayQueue::new(100));
     pub static ref WAKER: Mutex<Option<Waker>> = Mutex::new(None);
-    pub static ref DYNAMIC_KEYMAP: Mutex<[u8; 256]> = Mutex::new([0x3F; 256]);
+    pub static ref DYNAMIC_KEYMAP: Mutex<[u8; 256]> = Mutex::new([0; 256]);
 }
 
 pub static KEYMAP_OVERRIDE_ACTIVE: AtomicBool = AtomicBool::new(false);
@@ -124,7 +124,9 @@ pub async fn keyboard_task() {
                     real_scancode as usize
                 };
                 let char_to_print = DYNAMIC_KEYMAP.lock()[map_index];
-                handle_input_byte(char_to_print);
+                if char_to_print != 0 {
+                    handle_input_byte(char_to_print);
+                }
             }
             continue;
         }
@@ -224,10 +226,6 @@ pub async fn keyboard_task() {
 }
 
 fn handle_key_char(byte: u8, hangul: &mut crate::hangul::HangulIme) {
-    if byte == 0x3F {
-        return;
-    }
-
     let ch = byte as char;
     if !hangul.enabled() {
         handle_input_byte(byte);
@@ -277,10 +275,6 @@ fn toggle_hangul_mode(hangul: &mut crate::hangul::HangulIme) {
 }
 
 fn handle_input_byte(byte: u8) {
-    if byte == 0x3F {
-        return;
-    }
-
     match byte {
         b'\n' => submit_cli_command(),
         0x08 => WRITER.lock().pop_input_char(),
