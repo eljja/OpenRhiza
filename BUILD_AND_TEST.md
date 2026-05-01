@@ -272,14 +272,17 @@ Run:
 
 ```powershell
 python .\tools\platform_matrix.py
+pwsh.exe -ExecutionPolicy Bypass -File .\build_arm64_recovery.ps1
+python .\tools\smoke_arm64_recovery.py
 pwsh.exe -ExecutionPolicy Bypass -File .\run_qemu_arm64.ps1
 ```
 
 Confirm:
 
 - `x86_64-qemu-pc` remains the reference target
-- `aarch64-qemu-virt` is listed as the next scaffolded target
-- the ARM64 runner fails only if `qemu-system-aarch64` is missing, not because it tries to mutate the current x86 boot path
+- `aarch64-qemu-virt` has a buildable ARM64 serial recovery ELF
+- the ARM64 smoke test prints `OpenRhiza ARM64 recovery core` and `arm64>`
+- the ARM64 runner uses the generated ELF without mutating the current x86 boot path
 
 ## Known Current Gaps
 

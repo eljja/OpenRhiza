@@ -118,6 +118,17 @@ pwsh.exe -ExecutionPolicy Bypass -File .\run_qemu_arm64.ps1
 Without an ARM64 kernel image, this validates that the host has `qemu-system-aarch64` available and prints the next command shape.
 After an ARM64 serial recovery ELF exists, pass it as the first argument.
 
+The current repository now includes a standalone ARM64 serial recovery kernel:
+
+```powershell
+pwsh.exe -ExecutionPolicy Bypass -File .\build_arm64_recovery.ps1
+python .\tools\smoke_arm64_recovery.py
+```
+
+This is intentionally not the full OS.
+It proves the first ARM64 survival substrate: CPU entry, stack, PL011 serial output/input, and local `/status` plus `/platform-status` commands.
+The next step is to add sandbox host ABI stubs and virtio-mmio capability handles, not to move virtio drivers into core.
+
 Target specs have been added under:
 
 ```text

@@ -168,7 +168,7 @@ $workflows = @(
     @{ id = "workflow_autonomy_council_v1"; name = "Autonomy Council Proposal"; summary = "Run bounded multi-agent autonomy and present reversible proposals."; steps = @("Infer user goal", "Gather bounded evidence", "Run council roles", "Summarize disagreement", "Require approval for risky actions") },
     @{ id = "workflow_voice_prompt_v1"; name = "Voice Prompt With Confirmation"; summary = "Capture a bounded voice clip, transcribe it, show the transcript, then submit only after confirmation."; steps = @("Check voice mode", "Capture bounded audio clip", "Run VAD/transcription skill", "Display editable transcript", "Submit through normal prompt path after confirmation", "Record evaluation") },
     @{ id = "workflow_voice_direct_audio_v1"; name = "Voice Direct Audio Escalation"; summary = "Escalate a bounded voice clip to a multimodal LLM only when audio context is materially useful."; steps = @("Check voice mode and route", "Capture bounded clip", "Compress or trim audio", "Attach minimal OS context", "Send to multimodal LLM through sandbox bridge", "Display result and safety summary", "Require confirmation before state changes", "Record evaluation") },
-    @{ id = "workflow_platform_bringup_v1"; name = "Platform Bring-Up"; summary = "Bring up a new CPU or board through serial-first survival core, then shift devices to sandbox capabilities."; steps = @("Select target from platform matrix", "Validate host emulator/toolchain", "Boot serial recovery only", "Expose bounded platform host ABI", "Query registry by arch and machine keys", "Load sandbox driver skills", "Upload platform evaluation") }
+    @{ id = "workflow_platform_bringup_v1"; name = "Platform Bring-Up"; summary = "Bring up a new CPU or board through serial-first survival core, then shift devices to sandbox capabilities."; steps = @("Select target from platform matrix", "Validate host emulator/toolchain", "Build architecture recovery ELF", "Boot serial recovery only", "Expose bounded platform host ABI", "Query registry by arch and machine keys", "Load sandbox driver skills", "Upload platform evaluation") }
 )
 
 foreach ($workflow in $workflows) {
@@ -213,7 +213,7 @@ $software = @(
     @{ id = "pkg_font_lab_v1"; name = "Font Lab"; category = "display"; delivery = "host_tool_bundle"; summary = "Tools for importing fonts and generating validated OpenRhiza atlas assets." },
     @{ id = "pkg_openrhiza_docs_v1"; name = "OpenRhiza Operating Docs"; category = "documentation"; delivery = "markdown_bundle"; summary = "Authoritative operating rules, boundary audits, API docs, and roadmap documents for OpenRhiza agents." },
     @{ id = "pkg_voice_input_lab_v1"; name = "Voice Input Lab"; category = "voice"; delivery = "sandbox_package"; summary = "Development package for bounded microphone capture, transcription, and prompt confirmation experiments." },
-    @{ id = "pkg_platform_bringup_lab_v1"; name = "Platform Bring-Up Lab"; category = "platform"; delivery = "host_tool_bundle"; summary = "Target matrix, QEMU ARM64 runner, and architecture expansion docs for OpenRhiza platform ports." }
+    @{ id = "pkg_platform_bringup_lab_v1"; name = "Platform Bring-Up Lab"; category = "platform"; delivery = "host_tool_bundle"; summary = "Target matrix, ARM64 recovery kernel, QEMU ARM64 runner, smoke test, and architecture expansion docs for OpenRhiza platform ports." }
 )
 
 foreach ($package in $software) {

@@ -178,7 +178,8 @@ These are the main live follow-up items:
 
 - Do not start phone support by targeting Android directly. Start with `qemu-system-aarch64 -machine virt`.
 - Use `platforms/openrhiza-platforms.json`, `tools/platform_matrix.py`, and `/platform-status` as the shared source of truth for platform expansion state.
-- `run_qemu_arm64.ps1` is a scaffolded ARM64 runner. It validates QEMU availability now and will run the ARM64 serial recovery ELF once that target exists.
+- `platform-kernels/aarch64-recovery` is the first ARM64 survival kernel. Build it with `build_arm64_recovery.ps1` and smoke-test with `tools/smoke_arm64_recovery.py`.
+- `run_qemu_arm64.ps1` runs the generated ARM64 serial recovery ELF when present.
 - Do not put speech recognition, wake-word logic, route selection, codec policy, or multimodal prompt policy into the core.
 - The x86_64 voice milestone should prove that spoken prompts can become editable transcripts without breaking keyboard, GUI, or recovery input.
 - Default voice routing is `text-first`. Add direct-audio only through sandbox skills such as `skill_voice_router_policy_v1` and `skill_voice_audio_llm_bridge_v1`, and prefer `hybrid` when audio context is sometimes useful but bandwidth and auditability still matter.

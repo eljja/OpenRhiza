@@ -56,18 +56,21 @@ def print_table(matrix: dict) -> int:
     print("OpenRhiza platform matrix")
     print("Rule:", matrix.get("core_rule", ""))
     print()
-    print(f"{'target':28} {'status':12} {'rust':8} {'qemu':8} boot_goal")
+    print(f"{'target':28} {'status':12} {'rust':8} {'qemu':8} {'artifact':8} boot_goal")
     print("-" * 100)
     missing = 0
     for target in targets:
         rust_ok = rust_target_installed(target["rust_target"])
         qemu_ok = qemu_available(target["qemu_binary"])
+        artifact = target.get("kernel_artifact")
+        artifact_state = "-" if not artifact else ("ok" if (REPO_ROOT / artifact).exists() else "missing")
         if target["status"] in {"reference", "scaffold"} and not rust_ok:
             missing += 1
         print(
             f"{target['id']:28} {target['status']:12} "
             f"{'ok' if rust_ok else 'missing':8} "
             f"{'ok' if qemu_ok else 'missing':8} "
+            f"{artifact_state:8} "
             f"{target['boot_goal']}"
         )
     return missing

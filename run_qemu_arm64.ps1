@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory = $false, Position = 0)]
     [string]$KernelImage = "",
+    [switch]$NoGraphic,
     [ValidateSet("cortex-a53", "cortex-a72", "max")]
     [string]$Cpu = "cortex-a72",
     [int]$MemoryMiB = 1024
@@ -31,7 +32,16 @@ if ([string]::IsNullOrWhiteSpace($qemuExe)) {
 }
 
 if ([string]::IsNullOrWhiteSpace($KernelImage)) {
+    $defaultKernel = Join-Path $repoRoot "target\aarch64-openrhiza-none\debug\openrhiza-arm64.elf"
+    if (Test-Path -LiteralPath $defaultKernel) {
+        $KernelImage = $defaultKernel
+    }
+}
+
+if ([string]::IsNullOrWhiteSpace($KernelImage)) {
     Write-Host "OpenRhiza ARM64 runner is scaffolded, but no ARM64 kernel image exists yet." -ForegroundColor Yellow
+    Write-Host "Build it with:" -ForegroundColor Yellow
+    Write-Host "  pwsh -ExecutionPolicy Bypass -File .\build_arm64_recovery.ps1"
     Write-Host "Next milestone: build an aarch64 serial recovery ELF, then run:" -ForegroundColor Yellow
     Write-Host "  pwsh -ExecutionPolicy Bypass -File .\run_qemu_arm64.ps1 .\target\aarch64-openrhiza-none\debug\openrhiza-arm64.elf"
     exit 0
@@ -43,10 +53,14 @@ $qemuArgs = @(
     "-machine", "virt",
     "-cpu", $Cpu,
     "-m", $MemoryMiB.ToString(),
-    "-serial", "stdio",
-    "-display", "gtk",
     "-no-reboot",
     "-kernel", $kernelPath
 )
+
+if ($NoGraphic) {
+    $qemuArgs += @("-nographic")
+} else {
+    $qemuArgs += @("-serial", "stdio", "-display", "gtk")
+}
 
 & $qemuExe @qemuArgs

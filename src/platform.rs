@@ -47,7 +47,7 @@ pub const PLATFORM_TARGETS: &[PlatformTarget] = &[
         id: "aarch64-qemu-virt",
         arch: "aarch64",
         machine: "qemu-virt",
-        boot_status: "scaffolded target; serial-first bring-up next",
+        boot_status: "serial recovery ELF builds and smoke-boots in QEMU",
         core_boundary: "only CPU entry, page tables, exception vectors, GIC, PL011, and sandbox host ABI",
         first_capabilities: AARCH64_QEMU_CAPS,
     },

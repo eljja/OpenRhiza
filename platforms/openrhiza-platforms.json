@@ -20,8 +20,11 @@
       "machine": "qemu-virt",
       "rust_target": "targets/aarch64-openrhiza-none.json",
       "qemu_binary": "qemu-system-aarch64",
+      "build_script": "build_arm64_recovery.ps1",
+      "smoke_test": "tools/smoke_arm64_recovery.py",
+      "kernel_artifact": "target/aarch64-openrhiza-none/debug/openrhiza-arm64.elf",
       "status": "scaffold",
-      "boot_goal": "serial recovery shell on PL011 before display/input",
+      "boot_goal": "serial recovery shell on PL011 before display/input; first ELF scaffold is buildable",
       "registry_keys": ["arch:aarch64", "machine:qemu-aarch64-virt", "dt:arm,pl011", "virtio:mmio"],
       "core_minimum": ["EL entry", "page tables/MMU", "exception vectors", "GIC", "PL011 UART", "sandbox host ABI"],
       "sandbox_first": ["virtio-net", "virtio-block", "virtio-input", "virtio-gpu", "display shell"]

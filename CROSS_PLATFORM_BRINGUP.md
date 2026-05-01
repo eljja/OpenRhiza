@@ -25,7 +25,7 @@ python .\tools\platform_matrix.py --registry-keys
 Current targets:
 
 - `x86_64-qemu-pc`: active reference target.
-- `aarch64-qemu-virt`: next target, serial-first.
+- `aarch64-qemu-virt`: first serial recovery ELF builds and smoke-boots under QEMU.
 - `android-unlocked-aarch64`: research target after ARM64 QEMU works.
 - `riscv64-qemu-virt`: parking-lot target after ARM64 path is stable.
 
@@ -46,6 +46,32 @@ The first ARM64 boot must be deliberately small:
 5. PL011 UART recovery log/input.
 6. Sandbox host ABI stubs.
 
+The first milestone now exists as a standalone survival kernel:
+
+```text
+platform-kernels/aarch64-recovery
+```
+
+Build it with:
+
+```powershell
+pwsh.exe -ExecutionPolicy Bypass -File .\build_arm64_recovery.ps1
+```
+
+Smoke-test it with:
+
+```powershell
+python .\tools\smoke_arm64_recovery.py
+```
+
+Expected serial output:
+
+```text
+OpenRhiza ARM64 recovery core
+platform=aarch64-qemu-virt serial=PL011
+arm64>
+```
+
 Do not add virtio-net, virtio-block, virtio-gpu, GUI, filesystem, or voice logic to the ARM core.
 Those must be sandbox capabilities once the survival path exists.
 
@@ -58,7 +84,13 @@ pwsh.exe -ExecutionPolicy Bypass -File .\run_qemu_arm64.ps1
 ```
 
 Without an ARM64 kernel image it only validates QEMU availability and prints the next command shape.
-After a serial recovery ELF exists:
+After `build_arm64_recovery.ps1` runs, it defaults to:
+
+```text
+target/aarch64-openrhiza-none/debug/openrhiza-arm64.elf
+```
+
+Manual run:
 
 ```powershell
 pwsh.exe -ExecutionPolicy Bypass -File .\run_qemu_arm64.ps1 .\target\aarch64-openrhiza-none\debug\openrhiza-arm64.elf
@@ -115,9 +147,9 @@ This command reports the active platform plan inside the OS so the LLM and opera
 
 1. Keep x86_64 QEMU stable.
 2. Split x86-specific boot code out of `src/main.rs` into an x86 platform entry module.
-3. Add `src/arch/aarch64` with a serial-only boot skeleton.
-4. Build ARM64 recovery ELF.
-5. Boot ARM64 QEMU to PL011 serial.
+3. Keep `platform-kernels/aarch64-recovery` as the serial survival baseline.
+4. Split x86-specific boot code out of the main kernel path.
+5. Add ARM64 sandbox host ABI stubs.
 6. Add virtio-mmio host ABI handles.
 7. Load virtio driver skills from OpenRhiza.com.
 8. Add platform evaluation uploads per boot target.
