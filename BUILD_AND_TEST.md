@@ -142,6 +142,9 @@ Useful runtime inspection commands:
 - `/semantic-status`
 - `/registry-context`
 - `/autonomy-status`
+- `/voice-status`
+- `/voice-route hybrid`
+- `/voice-test`
 - `/skill-load skill_gui_modern_shell_v1`
 - `/skill-run skill_gui_modern_shell_v1`
 
@@ -253,7 +256,14 @@ Confirm:
 - GUI input and pointer remain alive
 - plain prompts reach Gemini when a build-time Gemini key is available
 - `/autonomy-status` reports default `off` mode
+- `/voice on`, `/voice-route hybrid`, and `/voice-test` queue the voice capture/router/audio bridge chain without breaking keyboard or GUI input
 - `/scheduler-status` reports wake metrics without increasing wake drops during normal idle use
+
+Optional host-assisted voice import:
+
+```powershell
+python .\tools\voice_prompt_bridge.py --audio .\sample.wav --route hybrid --inject
+```
 
 ## Known Current Gaps
 

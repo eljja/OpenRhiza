@@ -16,7 +16,7 @@ const SKILL_SLOT_TEXT: [&str; 10] = [
     "SK008.WAS",
     "SK009.WAS",
 ];
-const SEED_SKILL_MAP: [(&str, &str); 10] = [
+const SEED_SKILL_MAP: [(&str, &str); 12] = [
     ("skill_display_console_mode_v1", "SK000.WAS"),
     ("skill_gui_session_bootstrap_v1", "SK001.WAS"),
     ("skill_display_framebuffer_mode_v1", "SK002.WAS"),
@@ -27,6 +27,8 @@ const SEED_SKILL_MAP: [(&str, &str); 10] = [
     ("skill_gui_modern_shell_v1", "SK007.WAS"),
     ("skill_qemu_driver_pack_v1", "SK008.WAS"),
     ("skill_voice_capture_bridge_v1", "SK009.WAS"),
+    ("skill_voice_router_policy_v1", "SK009.WAS"),
+    ("skill_voice_audio_llm_bridge_v1", "SK009.WAS"),
 ];
 
 #[derive(Clone, Debug)]
@@ -138,14 +140,21 @@ pub fn preload_cached_skill_payloads(records: &[CachedSkillArtifact]) -> usize {
 pub fn load_cached_skill_payload(record: &CachedSkillArtifact) -> Option<Vec<u8>> {
     {
         let cache = SKILL_PAYLOAD_CACHE.lock();
-        if let Some(cached) = cache.iter().find(|cached| cached.skill_id == record.skill_id) {
+        if let Some(cached) = cache
+            .iter()
+            .find(|cached| cached.skill_id == record.skill_id)
+        {
             return Some(cached.payload.clone());
         }
     }
 
     let fat_name = fat_name_bytes_from_text(record.fat_name_text.as_str())?;
     let payload = crate::storage::read_named_file_from_secondary_fat16(&[fat_name])?;
-    remember_skill_payload(record.skill_id.as_str(), record.fat_name_text.as_str(), payload.as_slice());
+    remember_skill_payload(
+        record.skill_id.as_str(),
+        record.fat_name_text.as_str(),
+        payload.as_slice(),
+    );
     Some(payload)
 }
 
@@ -188,8 +197,8 @@ pub fn update_cached_skills(skill_ids: &[String]) -> Result<usize, &'static str>
             continue;
         }
 
-        let fat_name_text =
-            allocate_skill_slot_text(&cached).ok_or("no free preallocated skill slot is available")?;
+        let fat_name_text = allocate_skill_slot_text(&cached)
+            .ok_or("no free preallocated skill slot is available")?;
         cached.push(CachedSkillArtifact {
             skill_id: skill_id.clone(),
             fat_name_text,
@@ -212,7 +221,9 @@ fn allocate_skill_slot_text(cached: &[CachedSkillArtifact]) -> Option<String> {
 
 pub fn persist_downloaded_skill(skill_id: &str, payload: &[u8]) -> Result<String, &'static str> {
     let mut cached = load_cached_skills();
-    let fat_name_text = if let Some(existing) = cached.iter().find(|record| record.skill_id == skill_id) {
+    let fat_name_text = if let Some(existing) =
+        cached.iter().find(|record| record.skill_id == skill_id)
+    {
         existing.fat_name_text.clone()
     } else {
         allocate_skill_slot_text(&cached).ok_or("no free preallocated skill slot is available")?

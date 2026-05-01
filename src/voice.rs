@@ -100,7 +100,8 @@ lazy_static! {
 }
 
 pub fn load_persisted_config() {
-    let Some(text) = crate::storage::read_text_file_from_secondary_fat16(&VOICE_CONFIG_FILES) else {
+    let Some(text) = crate::storage::read_text_file_from_secondary_fat16(&VOICE_CONFIG_FILES)
+    else {
         return;
     };
 
@@ -164,16 +165,19 @@ pub fn status_block() -> String {
 }
 
 pub fn set_mode(mode_text: &str) -> Result<String, &'static str> {
-    let mode = VoiceMode::from_str(mode_text).ok_or("expected off, on, push-to-talk, or always-listen")?;
+    let mode =
+        VoiceMode::from_str(mode_text).ok_or("expected off, on, push-to-talk, or always-listen")?;
     let mut state = VOICE_STATE.lock();
     state.config.configured = true;
     state.config.mode = mode;
     state.last_status = match mode {
         VoiceMode::Off => String::from("voice capture disabled"),
-        VoiceMode::PushToTalk => String::from("voice capture armed for explicit push-to-talk flows"),
-        VoiceMode::AlwaysListen => {
-            String::from("always-listen requested; future capture still requires visible recording state")
+        VoiceMode::PushToTalk => {
+            String::from("voice capture armed for explicit push-to-talk flows")
         }
+        VoiceMode::AlwaysListen => String::from(
+            "always-listen requested; future capture still requires visible recording state",
+        ),
     };
     let config = state.config.clone();
     let status = state.last_status.clone();
@@ -193,7 +197,8 @@ pub fn set_mode(mode_text: &str) -> Result<String, &'static str> {
 }
 
 pub fn set_route(route_text: &str) -> Result<String, &'static str> {
-    let route = VoiceRoute::from_str(route_text).ok_or("expected text-first, direct-audio, or hybrid")?;
+    let route =
+        VoiceRoute::from_str(route_text).ok_or("expected text-first, direct-audio, or hybrid")?;
     let mut state = VOICE_STATE.lock();
     state.config.configured = true;
     state.config.route = route;
@@ -248,8 +253,7 @@ pub fn set_model(model: &str) -> Result<String, &'static str> {
             state.last_status = format!("{}; persistence failed: {}", status, error);
             Ok(format!(
                 "[Voice] model set to {} for this session; persistence failed: {}",
-                trimmed,
-                error
+                trimmed, error
             ))
         }
     }
@@ -263,11 +267,15 @@ pub fn clear_buffer() -> String {
 }
 
 pub fn import_transcript_to_composer() -> Result<String, &'static str> {
-    let Some(mut transcript) = crate::storage::read_text_file_from_secondary_fat16(&VOICE_INPUT_FILES) else {
+    let Some(mut transcript) =
+        crate::storage::read_text_file_from_secondary_fat16(&VOICE_INPUT_FILES)
+    else {
         return Err("VOICEIN.TXT not found on the driver disk");
     };
 
-    transcript = transcript.trim_matches(|ch| ch == '\r' || ch == '\n' || ch == '\0').into();
+    transcript = transcript
+        .trim_matches(|ch| ch == '\r' || ch == '\n' || ch == '\0')
+        .into();
     if transcript.trim().is_empty() {
         return Err("VOICEIN.TXT has no transcript text");
     }
@@ -285,20 +293,49 @@ pub fn import_transcript_to_composer() -> Result<String, &'static str> {
 }
 
 pub fn queue_capture_bridge_test() -> Result<String, &'static str> {
-    {
+    let route = {
         let mut state = VOICE_STATE.lock();
         if state.config.mode == VoiceMode::Off {
             state.last_status = String::from("voice-test refused because voice mode is off");
             return Err("voice is off; use /voice on first");
         }
-        state.last_status = String::from("queued voice capture bridge skill load");
+        state.last_status = String::from("queued voice sandbox skill chain");
+        state.config.route
+    };
+
+    let mut skill_ids = [
+        "skill_voice_capture_bridge_v1",
+        "skill_voice_router_policy_v1",
+        "",
+    ];
+    if route == VoiceRoute::DirectAudio || route == VoiceRoute::Hybrid {
+        skill_ids[2] = "skill_voice_audio_llm_bridge_v1";
     }
 
-    match crate::skill_runtime::queue_load("skill_voice_capture_bridge_v1") {
-        Ok(fat_name) => Ok(format!(
-            "[Voice] queued skill_voice_capture_bridge_v1 from {}. Audio frames are not captured yet; this validates the sandbox voice path.",
-            fat_name
-        )),
-        Err(error) => Err(error),
+    let mut loaded = String::new();
+    for skill_id in skill_ids
+        .iter()
+        .copied()
+        .filter(|skill_id| !skill_id.is_empty())
+    {
+        let fat_name = crate::skill_runtime::queue_load(skill_id)?;
+        if !loaded.is_empty() {
+            loaded.push_str(", ");
+        }
+        loaded.push_str(skill_id);
+        loaded.push('(');
+        loaded.push_str(fat_name.as_str());
+        loaded.push(')');
     }
+
+    {
+        let mut state = VOICE_STATE.lock();
+        state.last_status = format!("queued voice sandbox chain for route={}", route.as_str());
+    }
+
+    Ok(format!(
+        "[Voice] queued route={} sandbox chain: {}. Audio capture still requires bounded host frames.",
+        route.as_str(),
+        loaded
+    ))
 }

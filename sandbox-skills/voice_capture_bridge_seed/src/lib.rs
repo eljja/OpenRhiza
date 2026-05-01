@@ -9,9 +9,9 @@ extern "C" {
 }
 
 static INIT_MSG: &[u8] =
-    b"[Skill] voice_capture_bridge initialized. Waiting for bounded audio-frame host ABI.\n";
+    b"[Skill] voice_capture_bridge initialized. Route policy and audio-LLM bridge are sandbox peers.\n";
 static RUN_MSG: &[u8] =
-    b"[Skill] voice_capture_bridge: capture -> VAD -> transcript -> confirmation -> prompt path. No direct action from raw audio.\n";
+    b"[Skill] voice_capture_bridge: bounded capture -> route policy -> transcript/direct-audio bridge -> confirmation. No raw-audio action without policy.\n";
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
@@ -32,4 +32,3 @@ pub extern "C" fn run_skill() -> i32 {
     }
     1
 }
-

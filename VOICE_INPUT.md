@@ -179,10 +179,22 @@ Current implementation status:
 - `tools/voice_prompt_bridge.py` host-assisted bridge
 - `VOICEIN.TXT` transcript handoff file on the QEMU driver disk
 
-The current voice bridge validates the sandbox capability path only.
+The current `/voice-test` bridge validates the sandbox capability path and now queues the route-aware voice chain:
+
+- `skill_voice_capture_bridge_v1`
+- `skill_voice_router_policy_v1`
+- `skill_voice_audio_llm_bridge_v1` when route is `direct-audio` or `hybrid`
+
 It does not yet capture real microphone frames inside OpenRhiza.
 For x86_64/QEMU testing, the host bridge can write a transcript or Gemini-transcribed WAV result to `VOICEIN.TXT`, then inject `/voice-import`.
-The host bridge clears the current guest composer before injecting `/voice-import` by default; use `--preserve-input` only when the input line is known to be empty or intentionally prefilled.
+The host bridge supports `--route text-first`, `--route direct-audio`, and `--route hybrid`.
+The host bridge clears the current guest composer and injects `/voice-route <route>` before `/voice-import` by default; use `--preserve-input` only when the input line is known to be empty or intentionally prefilled.
+
+Example host test:
+
+```powershell
+python .\tools\voice_prompt_bridge.py --audio .\sample.wav --route hybrid --inject
+```
 
 ## Voice Route Policy
 
