@@ -8,6 +8,10 @@ It distinguishes between:
 - optional tooling
 - stale or historical modules
 
+For the current core/sandbox boundary classification, see
+[`CORE_BOUNDARY_AUDIT.md`](CORE_BOUNDARY_AUDIT.md). That file is the authoritative tag list for
+`Permanent Core`, `Bootstrap Fallback`, and `Must Move To Skill`.
+
 ## Top-Level Structure
 
 ```text
@@ -28,7 +32,12 @@ OpenRhiza/
 
 ## Active Kernel Modules
 
+Boundary tags in this section are summaries only. If there is a conflict, prefer
+[`CORE_BOUNDARY_AUDIT.md`](CORE_BOUNDARY_AUDIT.md).
+
 ### `src/main.rs`
+
+Boundary tag: **Bootstrap Fallback**.
 
 Kernel entry point and current boot orchestration.
 
@@ -47,6 +56,8 @@ Active responsibilities:
 
 ### `src/core/seed.rs`
 
+Boundary tag: **Permanent Core**.
+
 Current Wasm sandbox engine and host import boundary.
 
 Responsibilities:
@@ -62,6 +73,8 @@ Important limitation:
 
 ### `src/task/keyboard.rs`
 
+Boundary tag: **Bootstrap Fallback**.
+
 Async keyboard queue and command routing.
 
 Current role:
@@ -73,6 +86,8 @@ Current role:
 
 ### `src/vga.rs`
 
+Boundary tag: **Permanent Core / Bootstrap Fallback**.
+
 Recovery-shell text surface.
 
 Current role:
@@ -82,6 +97,8 @@ Current role:
 - provide the shared text snapshot used by display handoff and GUI overlay logic
 
 ### `src/display.rs`
+
+Boundary tag: **Bootstrap Fallback, Must Shrink**.
 
 Bootstrap high-resolution display and GUI object runtime.
 
@@ -100,9 +117,13 @@ Important note:
 
 ### `src/gui_contract.rs`
 
+Boundary tag: **Permanent Core Candidate**.
+
 Shared GUI scene and mutation contract used by the bootstrap renderer and the LVGL-style bridge.
 
 ### `src/gui_lvgl_bridge.rs`
+
+Boundary tag: **Must Move To Skill**.
 
 LVGL-style scene adapter for the same GUI object scene model.
 
@@ -110,9 +131,13 @@ This is a reference bridge, not a core dependency.
 
 ### `src/gui_font.rs`
 
+Boundary tag: **Bootstrap Fallback**.
+
 Modern GUI font atlas access for the bootstrap GUI.
 
 ### `src/net.rs`
+
+Boundary tag: **Bootstrap Fallback**.
 
 Current network-scaffolding layer.
 
@@ -123,6 +148,8 @@ Responsibilities:
 - provide the networking surface used by higher layers
 
 ### `src/https.rs`
+
+Boundary tag: **Bootstrap Fallback**.
 
 Current API transport client used by the live runtime.
 
@@ -139,6 +166,8 @@ Important limitation:
 - Nexus fetch still follows a dedicated client path and is not yet fully unified with the generic API transport surface
 
 ### `src/autonomy.rs`
+
+Boundary tag: **Must Move To Workflow**.
 
 Bootstrap autonomy runtime and council coordinator.
 
@@ -158,9 +187,13 @@ Important limitation:
 
 ### `src/security.rs`
 
+Boundary tag: **Permanent Core**.
+
 Nexus trust anchor and signature verification.
 
 ### `src/storage.rs`
+
+Boundary tag: **Bootstrap Fallback**.
 
 ATA PIO bootstrap storage path.
 
@@ -176,6 +209,8 @@ Responsibilities:
 
 ### `src/storage_host.rs`
 
+Boundary tag: **Permanent Core**.
+
 Bounded storage host ABI for sandbox filesystem work.
 
 Responsibilities:
@@ -187,6 +222,8 @@ Responsibilities:
 
 ### `src/e1000.rs`
 
+Boundary tag: **Must Move To Sandbox Driver**.
+
 Substantial native Intel `e1000` NIC driver implementation.
 
 Current status:
@@ -196,6 +233,8 @@ Current status:
 
 ### `src/tls.rs`
 
+Boundary tag: **Bootstrap Fallback**.
+
 In-repo software TLS 1.3 client implementation.
 
 Current status:
@@ -204,6 +243,8 @@ Current status:
 - still needs final unification with the dedicated Nexus fetch client
 
 ### `src/smp.rs`
+
+Boundary tag: **Permanent Core**.
 
 Bootstrap SMP and per-core runtime substrate.
 
@@ -220,31 +261,45 @@ Important limitation:
 
 ### `src/crypto/*`
 
+Boundary tag: **Permanent Core / Bootstrap Fallback**.
+
 Pure software cryptographic primitives.
 
 ## Architecture-Specific Modules
 
 ### `src/arch/x86_64/discovery.rs`
 
+Boundary tag: **Permanent Core**.
+
 Active x86_64 hardware discovery module.
 
 ### `src/arch/x86_64/interrupts.rs`
+
+Boundary tag: **Permanent Core**.
 
 Current interrupt path.
 
 ### `src/arch/x86_64/apic.rs`
 
+Boundary tag: **Permanent Core**.
+
 LAPIC and IOAPIC initialization.
 
 ### `src/arch/x86_64/serial.rs`
+
+Boundary tag: **Permanent Core**.
 
 COM1 serial output and polling helpers.
 
 ### `src/arch/x86_64/port.rs`
 
+Boundary tag: **Permanent Core**.
+
 Raw I/O port helpers.
 
 ### `src/arch/x86_64/usb.rs`
+
+Boundary tag: **Bootstrap Fallback, Must Move Driver Logic**.
 
 Current native USB/xHCI implementation and HID polling path.
 

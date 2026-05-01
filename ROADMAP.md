@@ -69,16 +69,19 @@ Before presenting OpenRhiza as publicly usable, the minimum target is:
 
 ## Immediate Engineering Priorities
 
-1. QEMU regression test the latest scheduler/autonomy/UTF-8 changes.
-2. Stabilize the GUI after long Gemini conversations, including scroll persistence and message history retention.
-3. Promote GUI scene mutation from bootstrap core helpers toward sandbox-owned skills.
-4. Add stronger per-module Wasm quotas: CPU budget, memory-page accounting, host ABI call limits, and automatic quarantine.
+1. Enforce the boundary tags in [`CORE_BOUNDARY_AUDIT.md`](CORE_BOUNDARY_AUDIT.md).
+2. Migrate native `e1000` toward a sandbox driver using `DRIVER_HOST_ABI.md`, keeping native fallback until sustained registry/Gemini traffic passes.
+3. Migrate xHCI/HID and richer keymap/IME behavior toward sandbox input drivers over raw HID handoff.
+4. Promote GUI shell/layout/render policy from bootstrap core helpers toward sandbox-owned `skill_gui_*` capabilities.
 5. Complete filesystem bridge smoke tests inside OpenRhiza for FAT32, exFAT, NTFS, ext2, ext3, and ext4 images.
 6. Move filesystem read/write implementation behind `skill_fs_bridge` rather than adding heavy filesystem logic to the core.
-7. Implement semantic index primitives in `skill_semantic_graph_index_v1`: file identity, content hash, summary, entities, links, freshness, and confidence.
-8. Expose semantic graph query results to Gemini without dumping raw filesystem contents.
-9. Continue SMP work from heartbeat-only to AP startup and later per-core scheduling.
-10. Unify dedicated Nexus fetch with the generic TLS/API response path.
+7. Move autonomy agents, evidence gathering, and proposal/vote logic into workflow skills while keeping core user-controlled mode and interval gates.
+8. Add stronger per-module Wasm quotas: CPU budget, memory-page accounting, host ABI call limits, and automatic quarantine.
+9. Stabilize the GUI after long Gemini conversations, including scroll persistence and message history retention.
+10. Implement semantic index primitives in `skill_semantic_graph_index_v1`: file identity, content hash, summary, entities, links, freshness, and confidence.
+11. Expose semantic graph query results to Gemini without dumping raw filesystem contents.
+12. Continue SMP work from heartbeat-only to AP startup and later per-core scheduling.
+13. Unify dedicated Nexus fetch with the generic TLS/API response path.
 
 ## Near-Term User-Facing Goals
 

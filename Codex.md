@@ -26,20 +26,21 @@ When there is a conflict, prefer these files in this order:
 1. [OS.md](D:/python/github/OpenRhiza/OpenRhiza/OS.md)
 2. [ROADMAP.md](D:/python/github/OpenRhiza/OpenRhiza/ROADMAP.md)
 3. [ARCHITECTURE.md](D:/python/github/OpenRhiza/OpenRhiza/ARCHITECTURE.md)
-4. [DISPLAY_ABI.md](D:/python/github/OpenRhiza/OpenRhiza/DISPLAY_ABI.md)
-5. [DRIVER_HOST_ABI.md](D:/python/github/OpenRhiza/OpenRhiza/DRIVER_HOST_ABI.md)
-6. [GUI_DEVELOPMENT.md](D:/python/github/OpenRhiza/OpenRhiza/GUI_DEVELOPMENT.md)
-7. [MODULE_MAP.md](D:/python/github/OpenRhiza/OpenRhiza/MODULE_MAP.md)
-8. [KNOWN_ISSUES.md](D:/python/github/OpenRhiza/OpenRhiza/KNOWN_ISSUES.md)
-9. [BUILD_AND_TEST.md](D:/python/github/OpenRhiza/OpenRhiza/BUILD_AND_TEST.md)
-10. [PROGRAM_COMPATIBILITY_GOALS.md](D:/python/github/OpenRhiza/OpenRhiza/PROGRAM_COMPATIBILITY_GOALS.md)
-11. [SEMANTIC_GRAPH_LAYER.md](D:/python/github/OpenRhiza/OpenRhiza/SEMANTIC_GRAPH_LAYER.md)
-12. [STORAGE_HOST_ABI.md](D:/python/github/OpenRhiza/OpenRhiza/STORAGE_HOST_ABI.md)
-13. [SKILL_FS_BRIDGE.md](D:/python/github/OpenRhiza/OpenRhiza/SKILL_FS_BRIDGE.md)
-14. [STORAGE_IMAGE_HARNESS.md](D:/python/github/OpenRhiza/OpenRhiza/STORAGE_IMAGE_HARNESS.md)
-15. [AUTONOMY_MODE.md](D:/python/github/OpenRhiza/OpenRhiza/AUTONOMY_MODE.md)
-16. [CORE_RUNTIME_FOUNDATION.md](D:/python/github/OpenRhiza/OpenRhiza/CORE_RUNTIME_FOUNDATION.md)
-17. [QEMU_DRIVER_SET.md](D:/python/github/OpenRhiza/OpenRhiza/QEMU_DRIVER_SET.md)
+4. [CORE_BOUNDARY_AUDIT.md](D:/python/github/OpenRhiza/OpenRhiza/CORE_BOUNDARY_AUDIT.md)
+5. [DISPLAY_ABI.md](D:/python/github/OpenRhiza/OpenRhiza/DISPLAY_ABI.md)
+6. [DRIVER_HOST_ABI.md](D:/python/github/OpenRhiza/OpenRhiza/DRIVER_HOST_ABI.md)
+7. [GUI_DEVELOPMENT.md](D:/python/github/OpenRhiza/OpenRhiza/GUI_DEVELOPMENT.md)
+8. [MODULE_MAP.md](D:/python/github/OpenRhiza/OpenRhiza/MODULE_MAP.md)
+9. [KNOWN_ISSUES.md](D:/python/github/OpenRhiza/OpenRhiza/KNOWN_ISSUES.md)
+10. [BUILD_AND_TEST.md](D:/python/github/OpenRhiza/OpenRhiza/BUILD_AND_TEST.md)
+11. [PROGRAM_COMPATIBILITY_GOALS.md](D:/python/github/OpenRhiza/OpenRhiza/PROGRAM_COMPATIBILITY_GOALS.md)
+12. [SEMANTIC_GRAPH_LAYER.md](D:/python/github/OpenRhiza/OpenRhiza/SEMANTIC_GRAPH_LAYER.md)
+13. [STORAGE_HOST_ABI.md](D:/python/github/OpenRhiza/OpenRhiza/STORAGE_HOST_ABI.md)
+14. [SKILL_FS_BRIDGE.md](D:/python/github/OpenRhiza/OpenRhiza/SKILL_FS_BRIDGE.md)
+15. [STORAGE_IMAGE_HARNESS.md](D:/python/github/OpenRhiza/OpenRhiza/STORAGE_IMAGE_HARNESS.md)
+16. [AUTONOMY_MODE.md](D:/python/github/OpenRhiza/OpenRhiza/AUTONOMY_MODE.md)
+17. [CORE_RUNTIME_FOUNDATION.md](D:/python/github/OpenRhiza/OpenRhiza/CORE_RUNTIME_FOUNDATION.md)
+18. [QEMU_DRIVER_SET.md](D:/python/github/OpenRhiza/OpenRhiza/QEMU_DRIVER_SET.md)
 
 Historical Gemini files should not override these.
 
@@ -139,12 +140,15 @@ These are the main live follow-up items:
 
 ### High Priority
 
-1. QEMU regression test the latest autonomy/scheduler/UTF-8 changes.
-2. Keep physical input stable through GUI handoff without regressions.
-3. Stabilize long-running GUI conversations: persistence, scroll, and message retention.
+1. Enforce `CORE_BOUNDARY_AUDIT.md` when adding or moving features.
+2. Move native e1000 toward a sandbox driver artifact using `DRIVER_HOST_ABI.md`, with native fallback retained until traffic validation passes.
+3. Move xHCI/HID parsing, richer keymaps, and IME behavior toward sandbox input drivers without regressing recovery input.
 4. Continue moving GUI ownership away from bootstrap-only core rendering and toward sandbox-owned scene mutation.
-5. Move e1000, xHCI, and storage protocol logic into separate sandbox driver artifacts using `DRIVER_HOST_ABI.md`.
-6. Add autonomy cycle timeout/stale-cycle recovery.
+5. Move filesystem family read/write behavior behind `skill_fs_bridge`.
+6. Move autonomy planning/council behavior out to workflow skills while core keeps only user-controlled gates.
+7. QEMU regression test the latest autonomy/scheduler/UTF-8 changes.
+8. Keep physical input stable through GUI handoff without regressions.
+9. Stabilize long-running GUI conversations: persistence, scroll, and message retention.
 
 ### Medium Priority
 

@@ -19,6 +19,10 @@ It exists to provide:
 It must **not** absorb higher-level filesystem logic, GUI logic, compatibility runtimes, or
 policy engines that can live in skills/workflows.
 
+The current module-by-module boundary tags are maintained in
+[`CORE_BOUNDARY_AUDIT.md`](CORE_BOUNDARY_AUDIT.md). Treat that file as the working checklist for
+shrinking bootstrap fallbacks.
+
 ## Current Foundation
 
 ### 1. Multi-capability runtime
@@ -90,10 +94,11 @@ reason:
 
 ## Immediate Next Steps
 
-1. QEMU regression test the latest autonomy, scheduler, UTF-8, and bounded polling changes.
-2. Move filesystem family parsing onto storage host ABI driven skills.
-3. Expand SMP from heartbeat tracking to actual AP bring-up.
-4. Add stronger per-capability quotas for CPU time, memory pages, and host ABI call rates.
-5. Unify Nexus fetch on the same HTTPS/TLS response path as service APIs.
-6. Keep the recovery console and bootstrap GUI independent so sandbox failures cannot kill the
+1. Follow the migration order in `CORE_BOUNDARY_AUDIT.md`: e1000, xHCI/HID, GUI shell, filesystem bridge, autonomy workflow.
+2. QEMU regression test the latest autonomy, scheduler, UTF-8, and bounded polling changes.
+3. Move filesystem family parsing onto storage host ABI driven skills.
+4. Expand SMP from heartbeat tracking to actual AP bring-up.
+5. Add stronger per-capability quotas for CPU time, memory pages, and host ABI call rates.
+6. Unify Nexus fetch on the same HTTPS/TLS response path as service APIs.
+7. Keep the recovery console and bootstrap GUI independent so sandbox failures cannot kill the
    survival path.

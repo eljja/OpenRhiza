@@ -144,6 +144,7 @@ We track our stable evolutionary steps via [GitHub Releases](https://github.com/
 Explore the depths of the root system through our engineering documents:
 - [VISION.md](VISION.md): The ultimate grand goal.
 - [ARCHITECTURE.md](ARCHITECTURE.md): The 5-layer system.
+- [CORE_BOUNDARY_AUDIT.md](CORE_BOUNDARY_AUDIT.md): The current module-by-module boundary tags for `Permanent Core`, `Bootstrap Fallback`, and `Must Move To Skill`.
 - [DISPLAY_ABI.md](DISPLAY_ABI.md): The display handoff boundary between core and sandbox skills.
 - [GUI_DEVELOPMENT.md](GUI_DEVELOPMENT.md): The dual-track GUI plan for native object GUI and LVGL-style bridging.
 - [OS.md](OS.md): The baseline operating rules that the internal OpenRhiza intelligence should follow.
