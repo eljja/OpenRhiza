@@ -33,10 +33,37 @@ impl VoiceMode {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VoiceRoute {
+    TextFirst,
+    DirectAudio,
+    Hybrid,
+}
+
+impl VoiceRoute {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            VoiceRoute::TextFirst => "text-first",
+            VoiceRoute::DirectAudio => "direct-audio",
+            VoiceRoute::Hybrid => "hybrid",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Option<Self> {
+        match value.trim() {
+            "text" | "text-first" | "transcript" => Some(VoiceRoute::TextFirst),
+            "direct" | "audio" | "direct-audio" => Some(VoiceRoute::DirectAudio),
+            "hybrid" | "auto" => Some(VoiceRoute::Hybrid),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 struct VoiceConfig {
     configured: bool,
     mode: VoiceMode,
+    route: VoiceRoute,
     model: String,
 }
 
@@ -45,6 +72,7 @@ impl Default for VoiceConfig {
         Self {
             configured: false,
             mode: VoiceMode::Off,
+            route: VoiceRoute::TextFirst,
             model: String::from(DEFAULT_MODEL),
         }
     }
@@ -88,6 +116,11 @@ pub fn load_persisted_config() {
                     config.mode = mode;
                 }
             }
+            "route" => {
+                if let Some(route) = VoiceRoute::from_str(value) {
+                    config.route = route;
+                }
+            }
             "model" => {
                 let model = value.trim();
                 if !model.is_empty() && model.len() <= 96 {
@@ -105,9 +138,10 @@ pub fn load_persisted_config() {
 
 fn persist_config(config: &VoiceConfig) -> Result<(), &'static str> {
     let text = format!(
-        "# OpenRhiza voice input config\nconfigured={}\nmode={}\nmodel={}\n",
+        "# OpenRhiza voice input config\nconfigured={}\nmode={}\nroute={}\nmodel={}\n",
         if config.configured { 1 } else { 0 },
         config.mode.as_str(),
+        config.route.as_str(),
         config.model
     );
     crate::storage::write_named_file_to_secondary_fat16_preserve_size(
@@ -119,9 +153,10 @@ fn persist_config(config: &VoiceConfig) -> Result<(), &'static str> {
 pub fn status_block() -> String {
     let state = VOICE_STATE.lock();
     format!(
-        "Voice input:\n- configured: {}\n- mode: {}\n- model: {}\n- capture: sandbox skill required\n- buffered transcript bytes: {}\n- last status: {}",
+        "Voice input:\n- configured: {}\n- mode: {}\n- route: {}\n- model: {}\n- capture: sandbox skill required\n- buffered transcript bytes: {}\n- last status: {}",
         state.config.configured,
         state.config.mode.as_str(),
+        state.config.route.as_str(),
         state.config.model,
         state.buffered_transcript.len(),
         state.last_status
@@ -151,6 +186,39 @@ pub fn set_mode(mode_text: &str) -> Result<String, &'static str> {
             Ok(format!(
                 "[Voice] mode set to {} for this session; persistence failed: {}",
                 mode.as_str(),
+                error
+            ))
+        }
+    }
+}
+
+pub fn set_route(route_text: &str) -> Result<String, &'static str> {
+    let route = VoiceRoute::from_str(route_text).ok_or("expected text-first, direct-audio, or hybrid")?;
+    let mut state = VOICE_STATE.lock();
+    state.config.configured = true;
+    state.config.route = route;
+    state.last_status = match route {
+        VoiceRoute::TextFirst => {
+            String::from("voice route uses transcript first; audio is not uploaded unless needed")
+        }
+        VoiceRoute::DirectAudio => {
+            String::from("voice route prefers bounded compressed audio to a multimodal LLM")
+        }
+        VoiceRoute::Hybrid => {
+            String::from("voice route uses transcript by default and direct audio only when confidence or intent requires it")
+        }
+    };
+    let config = state.config.clone();
+    let status = state.last_status.clone();
+    drop(state);
+    match persist_config(&config) {
+        Ok(()) => Ok(format!("[Voice] route set to {}", route.as_str())),
+        Err(error) => {
+            let mut state = VOICE_STATE.lock();
+            state.last_status = format!("{}; persistence failed: {}", status, error);
+            Ok(format!(
+                "[Voice] route set to {} for this session; persistence failed: {}",
+                route.as_str(),
                 error
             ))
         }

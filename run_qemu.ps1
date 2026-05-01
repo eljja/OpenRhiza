@@ -239,7 +239,7 @@ Merge-SkillCacheSeedMap -Path (Join-Path $driverDisk "SKILLCCH.TXT")
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "SKCAPCHE.TXT") -Header "# OpenRhiza capability cache`ndomain=skills`nsummary=`n" -Size 512
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "SKLACTV.TXT") -Header "# OpenRhiza active skill map`n" -Size 512
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "AUTONOMY.TXT") -Header "# OpenRhiza autonomy config`nconfigured=0`nmode=off`ninterval_minutes=10`n" -Size 512
-Initialize-FixedCacheFile -Path (Join-Path $driverDisk "VOICECFG.TXT") -Header "# OpenRhiza voice input config`nconfigured=0`nmode=off`nmodel=gemini-3.1-pro-preview`n" -Size 512
+Initialize-FixedCacheFile -Path (Join-Path $driverDisk "VOICECFG.TXT") -Header "# OpenRhiza voice input config`nconfigured=0`nmode=off`nroute=text-first`nmodel=gemini-3.1-pro-preview`n" -Size 512
 Initialize-FixedCacheFile -Path (Join-Path $driverDisk "VOICEIN.TXT") -Header "" -Size 8192
 if (Test-Path -LiteralPath (Join-Path $repoRoot "BOOT_AUTORUN.md")) {
     $bootAutorunText = Get-Content -LiteralPath (Join-Path $repoRoot "BOOT_AUTORUN.md") -Raw

@@ -176,8 +176,9 @@ These are the main live follow-up items:
 ### Voice And Platform Expansion
 
 - Do not start phone support by targeting Android directly. Start with `qemu-system-aarch64 -machine virt`.
-- Do not put speech recognition, wake-word logic, or multimodal prompt policy into the core.
+- Do not put speech recognition, wake-word logic, route selection, codec policy, or multimodal prompt policy into the core.
 - The x86_64 voice milestone should prove that spoken prompts can become editable transcripts without breaking keyboard, GUI, or recovery input.
+- Default voice routing is `text-first`. Add direct-audio only through sandbox skills such as `skill_voice_router_policy_v1` and `skill_voice_audio_llm_bridge_v1`, and prefer `hybrid` when audio context is sometimes useful but bandwidth and auditability still matter.
 - The long-term phone value is high because keyboard may be absent, but phone audio/display/touch stacks must still be capability-driven.
 
 ## 5. Filesystem Bridge Milestone

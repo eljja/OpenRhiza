@@ -40,8 +40,10 @@ microphone hardware
   -> audio driver capability
   -> audio frame host ABI
   -> skill_voice_vad_v1
-  -> skill_voice_transcribe_v1
-  -> skill_voice_intent_confirm_v1
+  -> skill_voice_router_policy_v1
+     -> text-first route: skill_voice_transcribe_v1 -> transcript confirmation
+     -> direct-audio route: skill_voice_audio_llm_bridge_v1 -> bounded multimodal LLM request
+     -> hybrid route: transcript by default, direct audio only for low-confidence or tone-sensitive tasks
   -> normal OpenRhiza prompt/workflow engine
 ```
 
@@ -52,6 +54,8 @@ Each stage should be a replaceable object:
 - `voice:vad`
 - `voice:transcriber`
 - `voice:language-router`
+- `voice:route-policy`
+- `voice:direct-audio-llm`
 - `voice:confirmation-ui`
 - `prompt:submission`
 
@@ -105,10 +109,13 @@ The host should enforce:
 Initial registry skills:
 
 - `skill_voice_capture_bridge_v1`
+- `skill_voice_router_policy_v1`
+- `skill_voice_audio_llm_bridge_v1`
 - `skill_voice_vad_v1`
 - `skill_voice_transcribe_gemini_v1`
 - `skill_voice_prompt_confirm_v1`
 - `workflow_voice_prompt_v1`
+- `workflow_voice_direct_audio_v1`
 - `policy_voice_privacy_v1`
 
 Later skills:
@@ -129,7 +136,9 @@ Rules:
 - first boot may ask whether voice input should be enabled
 - show a visible recording state
 - allow `/voice off` at all times
-- do not upload audio unless a voice workflow explicitly needs remote transcription
+- default route is `text-first`
+- do not upload audio unless a voice workflow explicitly needs remote transcription or direct multimodal audio reasoning
+- prefer `hybrid` over `direct-audio` for normal use because it reduces bandwidth and keeps prompts auditable
 - prefer sending short bounded clips, not continuous streams
 - keep transcript and audio retention separate
 - never let autonomy enable voice capture by itself
@@ -143,6 +152,9 @@ Planned commands:
 - `/voice off`
 - `/voice push-to-talk`
 - `/voice always-listen`
+- `/voice-route text-first`
+- `/voice-route direct-audio`
+- `/voice-route hybrid`
 - `/voice-model <model>`
 - `/voice-test`
 - `/voice-clear-buffer`
@@ -153,12 +165,16 @@ Current implementation status:
 
 - `/voice-status`
 - `/voice <off|on|push-to-talk|always-listen>`
+- `/voice-route <text-first|direct-audio|hybrid>`
 - `/voice-model <model>`
 - `/voice-test`
 - `/voice-import`
 - `/voice-clear-buffer`
 - `skill_voice_capture_bridge_v1` seed skill
+- `skill_voice_router_policy_v1` registry sync entry
+- `skill_voice_audio_llm_bridge_v1` registry sync entry
 - `workflow_voice_prompt_v1` registry sync entry
+- `workflow_voice_direct_audio_v1` registry sync entry
 - `policy_voice_privacy_v1` registry sync entry
 - `tools/voice_prompt_bridge.py` host-assisted bridge
 - `VOICEIN.TXT` transcript handoff file on the QEMU driver disk
@@ -168,15 +184,30 @@ It does not yet capture real microphone frames inside OpenRhiza.
 For x86_64/QEMU testing, the host bridge can write a transcript or Gemini-transcribed WAV result to `VOICEIN.TXT`, then inject `/voice-import`.
 The host bridge clears the current guest composer before injecting `/voice-import` by default; use `--preserve-input` only when the input line is known to be empty or intentionally prefilled.
 
+## Voice Route Policy
+
+`text-first` is the default because it is cheap, editable, auditable, and compatible with existing prompt handling.
+
+`direct-audio` sends a bounded compressed clip to a multimodal LLM without forcing an intermediate transcript first.
+Use it only when tone, uncertainty, non-speech sounds, pronunciation, or mixed-language audio materially affects the task.
+
+`hybrid` is the preferred advanced mode.
+It attempts transcript-first operation and escalates to direct audio only when confidence is low or the user explicitly asks the system to reason over the sound itself.
+
+Route selection belongs to sandbox policy skills, not the core.
+The core stores only the selected route and exposes bounded handoff files/handles.
+
 ## Multimodal LLM Path
 
 When using Gemini or another VL/multimodal model:
 
 1. Capture a bounded clip.
 2. Attach OS context only if needed.
-3. Ask for transcript first, not direct action.
-4. Display transcript.
-5. Submit transcript only after confirmation, unless the user selected a trusted hands-free mode.
+3. In `text-first` mode, ask for transcript plus confidence.
+4. In `direct-audio` mode, ask for a concise audio-grounded answer and a safety summary.
+5. In `hybrid` mode, use direct audio only when transcript confidence is low or audio context is essential.
+6. Display transcript, summary, or direct-audio result in the composer/conversation view.
+7. Submit or act only after confirmation, unless the user selected a trusted hands-free mode.
 
 This prevents accidental action from background speech or misrecognition.
 

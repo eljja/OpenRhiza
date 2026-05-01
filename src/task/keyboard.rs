@@ -299,7 +299,7 @@ fn handle_cli_command(command: &str) {
 
     if let Some(local_command) = command.strip_prefix('/') {
         match local_command {
-            "help" => crate::result_println!("[CLI] Local commands: /help, /clear, /status, /keyboard-debug <on|off>, /keyboard-selftest, /scheduler-status, /smp-status, /wasm-status, /semantic-status, /registry-context, /autonomy-status, /autonomy-mode <off|assist|council>, /autonomy-interval <minutes>, /autonomy-run-now, /voice-status, /voice <off|on|push-to-talk|always-listen>, /voice-model <model>, /voice-test, /voice-import, /voice-clear-buffer, /display-status, /gui-scene, /gui-mutations, /gui-session <openrhiza|sandbox|wide|recovery>, /gui-focus <conversation|composer|none>, /gui-scroll <up|down|bottom> [count], /gui-compose-demo, /gui-label <handle> <text>, /gui-style <handle> <style>, /gui-bounds <handle> <x> <y> <width> <height>, /gui-interaction <handle> <idle|hovered|focused|active|disabled>, /gui-reset <handle|all>, /fs-harness-status, /fs-harness-probe, /fs-bridge-status, /driver-host-status, /nexus-fetch, /api-register, /api-register-http, /http-health, /https-health, /https-root, /api-hw, /api-driver, /api-software, /api-skill, /api-workflow, /api-policy, /api-eval, /api-all, /gemini-test, /gemini-gui-test, /driver-map, /driver-runtime-status, /driver-promote <match_key>, /skill-cache, /skill-download <skill_id>, /skill-load <skill_id>, /skill-run <skill_id>, /skill-unload <skill_id>, /skill-activate <skill_id>, /driver-generate <match_key>, /driver-upload <match_key>, /driver-download <driver_id> [match_key], /driver-comment <driver_id> <text>, /driver-vote <driver_id> up|down, /driver-bindings, /driver-activate <match_key> <driver_id>, /driver-rollback <match_key>, /sandbox-mouse-load, /sandbox-keyboard-load, /input-routing-status, /input-activate <keyboard|mouse>, /input-rollback <keyboard|mouse>"),
+            "help" => crate::result_println!("[CLI] Local commands: /help, /clear, /status, /keyboard-debug <on|off>, /keyboard-selftest, /scheduler-status, /smp-status, /wasm-status, /semantic-status, /registry-context, /autonomy-status, /autonomy-mode <off|assist|council>, /autonomy-interval <minutes>, /autonomy-run-now, /voice-status, /voice <off|on|push-to-talk|always-listen>, /voice-route <text-first|direct-audio|hybrid>, /voice-model <model>, /voice-test, /voice-import, /voice-clear-buffer, /display-status, /gui-scene, /gui-mutations, /gui-session <openrhiza|sandbox|wide|recovery>, /gui-focus <conversation|composer|none>, /gui-scroll <up|down|bottom> [count], /gui-compose-demo, /gui-label <handle> <text>, /gui-style <handle> <style>, /gui-bounds <handle> <x> <y> <width> <height>, /gui-interaction <handle> <idle|hovered|focused|active|disabled>, /gui-reset <handle|all>, /fs-harness-status, /fs-harness-probe, /fs-bridge-status, /driver-host-status, /nexus-fetch, /api-register, /api-register-http, /http-health, /https-health, /https-root, /api-hw, /api-driver, /api-software, /api-skill, /api-workflow, /api-policy, /api-eval, /api-all, /gemini-test, /gemini-gui-test, /driver-map, /driver-runtime-status, /driver-promote <match_key>, /skill-cache, /skill-download <skill_id>, /skill-load <skill_id>, /skill-run <skill_id>, /skill-unload <skill_id>, /skill-activate <skill_id>, /driver-generate <match_key>, /driver-upload <match_key>, /driver-download <driver_id> [match_key], /driver-comment <driver_id> <text>, /driver-vote <driver_id> up|down, /driver-bindings, /driver-activate <match_key> <driver_id>, /driver-rollback <match_key>, /sandbox-mouse-load, /sandbox-keyboard-load, /input-routing-status, /input-activate <keyboard|mouse>, /input-rollback <keyboard|mouse>"),
             "clear" => WRITER.lock().clear_log_area(),
             "status" => {
                 crate::result_println!("[CLI] Keyboard input ready.");
@@ -340,6 +340,10 @@ fn handle_cli_command(command: &str) {
             _ if local_command.starts_with("voice ") => {
                 let mode = local_command["voice ".len()..].trim();
                 set_voice_mode(mode);
+            }
+            _ if local_command.starts_with("voice-route ") => {
+                let route = local_command["voice-route ".len()..].trim();
+                set_voice_route(route);
             }
             _ if local_command.starts_with("voice-model ") => {
                 let model = local_command["voice-model ".len()..].trim();
@@ -904,6 +908,13 @@ fn show_voice_status() {
 
 fn set_voice_mode(mode: &str) {
     match crate::voice::set_mode(mode) {
+        Ok(message) => crate::result_println!("{}", message),
+        Err(error) => crate::result_println!("[Voice] {}", error),
+    }
+}
+
+fn set_voice_route(route: &str) {
+    match crate::voice::set_route(route) {
         Ok(message) => crate::result_println!("{}", message),
         Err(error) => crate::result_println!("[Voice] {}", error),
     }

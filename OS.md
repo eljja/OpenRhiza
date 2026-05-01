@@ -141,8 +141,11 @@ Do not stop after generation. Continue through validation, application, and repo
 - Voice input defaults to off.
 - The user must control whether voice input is disabled, push-to-talk, or always-listen.
 - Autonomy must never enable microphone capture by itself.
+- Default voice route is `text-first`: bounded clip -> transcript -> visible composer confirmation -> normal prompt path.
+- `direct-audio` is allowed only as a sandbox-routed capability for cases where tone, pronunciation, non-speech sound, or low transcript confidence matters.
+- `hybrid` is the preferred advanced route: start text-first, escalate to direct audio only when a voice routing policy skill determines it is needed or the user explicitly requests audio-grounded reasoning.
 - Prefer bounded clips and transcript confirmation over direct action.
-- Remote VL/multimodal LLM transcription may be used early, but it should return transcript first.
+- Remote VL/multimodal LLM transcription or direct-audio reasoning may be used early, but route policy and upload decisions belong to sandbox skills/workflows, not core.
 - Failed transcription must not execute actions.
 - Keep audio retention, transcript retention, and prompt submission as separate choices.
 - See [VOICE_INPUT.md](D:/python/github/OpenRhiza/OpenRhiza/VOICE_INPUT.md) for the detailed plan.
