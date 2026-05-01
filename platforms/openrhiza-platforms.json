@@ -1,0 +1,54 @@
+{
+  "schema": "openrhiza.platform.matrix.v1",
+  "core_rule": "Only survival boot, recovery I/O, memory/interrupt setup, and sandbox host ABI belong in core. Drivers, GUI, filesystems, voice, policy, and orchestration belong in sandbox capabilities.",
+  "targets": [
+    {
+      "id": "x86_64-qemu-pc",
+      "arch": "x86_64",
+      "machine": "qemu-pc",
+      "rust_target": "x86_64-unknown-none",
+      "qemu_binary": "qemu-system-x86_64",
+      "status": "reference",
+      "boot_goal": "1920x1080 GUI plus recovery console",
+      "registry_keys": ["arch:x86_64", "machine:qemu-pc", "pci:8086:100e", "usb:class:03"],
+      "core_minimum": ["CPU entry", "IDT/APIC", "heap", "recovery console", "bounded sandbox host ABI"],
+      "sandbox_first": ["e1000", "xHCI/HID", "display shell", "filesystem bridge", "voice route"]
+    },
+    {
+      "id": "aarch64-qemu-virt",
+      "arch": "aarch64",
+      "machine": "qemu-virt",
+      "rust_target": "targets/aarch64-openrhiza-none.json",
+      "qemu_binary": "qemu-system-aarch64",
+      "status": "scaffold",
+      "boot_goal": "serial recovery shell on PL011 before display/input",
+      "registry_keys": ["arch:aarch64", "machine:qemu-aarch64-virt", "dt:arm,pl011", "virtio:mmio"],
+      "core_minimum": ["EL entry", "page tables/MMU", "exception vectors", "GIC", "PL011 UART", "sandbox host ABI"],
+      "sandbox_first": ["virtio-net", "virtio-block", "virtio-input", "virtio-gpu", "display shell"]
+    },
+    {
+      "id": "android-unlocked-aarch64",
+      "arch": "aarch64",
+      "machine": "android-device",
+      "rust_target": "targets/aarch64-openrhiza-none.json",
+      "qemu_binary": "not-direct",
+      "status": "research",
+      "boot_goal": "one unlocked-device recovery core after qemu-virt works",
+      "registry_keys": ["arch:aarch64", "machine:android-device", "android-device:<vendor>:<model>:<codename>", "dt:<compatible-string>"],
+      "core_minimum": ["boot image entry", "device-tree map", "UART or framebuffer recovery", "rollback-safe sandbox host ABI"],
+      "sandbox_first": ["touch", "display", "audio", "storage", "wifi", "android compatibility"]
+    },
+    {
+      "id": "riscv64-qemu-virt",
+      "arch": "riscv64",
+      "machine": "qemu-virt",
+      "rust_target": "targets/riscv64-openrhiza-none.json",
+      "qemu_binary": "qemu-system-riscv64",
+      "status": "parking-lot",
+      "boot_goal": "serial proof-of-life after ARM64 path is stable",
+      "registry_keys": ["arch:riscv64", "machine:qemu-riscv64-virt", "virtio:mmio"],
+      "core_minimum": ["S-mode entry", "trap vectors", "PLIC/CLINT", "UART", "sandbox host ABI"],
+      "sandbox_first": ["virtio-net", "virtio-block", "virtio-input", "virtio-gpu"]
+    }
+  ]
+}

@@ -135,6 +135,8 @@ Do not stop after generation. Continue through validation, application, and repo
 - Android phones are later targets because bootloader, verified boot, device tree, display, touch, audio, storage, and power stacks are vendor-specific.
 - Use architecture, machine, board, and device match keys in OpenRhiza.com before generating platform drivers.
 - Do not fork the OS philosophy per platform. Every platform should expose a small survival substrate and then grow through registry-backed sandbox capabilities.
+- Treat `platforms/openrhiza-platforms.json` and `/platform-status` as the current platform expansion contract.
+- See [CROSS_PLATFORM_BRINGUP.md](D:/python/github/OpenRhiza/OpenRhiza/CROSS_PLATFORM_BRINGUP.md) for the active ARM/Android/RISC-V bring-up plan.
 
 ## Voice input policy
 

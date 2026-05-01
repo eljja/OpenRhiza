@@ -87,6 +87,21 @@ It should be "boot a minimal OpenRhiza recovery core on one known-unlocked devic
 
 ## Test Environments
 
+The canonical machine-readable target matrix is now:
+
+```text
+platforms/openrhiza-platforms.json
+```
+
+Inspect it with:
+
+```powershell
+python .\tools\platform_matrix.py
+python .\tools\platform_matrix.py --registry-keys
+```
+
+OpenRhiza also exposes `/platform-status` inside the OS so the local LLM prompt path can reason about platform expansion without reading host files.
+
 ### x86_64
 
 - `qemu-system-x86_64`
@@ -97,16 +112,21 @@ It should be "boot a minimal OpenRhiza recovery core on one known-unlocked devic
 Recommended first command shape:
 
 ```powershell
-qemu-system-aarch64 `
-  -machine virt `
-  -cpu cortex-a72 `
-  -m 1024 `
-  -serial stdio `
-  -display gtk `
-  -kernel openrhiza-arm64.elf
+pwsh.exe -ExecutionPolicy Bypass -File .\run_qemu_arm64.ps1
 ```
 
-This is a future target command shape, not the current build output.
+Without an ARM64 kernel image, this validates that the host has `qemu-system-aarch64` available and prints the next command shape.
+After an ARM64 serial recovery ELF exists, pass it as the first argument.
+
+Target specs have been added under:
+
+```text
+targets/aarch64-openrhiza-none.json
+targets/riscv64-openrhiza-none.json
+```
+
+These are scaffolds for bring-up work, not proof that the full current kernel compiles for those architectures.
+The current kernel still contains x86_64-specific boot and device code that must be split behind platform entry modules.
 
 ### Android
 
@@ -167,4 +187,3 @@ Those belong in sandbox capabilities whenever the survival path permits it.
 6. Bring up display/input through sandbox skills.
 7. Move to one real ARM board.
 8. Only then evaluate Android phone targets.
-

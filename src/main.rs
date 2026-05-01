@@ -11,6 +11,16 @@ pub mod os_core_seed;
 
 // Multi-architecture module tree
 pub mod arch {
+    pub mod aarch64 {
+        pub const PLATFORM_ID: &str = "aarch64-qemu-virt";
+        pub const MACHINE_MATCH_KEY: &str = "machine:qemu-aarch64-virt";
+        pub const ARCH_MATCH_KEY: &str = "arch:aarch64";
+
+        pub mod entry;
+        pub mod gic;
+        pub mod memory;
+        pub mod serial;
+    }
     pub mod x86_64 {
         pub mod discovery;
         pub mod interrupts; // IDT and hardware interrupt handling
@@ -62,6 +72,7 @@ pub mod skill_runtime;
 pub mod prompt_orchestrator;
 pub mod firmware;
 pub mod wifi_mac;
+pub mod platform;
 
 use alloc::format;
 use alloc::string::String;

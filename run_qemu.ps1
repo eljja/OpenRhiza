@@ -142,6 +142,8 @@ function Merge-SkillCacheSeedMap {
         "skill_gui_modern_shell_v1" = "SK007.WAS"
         "skill_qemu_driver_pack_v1" = "SK008.WAS"
         "skill_voice_capture_bridge_v1" = "SK009.WAS"
+        "skill_voice_router_policy_v1" = "SK009.WAS"
+        "skill_voice_audio_llm_bridge_v1" = "SK009.WAS"
     }
 
     $existingText = ""

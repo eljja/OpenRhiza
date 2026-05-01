@@ -138,6 +138,7 @@ Useful runtime inspection commands:
 - `/gui-scene`
 - `/scheduler-status`
 - `/smp-status`
+- `/platform-status`
 - `/wasm-status`
 - `/semantic-status`
 - `/registry-context`
@@ -264,6 +265,21 @@ Optional host-assisted voice import:
 ```powershell
 python .\tools\voice_prompt_bridge.py --audio .\sample.wav --route hybrid --inject
 ```
+
+### 5. Platform matrix
+
+Run:
+
+```powershell
+python .\tools\platform_matrix.py
+pwsh.exe -ExecutionPolicy Bypass -File .\run_qemu_arm64.ps1
+```
+
+Confirm:
+
+- `x86_64-qemu-pc` remains the reference target
+- `aarch64-qemu-virt` is listed as the next scaffolded target
+- the ARM64 runner fails only if `qemu-system-aarch64` is missing, not because it tries to mutate the current x86 boot path
 
 ## Known Current Gaps
 

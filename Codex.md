@@ -43,6 +43,7 @@ When there is a conflict, prefer these files in this order:
 18. [QEMU_DRIVER_SET.md](D:/python/github/OpenRhiza/OpenRhiza/QEMU_DRIVER_SET.md)
 19. [PLATFORM_EXPANSION.md](D:/python/github/OpenRhiza/OpenRhiza/PLATFORM_EXPANSION.md)
 20. [VOICE_INPUT.md](D:/python/github/OpenRhiza/OpenRhiza/VOICE_INPUT.md)
+21. [CROSS_PLATFORM_BRINGUP.md](D:/python/github/OpenRhiza/OpenRhiza/CROSS_PLATFORM_BRINGUP.md)
 
 Historical Gemini files should not override these.
 
@@ -176,6 +177,8 @@ These are the main live follow-up items:
 ### Voice And Platform Expansion
 
 - Do not start phone support by targeting Android directly. Start with `qemu-system-aarch64 -machine virt`.
+- Use `platforms/openrhiza-platforms.json`, `tools/platform_matrix.py`, and `/platform-status` as the shared source of truth for platform expansion state.
+- `run_qemu_arm64.ps1` is a scaffolded ARM64 runner. It validates QEMU availability now and will run the ARM64 serial recovery ELF once that target exists.
 - Do not put speech recognition, wake-word logic, route selection, codec policy, or multimodal prompt policy into the core.
 - The x86_64 voice milestone should prove that spoken prompts can become editable transcripts without breaking keyboard, GUI, or recovery input.
 - Default voice routing is `text-first`. Add direct-audio only through sandbox skills such as `skill_voice_router_policy_v1` and `skill_voice_audio_llm_bridge_v1`, and prefer `hybrid` when audio context is sometimes useful but bandwidth and auditability still matter.
