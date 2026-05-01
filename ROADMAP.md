@@ -31,6 +31,8 @@ OpenRhiza currently has:
 - autonomy stale-cycle timeout recovery so failed LLM requests cannot block later cycles
 - `/wasm-status`, `/semantic-status`, and `/registry-context` inspection commands
 - SMP discovery/heartbeat substrate, but not real AP startup yet
+- x86_64 QEMU remains the reference platform before ARM64 and phone expansion
+- voice input is planned as a sandbox capability, not as a core speech engine
 
 ## Public-Usable Minimum
 
@@ -67,6 +69,12 @@ Before presenting OpenRhiza as publicly usable, the minimum target is:
    - Council mode should present inferred intent, goal, blocker, evidence, proposal, and approval requirement.
    - Autonomous work must stay bounded, reversible, and approval-gated for risky actions.
 
+7. Voice-ready input foundation
+   - Voice input must be optional and off by default.
+   - Keyboard and recovery input must remain available.
+   - Audio capture, VAD, transcription, and confirmation should be sandbox skills/workflows.
+   - Remote multimodal transcription must show a transcript before action unless the user explicitly enables a trusted hands-free mode.
+
 ## Immediate Engineering Priorities
 
 1. Enforce the boundary tags in [`CORE_BOUNDARY_AUDIT.md`](CORE_BOUNDARY_AUDIT.md).
@@ -82,6 +90,8 @@ Before presenting OpenRhiza as publicly usable, the minimum target is:
 11. Expose semantic graph query results to Gemini without dumping raw filesystem contents.
 12. Continue SMP work from heartbeat-only to AP startup and later per-core scheduling.
 13. Unify dedicated Nexus fetch with the generic TLS/API response path.
+14. Define and implement the first voice input workflow on x86_64 using sandbox skills before attempting phone-first voice UX.
+15. Prepare the platform expansion path in [`PLATFORM_EXPANSION.md`](PLATFORM_EXPANSION.md): x86_64 QEMU first, then `qemu-system-aarch64 -machine virt`, then real ARM boards, then Android phones.
 
 ## Near-Term User-Facing Goals
 
@@ -89,6 +99,7 @@ Before presenting OpenRhiza as publicly usable, the minimum target is:
 - A user can ask: "make the GUI better" and OpenRhiza inspects the scene, proposes object-scoped mutations, applies safe changes, and rolls back failures.
 - A user can ask: "what files and skills are available" and OpenRhiza answers from local cache, registry context, filesystem bridge, and semantic graph.
 - A user can enable autonomy and receive useful bounded suggestions every configured interval without losing control.
+- A user can speak a prompt in keyboard-limited contexts and still get transcript confirmation, rollback safety, and normal prompt-first workflow execution.
 
 ## Things Not To Do
 

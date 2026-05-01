@@ -147,6 +147,8 @@ Explore the depths of the root system through our engineering documents:
 - [CORE_BOUNDARY_AUDIT.md](CORE_BOUNDARY_AUDIT.md): The current module-by-module boundary tags for `Permanent Core`, `Bootstrap Fallback`, and `Must Move To Skill`.
 - [DISPLAY_ABI.md](DISPLAY_ABI.md): The display handoff boundary between core and sandbox skills.
 - [GUI_DEVELOPMENT.md](GUI_DEVELOPMENT.md): The dual-track GUI plan for native object GUI and LVGL-style bridging.
+- [PLATFORM_EXPANSION.md](PLATFORM_EXPANSION.md): The x86_64 -> ARM64 QEMU -> ARM board -> Android phone expansion plan.
+- [VOICE_INPUT.md](VOICE_INPUT.md): The sandbox-first voice input plan for keyboard-limited environments.
 - [OS.md](OS.md): The baseline operating rules that the internal OpenRhiza intelligence should follow.
 - [CAPABILITY_REGISTRY.md](CAPABILITY_REGISTRY.md): Why OpenRhiza.com is a capability registry rather than an app store.
 - [KNOWN_ISSUES.md](KNOWN_ISSUES.md): Active technical limits and unresolved runtime issues.

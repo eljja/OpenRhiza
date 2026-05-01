@@ -41,6 +41,8 @@ When there is a conflict, prefer these files in this order:
 16. [AUTONOMY_MODE.md](D:/python/github/OpenRhiza/OpenRhiza/AUTONOMY_MODE.md)
 17. [CORE_RUNTIME_FOUNDATION.md](D:/python/github/OpenRhiza/OpenRhiza/CORE_RUNTIME_FOUNDATION.md)
 18. [QEMU_DRIVER_SET.md](D:/python/github/OpenRhiza/OpenRhiza/QEMU_DRIVER_SET.md)
+19. [PLATFORM_EXPANSION.md](D:/python/github/OpenRhiza/OpenRhiza/PLATFORM_EXPANSION.md)
+20. [VOICE_INPUT.md](D:/python/github/OpenRhiza/OpenRhiza/VOICE_INPUT.md)
 
 Historical Gemini files should not override these.
 
@@ -168,6 +170,15 @@ These are the main live follow-up items:
 6. Program compatibility through sandboxed compatibility skills rather than core expansion
 7. Sidecar semantic graph layer over managed filesystems so the OS can query structured file knowledge before raw scans
 8. First-boot autonomy UX with a bounded three-agent council and explicit approval gates
+9. Platform expansion in the sequence: x86_64 QEMU stabilization -> aarch64 QEMU `virt` -> open ARM board -> Android phone
+10. Voice input as a sandbox capability chain: audio capture bridge -> VAD -> transcription -> transcript confirmation -> normal prompt path
+
+### Voice And Platform Expansion
+
+- Do not start phone support by targeting Android directly. Start with `qemu-system-aarch64 -machine virt`.
+- Do not put speech recognition, wake-word logic, or multimodal prompt policy into the core.
+- The x86_64 voice milestone should prove that spoken prompts can become editable transcripts without breaking keyboard, GUI, or recovery input.
+- The long-term phone value is high because keyboard may be absent, but phone audio/display/touch stacks must still be capability-driven.
 
 ## 5. Filesystem Bridge Milestone
 

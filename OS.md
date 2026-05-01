@@ -26,6 +26,8 @@ This baseline is not the final OS. It is the minimum substrate that must stay us
 
 - Plain user input is a task request for you.
 - Inputs that start with `/` are local console commands, not normal prompts.
+- Voice input, when enabled, is another prompt source. It must produce a visible transcript and feed the same prompt path as typed input.
+- Voice input is optional and must not weaken keyboard, mouse, GUI, or recovery shell input.
 - For normal prompts, decide the needed workflow yourself.
 - Infer which registry domains are relevant for each prompt, and query only the needed combinations of drivers, software, skills, workflows, policies, and evaluations before acting.
 - Do not ask the user to manually perform registry, driver, or software lookup steps if you can do them yourself.
@@ -38,6 +40,7 @@ This baseline is not the final OS. It is the minimum substrate that must stay us
 
 - Keep the core minimal and survival-focused.
 - Never forget the primary OpenRhiza rule: leave only the minimum and mandatory survival path in the core, and implement everything else through sandboxed skills, workflows, drivers, and object-capabilities whenever possible.
+- Platform expansion must follow the same rule: add only the CPU/boot/interrupt/memory/recovery substrate required for the new architecture, then load device behavior as sandbox capabilities.
 - Do not reintroduce heavy device-specific logic into the core unless the system would be unable to boot, render, accept recovery input, or reach the network without it.
 - Prefer safe, incremental actions over large risky changes.
 - Detect hardware and current system state before acting.
@@ -122,6 +125,28 @@ Do not stop after generation. Continue through validation, application, and repo
 - If a non-core change fails, roll back immediately instead of waiting for reboot.
 - Prefer live binding switch and rollback over delayed reboot-based activation.
 - Treat `input:keyboard` and `input:mouse` the same way: test live first, persist only after success, and restore automatically on later boots.
+- Treat `input:microphone`, voice activity detection, speech transcription, transcript confirmation, and voice command routing as sandbox-owned capabilities. The core may expose bounded audio frame handles and emergency disable gates, but not a full speech engine.
+
+## Platform expansion policy
+
+- Keep x86_64 QEMU as the reference target until the core/sandbox boundary is stable.
+- The first ARM target should be `qemu-system-aarch64 -machine virt`, not an Android phone.
+- After ARM64 QEMU reaches serial/display/input/sandbox boot, move to a documented ARM board such as Raspberry Pi.
+- Android phones are later targets because bootloader, verified boot, device tree, display, touch, audio, storage, and power stacks are vendor-specific.
+- Use architecture, machine, board, and device match keys in OpenRhiza.com before generating platform drivers.
+- Do not fork the OS philosophy per platform. Every platform should expose a small survival substrate and then grow through registry-backed sandbox capabilities.
+
+## Voice input policy
+
+- Voice input defaults to off.
+- The user must control whether voice input is disabled, push-to-talk, or always-listen.
+- Autonomy must never enable microphone capture by itself.
+- Prefer bounded clips and transcript confirmation over direct action.
+- Remote VL/multimodal LLM transcription may be used early, but it should return transcript first.
+- Failed transcription must not execute actions.
+- Keep audio retention, transcript retention, and prompt submission as separate choices.
+- See [VOICE_INPUT.md](D:/python/github/OpenRhiza/OpenRhiza/VOICE_INPUT.md) for the detailed plan.
+- See [PLATFORM_EXPANSION.md](D:/python/github/OpenRhiza/OpenRhiza/PLATFORM_EXPANSION.md) for ARM/Android expansion sequencing.
 
 ## Driver policy
 
