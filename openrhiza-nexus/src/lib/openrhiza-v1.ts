@@ -77,10 +77,11 @@ export interface DriverQueryRequest {
 export interface DriverUploadRequest {
   protocol_version: "v1";
   node_id: string;
+  driver_id?: string;
   match_key: string;
   display_name: string;
   hardware: string;
-  source_type: "gemini_generated";
+  source_type: "gemini_generated" | "seed_local_wasm" | "seed_local_binary" | "manual_seed";
   model: string;
   prompt_hash: string;
   payload_text: string;
@@ -120,6 +121,21 @@ export interface SkillDownloadRequest {
   skill_id: string;
 }
 
+export interface SkillUploadRequest {
+  protocol_version: "v1";
+  node_id: string;
+  skill_id: string;
+  display_name: string;
+  category: string;
+  delivery: string;
+  summary: string;
+  recommended_for: string[];
+  status: "available" | "testing" | "planned";
+  artifact_id?: string;
+  source_type?: string;
+  payload_hex?: string;
+}
+
 export interface WorkflowQueryRequest {
   protocol_version: "v1";
   node_id: string;
@@ -127,10 +143,30 @@ export interface WorkflowQueryRequest {
   available_skills: string[];
 }
 
+export interface WorkflowUploadRequest {
+  protocol_version: "v1";
+  node_id: string;
+  workflow_id: string;
+  display_name: string;
+  summary: string;
+  status: "available" | "testing" | "planned";
+  steps: string[];
+}
+
 export interface PolicyQueryRequest {
   protocol_version: "v1";
   node_id: string;
   scope: "runtime" | "driver" | "storage" | "workflow" | "all";
+}
+
+export interface PolicyUploadRequest {
+  protocol_version: "v1";
+  node_id: string;
+  policy_id: string;
+  scope: "runtime" | "driver" | "storage" | "workflow";
+  summary: string;
+  status: "active" | "draft";
+  rules: string[];
 }
 
 export interface EvaluationQueryRequest {
@@ -144,6 +180,17 @@ export interface SoftwareQueryRequest {
   node_id: string;
   ui_mode: "cli" | "terminal" | "text_web";
   capabilities: string[];
+}
+
+export interface SoftwareUploadRequest {
+  protocol_version: "v1";
+  node_id: string;
+  package_id: string;
+  display_name: string;
+  category: string;
+  delivery: string;
+  summary: string;
+  status: "available" | "testing" | "planned";
 }
 
 export interface LlmQueryRequest {

@@ -16,9 +16,13 @@ import type {
   NodeHeartbeatRequest,
   NodeRegisterRequest,
   PolicyQueryRequest,
+  PolicyUploadRequest,
   SkillDownloadRequest,
   SkillQueryRequest,
+  SkillUploadRequest,
   SoftwareQueryRequest,
+  SoftwareUploadRequest,
+  WorkflowUploadRequest,
   WorkflowQueryRequest,
 } from "@/lib/openrhiza-v1";
 
@@ -902,7 +906,7 @@ export function uploadGeneratedDriver(input: DriverUploadRequest) {
   const db = openDb();
   const now = new Date().toISOString();
   const existing = getDriverByMatchKey(input.match_key);
-  const driverId = existing?.driver_id ?? `drv_generated_${input.match_key.replace(/[^a-z0-9]+/gi, "_").toLowerCase()}`;
+  const driverId = existing?.driver_id ?? input.driver_id ?? `drv_generated_${input.match_key.replace(/[^a-z0-9]+/gi, "_").toLowerCase()}`;
   const artifactId = `artifact_${driverId}_${Date.now()}`;
 
   if (!existing) {
@@ -947,6 +951,144 @@ export function uploadGeneratedDriver(input: DriverUploadRequest) {
     driver_id: driverId,
     artifact_id: artifactId,
     reused_existing_driver: Boolean(existing),
+  };
+}
+
+export function uploadSkill(input: SkillUploadRequest) {
+  const db = openDb();
+  const now = new Date().toISOString();
+
+  db.prepare(`
+    INSERT INTO skills (
+      skill_id, display_name, category, delivery, summary,
+      recommended_for_json, status, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(skill_id) DO UPDATE SET
+      display_name = excluded.display_name,
+      category = excluded.category,
+      delivery = excluded.delivery,
+      summary = excluded.summary,
+      recommended_for_json = excluded.recommended_for_json,
+      status = excluded.status,
+      updated_at = excluded.updated_at
+  `).run(
+    input.skill_id,
+    input.display_name,
+    input.category,
+    input.delivery,
+    input.summary,
+    JSON.stringify(input.recommended_for),
+    input.status,
+    now,
+  );
+
+  let artifactId: string | null = null;
+  if (input.payload_hex) {
+    artifactId = input.artifact_id ?? `artifact_${input.skill_id}_${Date.now()}`;
+    db.prepare(`
+      INSERT INTO skill_artifacts (
+        artifact_id, skill_id, source_type, payload_hex, created_at
+      ) VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(artifact_id) DO UPDATE SET
+        skill_id = excluded.skill_id,
+        source_type = excluded.source_type,
+        payload_hex = excluded.payload_hex,
+        created_at = excluded.created_at
+    `).run(
+      artifactId,
+      input.skill_id,
+      input.source_type ?? "uploaded_wasm",
+      input.payload_hex,
+      now,
+    );
+  }
+
+  return {
+    skill_id: input.skill_id,
+    artifact_id: artifactId,
+  };
+}
+
+export function uploadWorkflow(input: WorkflowUploadRequest) {
+  const now = new Date().toISOString();
+
+  openDb().prepare(`
+    INSERT INTO workflows (
+      workflow_id, display_name, summary, status, steps_json, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(workflow_id) DO UPDATE SET
+      display_name = excluded.display_name,
+      summary = excluded.summary,
+      status = excluded.status,
+      steps_json = excluded.steps_json,
+      updated_at = excluded.updated_at
+  `).run(
+    input.workflow_id,
+    input.display_name,
+    input.summary,
+    input.status,
+    JSON.stringify(input.steps),
+    now,
+  );
+
+  return {
+    workflow_id: input.workflow_id,
+  };
+}
+
+export function uploadPolicy(input: PolicyUploadRequest) {
+  const now = new Date().toISOString();
+
+  openDb().prepare(`
+    INSERT INTO policies (
+      policy_id, scope, summary, status, rules_json, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?)
+    ON CONFLICT(policy_id) DO UPDATE SET
+      scope = excluded.scope,
+      summary = excluded.summary,
+      status = excluded.status,
+      rules_json = excluded.rules_json,
+      updated_at = excluded.updated_at
+  `).run(
+    input.policy_id,
+    input.scope,
+    input.summary,
+    input.status,
+    JSON.stringify(input.rules),
+    now,
+  );
+
+  return {
+    policy_id: input.policy_id,
+  };
+}
+
+export function uploadSoftwarePackage(input: SoftwareUploadRequest) {
+  const now = new Date().toISOString();
+
+  openDb().prepare(`
+    INSERT INTO software_packages (
+      package_id, display_name, category, delivery, summary, status, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(package_id) DO UPDATE SET
+      display_name = excluded.display_name,
+      category = excluded.category,
+      delivery = excluded.delivery,
+      summary = excluded.summary,
+      status = excluded.status,
+      updated_at = excluded.updated_at
+  `).run(
+    input.package_id,
+    input.display_name,
+    input.category,
+    input.delivery,
+    input.summary,
+    input.status,
+    now,
+  );
+
+  return {
+    package_id: input.package_id,
   };
 }
 
