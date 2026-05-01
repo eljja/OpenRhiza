@@ -4,6 +4,7 @@ use lazy_static::lazy_static;
 use spin::Mutex;
 
 const VOICE_CONFIG_FILES: [[u8; 11]; 1] = [*b"VOICECFGTXT"];
+const VOICE_INPUT_FILES: [[u8; 11]; 1] = [*b"VOICEIN TXT"];
 const DEFAULT_MODEL: &str = "gemini-3.1-pro-preview";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -140,9 +141,20 @@ pub fn set_mode(mode_text: &str) -> Result<String, &'static str> {
         }
     };
     let config = state.config.clone();
+    let status = state.last_status.clone();
     drop(state);
-    persist_config(&config)?;
-    Ok(format!("[Voice] mode set to {}", mode.as_str()))
+    match persist_config(&config) {
+        Ok(()) => Ok(format!("[Voice] mode set to {}", mode.as_str())),
+        Err(error) => {
+            let mut state = VOICE_STATE.lock();
+            state.last_status = format!("{}; persistence failed: {}", status, error);
+            Ok(format!(
+                "[Voice] mode set to {} for this session; persistence failed: {}",
+                mode.as_str(),
+                error
+            ))
+        }
+    }
 }
 
 pub fn set_model(model: &str) -> Result<String, &'static str> {
@@ -159,9 +171,20 @@ pub fn set_model(model: &str) -> Result<String, &'static str> {
     state.config.model = String::from(trimmed);
     state.last_status = format!("voice transcription model set to {}", trimmed);
     let config = state.config.clone();
+    let status = state.last_status.clone();
     drop(state);
-    persist_config(&config)?;
-    Ok(format!("[Voice] model set to {}", trimmed))
+    match persist_config(&config) {
+        Ok(()) => Ok(format!("[Voice] model set to {}", trimmed)),
+        Err(error) => {
+            let mut state = VOICE_STATE.lock();
+            state.last_status = format!("{}; persistence failed: {}", status, error);
+            Ok(format!(
+                "[Voice] model set to {} for this session; persistence failed: {}",
+                trimmed,
+                error
+            ))
+        }
+    }
 }
 
 pub fn clear_buffer() -> String {
@@ -169,6 +192,28 @@ pub fn clear_buffer() -> String {
     state.buffered_transcript.clear();
     state.last_status = String::from("voice transcript buffer cleared");
     String::from("[Voice] transcript buffer cleared")
+}
+
+pub fn import_transcript_to_composer() -> Result<String, &'static str> {
+    let Some(mut transcript) = crate::storage::read_text_file_from_secondary_fat16(&VOICE_INPUT_FILES) else {
+        return Err("VOICEIN.TXT not found on the driver disk");
+    };
+
+    transcript = transcript.trim_matches(|ch| ch == '\r' || ch == '\n' || ch == '\0').into();
+    if transcript.trim().is_empty() {
+        return Err("VOICEIN.TXT has no transcript text");
+    }
+    if transcript.len() > 4096 {
+        transcript.truncate(4096);
+    }
+
+    crate::vga::commit_input_text(transcript.as_str());
+    let mut state = VOICE_STATE.lock();
+    state.buffered_transcript = transcript;
+    state.last_status = String::from("imported transcript into composer for confirmation");
+    Ok(String::from(
+        "[Voice] imported transcript into composer. Review it, then press Enter to submit.",
+    ))
 }
 
 pub fn queue_capture_bridge_test() -> Result<String, &'static str> {
@@ -189,4 +234,3 @@ pub fn queue_capture_bridge_test() -> Result<String, &'static str> {
         Err(error) => Err(error),
     }
 }
-

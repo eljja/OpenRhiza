@@ -9,4 +9,6 @@ tools/__pycache__/
 sandbox-skills/*/target/
 rhiza_drivers/BOOTAUTO.MD
 rhiza_drivers/SKCAPCHE.TXT
+rhiza_drivers/VOICECFG.TXT
+rhiza_drivers/VOICEIN.TXT
 .fslab/

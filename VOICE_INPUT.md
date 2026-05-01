@@ -155,13 +155,18 @@ Current implementation status:
 - `/voice <off|on|push-to-talk|always-listen>`
 - `/voice-model <model>`
 - `/voice-test`
+- `/voice-import`
 - `/voice-clear-buffer`
 - `skill_voice_capture_bridge_v1` seed skill
 - `workflow_voice_prompt_v1` registry sync entry
 - `policy_voice_privacy_v1` registry sync entry
+- `tools/voice_prompt_bridge.py` host-assisted bridge
+- `VOICEIN.TXT` transcript handoff file on the QEMU driver disk
 
 The current voice bridge validates the sandbox capability path only.
-It does not yet capture real microphone frames.
+It does not yet capture real microphone frames inside OpenRhiza.
+For x86_64/QEMU testing, the host bridge can write a transcript or Gemini-transcribed WAV result to `VOICEIN.TXT`, then inject `/voice-import`.
+The host bridge clears the current guest composer before injecting `/voice-import` by default; use `--preserve-input` only when the input line is known to be empty or intentionally prefilled.
 
 ## Multimodal LLM Path
 
