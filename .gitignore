@@ -1,4 +1,7 @@
 target/
+.env
+.env.*
+!.env.example
 *.bin
 *.img
 mock_server*.log
