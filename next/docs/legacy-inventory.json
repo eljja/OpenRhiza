@@ -1,0 +1,2567 @@
+{
+  "schema": "openrhiza.legacy.inventory.v1",
+  "generated_at_utc": "2026-10-03T01:12:37.3105876Z",
+  "branch": "codex/sandbox-core-migration",
+  "commit": "e463f0b00b31cb7567005c90a49f1e8e09b15fee",
+  "includes_uncommitted_work": true,
+  "purpose": "Reference metadata and intent coverage, not a line-by-line security certification or new-runtime test.",
+  "excludes": [
+    "next implementation",
+    "secrets and private keys",
+    "generated images/binaries/data/logs",
+    "dependency/build/cache trees",
+    "bundled third-party and patched bootloader source"
+  ],
+  "file_count": 364,
+  "project_document_count": 76,
+  "entries": [
+    {
+      "path": ".cargo/config.toml",
+      "category": "build-platform-or-project-metadata",
+      "bytes": 211,
+      "lines": 9,
+      "sha256": "eff2c330b269e3c99a07ef18e5f262544fbd03366d7f9bc9e270ced364cdd09e"
+    },
+    {
+      "path": ".github/workflows/deploy-openrhiza-nexus.yml",
+      "category": "build-platform-or-project-metadata",
+      "bytes": 1276,
+      "lines": 43,
+      "sha256": "91de3966bfd68f8dfbcaad5201019a6195714d912305f0b5f41f7981090a3b3e"
+    },
+    {
+      "path": ".gitignore",
+      "category": "build-platform-or-project-metadata",
+      "bytes": 259,
+      "lines": 17,
+      "sha256": "ba20d4e0a6a2cc76eb1967e38ebb1ecc5fb1c99b13766e994920df646c5218a9"
+    },
+    {
+      "path": "ARCHITECTURE.md",
+      "category": "project-document",
+      "bytes": 2957,
+      "lines": 55,
+      "sha256": "f1a738b95b7de0416d244b49098eb0d926db568fe514ccdf1b27105cd55a05f7"
+    },
+    {
+      "path": "AUTONOMY_MODE.md",
+      "category": "project-document",
+      "bytes": 8337,
+      "lines": 313,
+      "sha256": "8bc567d69435631cc71c28aa0aac4d5e8c66ea2cd4faa41afacb2d6443a61973"
+    },
+    {
+      "path": "BOOT_AUTORUN.md",
+      "category": "project-document",
+      "bytes": 1753,
+      "lines": 49,
+      "sha256": "76213e70b665f8bdc1cb2681409ae16e97f0e5c958dfdebea02b01f6ab8a5c9b"
+    },
+    {
+      "path": "BUILD_AND_TEST.md",
+      "category": "project-document",
+      "bytes": 13809,
+      "lines": 417,
+      "sha256": "1e041cf398628900c86163ddf0ac42cf3795ebd652aef6bb38107de3c77965bf"
+    },
+    {
+      "path": "build_arm64_recovery.ps1",
+      "category": "host-build-and-verification-tool",
+      "bytes": 1524,
+      "lines": 50,
+      "sha256": "d99e7223db0f7867778ca88ae0af416029f6039a52e07c040851d0044a7237da"
+    },
+    {
+      "path": "build_sandbox_input_drivers.ps1",
+      "category": "host-build-and-verification-tool",
+      "bytes": 1052,
+      "lines": 35,
+      "sha256": "8f8040014697c46d8edff67bd3a09c653807b642720493842a1720d962607a44"
+    },
+    {
+      "path": "build_sandbox_skills.ps1",
+      "category": "host-build-and-verification-tool",
+      "bytes": 9359,
+      "lines": 281,
+      "sha256": "f855781b579d62324c9a1a3c3771690e6158e708d02dab7aadbf2810001c5437"
+    },
+    {
+      "path": "build.rs",
+      "category": "build-platform-or-project-metadata",
+      "bytes": 1534,
+      "lines": 54,
+      "sha256": "29805ef346bcb28f2a082014e6888bb7501c3875210ea281eec16a78dcd72501"
+    },
+    {
+      "path": "CAPABILITY_REGISTRY.md",
+      "category": "project-document",
+      "bytes": 4057,
+      "lines": 168,
+      "sha256": "a10166855e0f55fd0a2138d1611ed824d1148627b90f34ae4d87e98d4fdac1f6"
+    },
+    {
+      "path": "Cargo.toml",
+      "category": "build-platform-or-project-metadata",
+      "bytes": 1726,
+      "lines": 37,
+      "sha256": "79c205d6cdf58e074a866b583348208f181f0c235150c329bc7beabcbb84b7cc"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "category": "project-document",
+      "bytes": 3615,
+      "lines": 52,
+      "sha256": "babc581164fb96aa603e454c2183e66cc896dd49dc580057925c86f278535e95"
+    },
+    {
+      "path": "Codex.md",
+      "category": "project-document",
+      "bytes": 47291,
+      "lines": 375,
+      "sha256": "3dff4fb25f19d76954845cd7f61a5a43d7ec3830bde83e429f613fec7a8b5a9c"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "category": "project-document",
+      "bytes": 2114,
+      "lines": 31,
+      "sha256": "8cb0f5ad683f47c8ef55f3a3ac8a797296d0c3fdb87f8a8e277dd10525f2163b"
+    },
+    {
+      "path": "CORE_BOUNDARY_AUDIT.md",
+      "category": "project-document",
+      "bytes": 22959,
+      "lines": 281,
+      "sha256": "9d24031d89b7c5abd9474017688f52982c92a2d0e93aab5278e1843d866d233f"
+    },
+    {
+      "path": "CORE_RUNTIME_FOUNDATION.md",
+      "category": "project-document",
+      "bytes": 3576,
+      "lines": 104,
+      "sha256": "ad5b0af6f7055a0e6f5f9666ed335b5638b3c6c74aa56e715e03f1fc7a0faf2c"
+    },
+    {
+      "path": "CROSS_PLATFORM_BRINGUP.md",
+      "category": "project-document",
+      "bytes": 58718,
+      "lines": 727,
+      "sha256": "66aceb8f7d80599c587c4387897b4189eaeeab9d39dc2606d4b36dfe5950652c"
+    },
+    {
+      "path": "DEFAULT_DESKTOP_APPS.md",
+      "category": "project-document",
+      "bytes": 1028,
+      "lines": 24,
+      "sha256": "242dedbae2d963c10097d7f20b9af3727d94b33dc217750feef8a92b13674e81"
+    },
+    {
+      "path": "DESKTOP_ACTIONS.md",
+      "category": "project-document",
+      "bytes": 1274,
+      "lines": 39,
+      "sha256": "9e4d2bbfac25b6fefaa9aae1f0f4761aa7ca87ca4abd5673e8c3a10aed09df66"
+    },
+    {
+      "path": "DISPLAY_ABI.md",
+      "category": "project-document",
+      "bytes": 4912,
+      "lines": 150,
+      "sha256": "b3068ca15479c94e9c699d5f9769882441e5a5727544a526f0bfca8e987e324c"
+    },
+    {
+      "path": "DOC_INDEX.md",
+      "category": "project-document",
+      "bytes": 7283,
+      "lines": 122,
+      "sha256": "4b0f34838f80da3b0375027a3302dd336b067c6ae33bef5f2ca7f2ee68fb9edb"
+    },
+    {
+      "path": "DOOM_MODULE_ACCEPTANCE.md",
+      "category": "project-document",
+      "bytes": 6688,
+      "lines": 141,
+      "sha256": "6153c534aa0a93ac5459fc666eaacbda048ff58fe9ddd8b24b4ae2dd267784ad"
+    },
+    {
+      "path": "DOOM_SKILL.md",
+      "category": "project-document",
+      "bytes": 8641,
+      "lines": 185,
+      "sha256": "eafeeb1ec865044ac3d64cc04e9690a5f7d84a4a6adbeabf2b21f8f3ef018769"
+    },
+    {
+      "path": "DRIVER_HOST_ABI.md",
+      "category": "project-document",
+      "bytes": 39259,
+      "lines": 261,
+      "sha256": "f0029d05d6f5da66d010ce1fe1db340736636e19f48588006c268b1bccddb5d8"
+    },
+    {
+      "path": "FILESYSTEM_SKILLS.md",
+      "category": "project-document",
+      "bytes": 5206,
+      "lines": 180,
+      "sha256": "449ae22c46eee8eaedb057dcfe5e3af0081b181d138ec385dfddd87d43f0bace"
+    },
+    {
+      "path": "FILESYSTEM_VALIDATION_MATRIX.md",
+      "category": "project-document",
+      "bytes": 1495,
+      "lines": 31,
+      "sha256": "92b55848123fca5e6b5387f4097487c44a17feeb8952461cef24be88aafb69f1"
+    },
+    {
+      "path": "filesystem-skills/README.md",
+      "category": "project-document",
+      "bytes": 1441,
+      "lines": 41,
+      "sha256": "c115d2781b11e0498e72e8ab1a8e0233751c0de851554d4ec0f4a9074f463833"
+    },
+    {
+      "path": "filesystem-skills/skill_fs_exfat_bridge_v1.md",
+      "category": "project-document",
+      "bytes": 789,
+      "lines": 29,
+      "sha256": "6a5339537c10b0c33b00d8972e35b45a5efd2e4d371ef8347cc7a513f02d82b9"
+    },
+    {
+      "path": "filesystem-skills/skill_fs_ext2_bridge_v1.md",
+      "category": "project-document",
+      "bytes": 445,
+      "lines": 22,
+      "sha256": "d828fc0e106cf5c700ceb2d0deaf67842d121c325f3bd7fddefaf8bf48350a73"
+    },
+    {
+      "path": "filesystem-skills/skill_fs_ext3_bridge_v1.md",
+      "category": "project-document",
+      "bytes": 445,
+      "lines": 22,
+      "sha256": "5ff4f23de77b78a1594462633efeab313934c00227070703643062296085f79c"
+    },
+    {
+      "path": "filesystem-skills/skill_fs_ext4_bridge_v1.md",
+      "category": "project-document",
+      "bytes": 888,
+      "lines": 38,
+      "sha256": "24daabefee964bab8baaf7222ff552748dc6a18262c77cc636d51a66674e25a9"
+    },
+    {
+      "path": "filesystem-skills/skill_fs_fat32_bridge_v1.md",
+      "category": "project-document",
+      "bytes": 871,
+      "lines": 35,
+      "sha256": "0b818cb92822b5377b74aae92ae9304a80cfdb43134a60b5e85e75948b9762f5"
+    },
+    {
+      "path": "filesystem-skills/skill_fs_image_probe_v1.md",
+      "category": "project-document",
+      "bytes": 929,
+      "lines": 27,
+      "sha256": "02f55c31005df0ae345671f4164368cfd5d51940de72bc0f80fa1b2f614ea3e5"
+    },
+    {
+      "path": "filesystem-skills/skill_fs_ntfs_bridge_v1.md",
+      "category": "project-document",
+      "bytes": 834,
+      "lines": 33,
+      "sha256": "2b53a7cd953ec640a39b1041564072f5ef302ef107c102661fb6e50ca7b0037e"
+    },
+    {
+      "path": "filesystem-skills/workflow_fs_probe_and_validate_v1.md",
+      "category": "project-document",
+      "bytes": 1021,
+      "lines": 39,
+      "sha256": "b7a706b5cd3df6a655b0851c77c07291f96edc8cb38288908c6bb758e92afd4d"
+    },
+    {
+      "path": "FONT_SKILL.md",
+      "category": "project-document",
+      "bytes": 2541,
+      "lines": 84,
+      "sha256": "bf357397f9250b38f6cd56e4302824eed8bd178712f4ce5c04bde149df5fc3ea"
+    },
+    {
+      "path": "Gemini_openrhiza_readiness_nic_analysis.md",
+      "category": "project-document",
+      "bytes": 2763,
+      "lines": 27,
+      "sha256": "dfdd4693d2939e17f31720b62f1782efb80e902c36d9e850e9a2897cea03519c"
+    },
+    {
+      "path": "Gemini_walkthrough.md",
+      "category": "project-document",
+      "bytes": 1303,
+      "lines": 21,
+      "sha256": "8dfb758c1de2c9450f9497258397fecfbf53ef57287505f461785037bbad9f2a"
+    },
+    {
+      "path": "GUI_DEVELOPMENT.md",
+      "category": "project-document",
+      "bytes": 13771,
+      "lines": 345,
+      "sha256": "ab50e4336e017825723685d77aa14e8550ad7c7aca866deb615883e8cd8fe07e"
+    },
+    {
+      "path": "HARNESS.md",
+      "category": "project-document",
+      "bytes": 6184,
+      "lines": 153,
+      "sha256": "aa41665aaaf22ebcdda676385ece8142d577237934af9f07337acf9b235fc032"
+    },
+    {
+      "path": "host_brain.py",
+      "category": "host-build-and-verification-tool",
+      "bytes": 16266,
+      "lines": 330,
+      "sha256": "0618e7184d3109f25c4270103d64614013260ce4df9489f46d666977b1921b99"
+    },
+    {
+      "path": "HOT_SWAP_RUNTIME.md",
+      "category": "project-document",
+      "bytes": 5917,
+      "lines": 223,
+      "sha256": "da79dba15171e60a03066c6686f93d65bf9e268a583f23a3cef294ddb51003f7"
+    },
+    {
+      "path": "KNOWN_ISSUES.md",
+      "category": "project-document",
+      "bytes": 10822,
+      "lines": 201,
+      "sha256": "5601d08fb2f8fb6c2a48971b369719bdd1bc6480909b1039c4792e32020504fd"
+    },
+    {
+      "path": "LEVEL1_BLUEPRINT.md",
+      "category": "project-document",
+      "bytes": 3286,
+      "lines": 111,
+      "sha256": "8056e876bfa7a89150fd41e393dce4e57d054fed692b4aabc89d06fadaa3a70c"
+    },
+    {
+      "path": "LICENSE",
+      "category": "build-platform-or-project-metadata",
+      "bytes": 11558,
+      "lines": 201,
+      "sha256": "1eb85fc97224598dad1852b5d6483bbcf0aa8608790dcc657a5a2a761ae9c8c6"
+    },
+    {
+      "path": "mock_nexus_server.py",
+      "category": "host-build-and-verification-tool",
+      "bytes": 8323,
+      "lines": 208,
+      "sha256": "496599bf9b908533fdaac49dd360dca1e9862d423a08ba54f7d13c37c92f28ab"
+    },
+    {
+      "path": "mock_signer.py",
+      "category": "host-build-and-verification-tool",
+      "bytes": 806,
+      "lines": 27,
+      "sha256": "e868fb98394c6a4244dcf285f853ebdb5bc92a0fc5c95339c4e2ff0d5fc2ace1"
+    },
+    {
+      "path": "MODULE_MAP.md",
+      "category": "project-document",
+      "bytes": 18162,
+      "lines": 559,
+      "sha256": "faadd3c2561c620380d3ae9cdd65a11a8ca44c2cf5a6b5e44ef2126510a6603f"
+    },
+    {
+      "path": "nic_drivers/ahci.rs",
+      "category": "device-candidate",
+      "bytes": 770,
+      "lines": 25,
+      "sha256": "2cd1cee35bcb469f6e28b11ae9a0bda6667ecb06616e3365feef5cae129c6b3b"
+    },
+    {
+      "path": "nic_drivers/aws_ena.rs",
+      "category": "device-candidate",
+      "bytes": 19437,
+      "lines": 479,
+      "sha256": "6a2bc204c6b5996075909ca8fbf650eefd8e0cc9a14158022953e392e8638a25"
+    },
+    {
+      "path": "nic_drivers/driver_manifest.json",
+      "category": "device-candidate",
+      "bytes": 23385,
+      "lines": 647,
+      "sha256": "e28acec020f31fe47f252497c4fbbe0507d6eff9d22bd4b0244cf1666f93268a"
+    },
+    {
+      "path": "nic_drivers/intel_hda.rs",
+      "category": "device-candidate",
+      "bytes": 691,
+      "lines": 23,
+      "sha256": "ff7168d766cd603782f2ff290d7b8cd25c41e6bc9c8771419a3417c078004ed7"
+    },
+    {
+      "path": "nic_drivers/intel_i211.rs",
+      "category": "device-candidate",
+      "bytes": 10727,
+      "lines": 276,
+      "sha256": "691dfe1c78ba45d88550327dceb7f6f70d81dd56c2d6db20221048416d7c0a41"
+    },
+    {
+      "path": "nic_drivers/intel_i219.rs",
+      "category": "device-candidate",
+      "bytes": 14667,
+      "lines": 381,
+      "sha256": "802c1cbee4ffaea86c82abb1bd91d23201f3bb817402fd4fd1f552ec2e766dcc"
+    },
+    {
+      "path": "nic_drivers/intel_i225.rs",
+      "category": "device-candidate",
+      "bytes": 16810,
+      "lines": 422,
+      "sha256": "e3aea91b6ccb0080c4b41b2c9736f34986163804051993a2ca7f2f537a52cf85"
+    },
+    {
+      "path": "nic_drivers/nvme.rs",
+      "category": "device-candidate",
+      "bytes": 1011,
+      "lines": 32,
+      "sha256": "64a601c67017987d1c3d732a4bd66c8e48ec936311a2ec7371e5d89d2e803184"
+    },
+    {
+      "path": "nic_drivers/ps2.rs",
+      "category": "device-candidate",
+      "bytes": 263,
+      "lines": 13,
+      "sha256": "149172fd9f3ce0ab4ca2ebcef25e858d3b8d162060401bb39985833cf22de410"
+    },
+    {
+      "path": "nic_drivers/rtl8125.rs",
+      "category": "device-candidate",
+      "bytes": 14877,
+      "lines": 405,
+      "sha256": "de24707b63617ca793099c507a4182bf61d845cd3f34eb2b0667bba48311b26c"
+    },
+    {
+      "path": "nic_drivers/rtl8139.rs",
+      "category": "device-candidate",
+      "bytes": 14305,
+      "lines": 368,
+      "sha256": "45b15bdf36079fbe57228637aff6cd17dbdf1674177258f3a88cb6467e0bee06"
+    },
+    {
+      "path": "nic_drivers/rtl8169.rs",
+      "category": "device-candidate",
+      "bytes": 14918,
+      "lines": 382,
+      "sha256": "4e4d2b14a8dac7e26dcfea0e594fa6be7ea657032208576a74dc34a8c5b9d701"
+    },
+    {
+      "path": "nic_drivers/storage_virtio.rs",
+      "category": "device-candidate",
+      "bytes": 861,
+      "lines": 24,
+      "sha256": "39a319b858d89cf7e30bdfb8f363bc8d3cc857eb0040dc995d7ef0bc7bc3978c"
+    },
+    {
+      "path": "nic_drivers/tests/sim_common.py",
+      "category": "host-device-model-test",
+      "bytes": 11472,
+      "lines": 326,
+      "sha256": "4052107d4f3dcde2aedfa865bf5b2faa7fbca60920bd7dd65f97c2edcf7f2b47"
+    },
+    {
+      "path": "nic_drivers/tests/test_aws_ena.py",
+      "category": "host-device-model-test",
+      "bytes": 14375,
+      "lines": 371,
+      "sha256": "78501c9168e9381995fe8ab532534ddd13ead0dcdcf08e47b9c20102a9456ad9"
+    },
+    {
+      "path": "nic_drivers/tests/test_intel_i211.py",
+      "category": "host-device-model-test",
+      "bytes": 7265,
+      "lines": 184,
+      "sha256": "13f2f18ec0637b399ffdb9568e1f352fa4000998660f672316bce27dbb6fc2a6"
+    },
+    {
+      "path": "nic_drivers/tests/test_intel_i219.py",
+      "category": "host-device-model-test",
+      "bytes": 9787,
+      "lines": 289,
+      "sha256": "9efb753e1c07caaa10035a261fbe3cb23bcc16242bb5899877c35124badc88b8"
+    },
+    {
+      "path": "nic_drivers/tests/test_intel_i225.py",
+      "category": "host-device-model-test",
+      "bytes": 10177,
+      "lines": 283,
+      "sha256": "9f2c0664c5aa66e4fdc22a2a0da8cca1b7e26f048eda4c64adc4f252edb6dee8"
+    },
+    {
+      "path": "nic_drivers/tests/test_qemu_hw.py",
+      "category": "host-device-model-test",
+      "bytes": 1023,
+      "lines": 20,
+      "sha256": "13802349739760be93ff778289947d95b1728da453878cca489e7de4c026c93d"
+    },
+    {
+      "path": "nic_drivers/tests/test_rtl8125.py",
+      "category": "host-device-model-test",
+      "bytes": 10704,
+      "lines": 302,
+      "sha256": "bd8241a8b9fa2062e44af9bb4e68201df0798fc694610613b1d10093c66d8f21"
+    },
+    {
+      "path": "nic_drivers/tests/test_rtl8139.py",
+      "category": "host-device-model-test",
+      "bytes": 11342,
+      "lines": 337,
+      "sha256": "180f777a0ad69000418d313b8379f9036d6ba9f2e46157ad90541b51c767a75c"
+    },
+    {
+      "path": "nic_drivers/tests/test_rtl8169.py",
+      "category": "host-device-model-test",
+      "bytes": 8921,
+      "lines": 257,
+      "sha256": "068efd8d5177f01919274c4af952e01db813531a7ca857aac75c268666d3256a"
+    },
+    {
+      "path": "nic_drivers/tests/test_virtio_net.py",
+      "category": "host-device-model-test",
+      "bytes": 12868,
+      "lines": 358,
+      "sha256": "0ae19b2b9f17b8081c239b4695547ac2f069914174c67ddc9171b9ea101b1641"
+    },
+    {
+      "path": "nic_drivers/tests/test_vmxnet3.py",
+      "category": "host-device-model-test",
+      "bytes": 11179,
+      "lines": 306,
+      "sha256": "10969a7805ec366967e68b8f328033c65df4eec5c9d963e02403fe8f176a9e61"
+    },
+    {
+      "path": "nic_drivers/tests/test_wifi.py",
+      "category": "host-device-model-test",
+      "bytes": 14037,
+      "lines": 392,
+      "sha256": "1f764ecd14a63902ee30f2a37a239c110e75ec951b414b671b29fa6746ea3364"
+    },
+    {
+      "path": "nic_drivers/virtio_gpu.rs",
+      "category": "device-candidate",
+      "bytes": 420,
+      "lines": 17,
+      "sha256": "686466db5ce6e749fa0f21b53c24582ea2471f16f4122581120d3a224247ee90"
+    },
+    {
+      "path": "nic_drivers/virtio_input.rs",
+      "category": "device-candidate",
+      "bytes": 266,
+      "lines": 13,
+      "sha256": "bcc720f2205ad2117bf80ef6d7b2e417888d9afc57530fe91d8b07da60e86706"
+    },
+    {
+      "path": "nic_drivers/virtio_net.rs",
+      "category": "device-candidate",
+      "bytes": 17304,
+      "lines": 451,
+      "sha256": "3dffdaaa1ffa4b3475adf4e30b005c3a4ad2ec574447015688750cb6a6fbc72b"
+    },
+    {
+      "path": "nic_drivers/vmxnet2.rs",
+      "category": "device-candidate",
+      "bytes": 9407,
+      "lines": 247,
+      "sha256": "8e663d537419f621c45ffcc1534b594465ccb0fdc72d0bb49c332e08e1d1d45e"
+    },
+    {
+      "path": "nic_drivers/vmxnet3.rs",
+      "category": "device-candidate",
+      "bytes": 18665,
+      "lines": 452,
+      "sha256": "0c0d98880231af93028c7c4a75cc977b3b7b7552076c9044b6d8fc2b7b17ca07"
+    },
+    {
+      "path": "nic_drivers/wifi_intel_ax200.rs",
+      "category": "device-candidate",
+      "bytes": 17652,
+      "lines": 420,
+      "sha256": "eaab60a6bfea587f067a65cf465f264b4f434d451efb07e4411d6d7e7b8d9902"
+    },
+    {
+      "path": "nic_drivers/wifi_mt7921.rs",
+      "category": "device-candidate",
+      "bytes": 13663,
+      "lines": 328,
+      "sha256": "7d38979d758eec8e9dbdce96ac04b9998e8f80f868eba3e6fecc246408f49eb5"
+    },
+    {
+      "path": "nic_drivers/wifi_rtl8192.rs",
+      "category": "device-candidate",
+      "bytes": 16593,
+      "lines": 405,
+      "sha256": "f3455f91d1dbe80adca04db581d7ec713e6a0ab88add71ee0fc62c1400eab27f"
+    },
+    {
+      "path": "OPENRHIZA_API_V1.md",
+      "category": "project-document",
+      "bytes": 10604,
+      "lines": 517,
+      "sha256": "d0ce171a249da76eedb699359986efdfde978371a2088954e0347c1c0d9e69e4"
+    },
+    {
+      "path": "OPENRHIZA_COM_PLAN.md",
+      "category": "project-document",
+      "bytes": 21001,
+      "lines": 410,
+      "sha256": "bf346588801f4c98e673819164af10847f4dada7c7d8758ff3632fccc8e6f1d8"
+    },
+    {
+      "path": "OPENRHIZA_DESKTOP_COMPLETION.md",
+      "category": "project-document",
+      "bytes": 4270,
+      "lines": 104,
+      "sha256": "9ae61c17c5845e0b688f38c198e4d3b428884704a4167fb699a2bb1eb0029e50"
+    },
+    {
+      "path": "OPENRHIZA_MODULE_ARCHITECTURE.md",
+      "category": "project-document",
+      "bytes": 22045,
+      "lines": 429,
+      "sha256": "62541003790f55391e5f0ec36ee611f7ab894f88cc2c1e4086849c41d35060ad"
+    },
+    {
+      "path": "OPENRHIZA_REBUILD_PLAN.md",
+      "category": "project-document",
+      "bytes": 32105,
+      "lines": 593,
+      "sha256": "ee987769e6b589ec0e135c2453e6480825026750c7ada9694161b5a5f96cafdc"
+    },
+    {
+      "path": "openrhiza-nexus/AGENTS.md",
+      "category": "project-document",
+      "bytes": 327,
+      "lines": 5,
+      "sha256": "e3447d84251880fb34cfae09131cb4c57471529bbfe60976a3245793cf621627"
+    },
+    {
+      "path": "openrhiza-nexus/CLAUDE.md",
+      "category": "project-document",
+      "bytes": 11,
+      "lines": 1,
+      "sha256": "336cc4fbf19beaada7ccf9986414fa91851a8d7a07dfb3ccbe800a69eed0ab49"
+    },
+    {
+      "path": "openrhiza-nexus/deploy/CI_CD.md",
+      "category": "project-document",
+      "bytes": 1091,
+      "lines": 43,
+      "sha256": "071e46fcc09c45829b570d23f8995e0391bbcab362f86b838ac36d8de75dd9d2"
+    },
+    {
+      "path": "openrhiza-nexus/next.config.ts",
+      "category": "legacy-nexus",
+      "bytes": 155,
+      "lines": 8,
+      "sha256": "565a60f2990dd8b0ef1bc9b90e2cae5e1adff7f08376e0038d5e7f6ecd896f44"
+    },
+    {
+      "path": "openrhiza-nexus/node-sqlite.d.ts",
+      "category": "legacy-nexus",
+      "bytes": 326,
+      "lines": 13,
+      "sha256": "0b8912d4547e05d0dc3e6a1a53fc6116b3c44b2c820e2282433c066a60e85e1c"
+    },
+    {
+      "path": "openrhiza-nexus/package-lock.json",
+      "category": "legacy-nexus",
+      "bytes": 230264,
+      "lines": 6701,
+      "sha256": "0a77ca359c149a5eb502f027b1d3ce4e83b95e2c769cf49c2ecb0339c048e0bd"
+    },
+    {
+      "path": "openrhiza-nexus/package.json",
+      "category": "legacy-nexus",
+      "bytes": 538,
+      "lines": 26,
+      "sha256": "3ce0a9c16c50af2f5e4d892c0bedd191af1750816a07779f8dcdd581efc97f63"
+    },
+    {
+      "path": "openrhiza-nexus/README.md",
+      "category": "project-document",
+      "bytes": 2992,
+      "lines": 140,
+      "sha256": "b6361490107996fdb84bdb28c58ed55ae7e4d0ff69dc4be4ebd60b91f639590c"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/drivers/search/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 1007,
+      "lines": 33,
+      "sha256": "6fed7524730d041f394ffec8f47a25b816057b79f17e73496def7805da73efec"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/drivers/upload/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 471,
+      "lines": 17,
+      "sha256": "c415d65002797527458c5c80252928c71d39d99f52f7ad886e540b82b498bfc0"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/health/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 222,
+      "lines": 10,
+      "sha256": "d4dbee618f39f88005e4abbfa5582d60ce22b0df5d52204a3348346ef3bb1715"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/v1/driver/comment/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 908,
+      "lines": 25,
+      "sha256": "6eff3b2db327845ff67c73f070b6ffd77dadaa777c81b483063081308e018c37"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/v1/driver/download/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 858,
+      "lines": 25,
+      "sha256": "037a5e947f0032823c572c4918809f3db8e40871704cd31b6894c9b8ab4cc7f5"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/v1/driver/query/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 685,
+      "lines": 21,
+      "sha256": "c56397208cf0e8990665d270c01b40bd3385ae000c9a78a793f384f0279867a1"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/v1/driver/upload/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 776,
+      "lines": 21,
+      "sha256": "f4bcc3825c2bb5079a5bdc453f5b5f468c3e21cb69af7175de4cfcdea379b0ba"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/v1/driver/vote/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 890,
+      "lines": 25,
+      "sha256": "19be55b47eb75a15c5f32fff097feb3d417e23f1bdceaef7152d41a384871a84"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/v1/evaluation/query/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 590,
+      "lines": 17,
+      "sha256": "14f9fc29438b20b5ed71d51214dc1adf5c44746ee47fbdaed112a79b9f9616ad"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/v1/evaluation/upload/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 805,
+      "lines": 22,
+      "sha256": "ed1e1bcf23e750044f47e7a46120f5574826b952b6db547cedd7b2a88556ced0"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/v1/hardware/report/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 763,
+      "lines": 21,
+      "sha256": "c0df110ef680e60041c540f1968759904f9af1a6a586551bf8b441063f7ed6ab"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/v1/llm/generate/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 1502,
+      "lines": 53,
+      "sha256": "93c290c42bc2c1a33fe1fd70a190c8215ee1d79ce1acad7fd0a4d486ff75a572"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/v1/llm/google/models/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 922,
+      "lines": 31,
+      "sha256": "4f907d4e099d67cacdd1ef42e4fca598967615f7ab05caf4fb088fa0f784802c"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/v1/llm/query/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 566,
+      "lines": 17,
+      "sha256": "c33c2cddef735e3a40a9b786390edfd263bcc197aaac648c48911a894a4a5f92"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/v1/node/heartbeat/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 751,
+      "lines": 21,
+      "sha256": "2bfcb92776ab1e78cd70076b513275daa25a029fb7ecea69f4641d4c93b068b0"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/v1/node/register/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 868,
+      "lines": 29,
+      "sha256": "c56e047745866a8de67376f4eaaf38430768ee94c819a295982ba1d4300ceb7e"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/v1/policy/query/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 576,
+      "lines": 17,
+      "sha256": "206da3778aa285b3db75c0753d909dfac7034dab5707f3a724e012e54d853c27"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/v1/policy/upload/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 743,
+      "lines": 21,
+      "sha256": "5796a475c9f1d8b1df8e38e8945f2a6656fbfab2fc9020ef9ac02fb8a126cece"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/v1/skill/download/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 820,
+      "lines": 25,
+      "sha256": "84981bd4be43f41406dd4029f4f7f4efcd8ad32a25a33f4404fb81692b03239e"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/v1/skill/query/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 570,
+      "lines": 17,
+      "sha256": "368f851a265fe8400a1882952be8ed6023f585ab9d418fc8a7acf78d4a0afaac"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/v1/skill/upload/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 751,
+      "lines": 21,
+      "sha256": "acd518673876ae359fb4fc081180bead68949ad23ef12189a13c5797e08eea6a"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/v1/software/query/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 580,
+      "lines": 17,
+      "sha256": "b8ef1760e3a5bc54fec3ff2825b4680e4f7f7aead695e4b5325137a2d4ea0df8"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/v1/software/upload/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 781,
+      "lines": 21,
+      "sha256": "9b4f338c633715b962a3e2e2a9aa21b5349526d2ea5579361c6875740f1f367d"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/v1/workflow/query/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 582,
+      "lines": 17,
+      "sha256": "d909bc4f472d5140501ce87fd88f5be6ff69d64e9b72b4eddfd286ebdd650061"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/api/v1/workflow/upload/route.ts",
+      "category": "legacy-nexus",
+      "bytes": 769,
+      "lines": 21,
+      "sha256": "3fe114453be55fdad57d5a0791416a818513e8cfc16762749f47f719324c90c6"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/drivers/[driverId]/page.tsx",
+      "category": "legacy-nexus",
+      "bytes": 5608,
+      "lines": 118,
+      "sha256": "5d01b8f2ccd6086111830be654a2d5a7177d838a812e561a652e6ded87bdbafd"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/drivers/page.tsx",
+      "category": "legacy-nexus",
+      "bytes": 4395,
+      "lines": 78,
+      "sha256": "8d38f61a3b5d8950d6816bca2f3c6c4dbeb0d1ae51b5932fda854f653e4a8d04"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/evaluations/page.tsx",
+      "category": "legacy-nexus",
+      "bytes": 1604,
+      "lines": 28,
+      "sha256": "690e8e1a989fe3561f280190596628a61a0e8b021819efb240b0a64149b94403"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/globals.css",
+      "category": "legacy-nexus",
+      "bytes": 608,
+      "lines": 31,
+      "sha256": "dfd287e8c4a8030d82e11b7cdd1436f73f82436a4f6584c5a96bff6f2cd3dd0c"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/google-gemini.ts",
+      "category": "legacy-nexus",
+      "bytes": 2669,
+      "lines": 108,
+      "sha256": "221c6f26280d354525bda44941639f11af9b31c8193530d97372bd522e3a801a"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/layout.tsx",
+      "category": "legacy-nexus",
+      "bytes": 486,
+      "lines": 19,
+      "sha256": "9c82e97826bf81680b4dd634d0888c6257f19884956035ecad1c3d0f7c2eaf3c"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/models/[modelId]/page.tsx",
+      "category": "legacy-nexus",
+      "bytes": 1905,
+      "lines": 50,
+      "sha256": "745eaa780c182736d8da66632769112ea6ebfd25a9c6e91b5b43b000667fc871"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/models/page.tsx",
+      "category": "legacy-nexus",
+      "bytes": 3010,
+      "lines": 61,
+      "sha256": "f3a887c07cfc75688bcdbf680cc9c0490b2931eb66b27a0b23e4191471a859ee"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/nodes/[nodeId]/page.tsx",
+      "category": "legacy-nexus",
+      "bytes": 2984,
+      "lines": 71,
+      "sha256": "ca8aa5c51ebda4125b60b4b2b1872de41431a6fb3e599e9fb174c0aae114e492"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/nodes/page.tsx",
+      "category": "legacy-nexus",
+      "bytes": 3912,
+      "lines": 77,
+      "sha256": "5b3f9e9b7cfce5a668dcd069fa851a554d29d7a3ee0a2124962fd94edfb009d9"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/page.tsx",
+      "category": "legacy-nexus",
+      "bytes": 5847,
+      "lines": 139,
+      "sha256": "52c4daadd62cce16d75ea537b52061e186942bd9898e517cf010af07650f55bf"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/policies/page.tsx",
+      "category": "legacy-nexus",
+      "bytes": 1600,
+      "lines": 30,
+      "sha256": "5ce3f10f92369792464d0ccaa48ad5e10fdb0e2e21425b411f31e6af2804acad"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/registry-data.ts",
+      "category": "legacy-nexus",
+      "bytes": 46614,
+      "lines": 1298,
+      "sha256": "2bd0a6a722ad9e7522ca2cbe69e25bb647ba316f0650ff9c9aae4d65b16a1fae"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/skills/page.tsx",
+      "category": "legacy-nexus",
+      "bytes": 1818,
+      "lines": 33,
+      "sha256": "9675cba39e87a1160b8f1edba45d2291791d3ece659dcd1d5e3c47a1533b439d"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/software/[packageId]/page.tsx",
+      "category": "legacy-nexus",
+      "bytes": 1523,
+      "lines": 40,
+      "sha256": "6fdf2424d2e0a3a4ae06a43652151a64e776f131b6c5cae303b52646fb2e1469"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/software/page.tsx",
+      "category": "legacy-nexus",
+      "bytes": 2434,
+      "lines": 49,
+      "sha256": "8cb540c5d8ef36947aa58aad124e6f6c98b97fcb227ffde202fba2b8687c7424"
+    },
+    {
+      "path": "openrhiza-nexus/src/app/workflows/page.tsx",
+      "category": "legacy-nexus",
+      "bytes": 1606,
+      "lines": 30,
+      "sha256": "6906f4dbee1ee5860e61c0eefd93dea9b5accb34255ed11b3149a311dfb64265"
+    },
+    {
+      "path": "openrhiza-nexus/src/lib/openrhiza-v1.ts",
+      "category": "legacy-nexus",
+      "bytes": 5099,
+      "lines": 244,
+      "sha256": "31271bfedd4d6042964c25d32144b38c958446ed339d68085e287604817019e6"
+    },
+    {
+      "path": "openrhiza-nexus/tsconfig.json",
+      "category": "legacy-nexus",
+      "bytes": 670,
+      "lines": 34,
+      "sha256": "5c51df4c59f4510d8c7dadf07a5c32132228826a3b331da5e286207b4df7ef9c"
+    },
+    {
+      "path": "OS.md",
+      "category": "project-document",
+      "bytes": 22094,
+      "lines": 287,
+      "sha256": "83b9b61a6679b66b01fc2b747b5cccb27e03869e913c34fd494dd84f5b14d4dd"
+    },
+    {
+      "path": "PERSISTENT_DRIVER_CACHE.md",
+      "category": "project-document",
+      "bytes": 8115,
+      "lines": 293,
+      "sha256": "a6e8c82bc80b80dc2d1d597a0b05d823fabbb0d9487ca903e1d6a50a29aa8539"
+    },
+    {
+      "path": "PLATFORM_EXPANSION.md",
+      "category": "project-document",
+      "bytes": 6296,
+      "lines": 201,
+      "sha256": "39960fbd5588a499460fba9832179a3508456f1d4cd7f343204d8bea1fa3e2e6"
+    },
+    {
+      "path": "PLATFORM_PROGRESS.md",
+      "category": "project-document",
+      "bytes": 13475,
+      "lines": 245,
+      "sha256": "0300ad7f51c46c0f24c8c3e1786e60d333804e5c7e12b50672d4ba5d7df399a1"
+    },
+    {
+      "path": "platform-kernels/aarch64-recovery/.cargo/config.toml",
+      "category": "architecture-recovery-and-proof",
+      "bytes": 121,
+      "lines": 5,
+      "sha256": "447d6840ddfce4b118a0f205c6192d79031ecafc1cfc170beaf550567a656869"
+    },
+    {
+      "path": "platform-kernels/aarch64-recovery/Cargo.toml",
+      "category": "architecture-recovery-and-proof",
+      "bytes": 407,
+      "lines": 21,
+      "sha256": "1cd0bf4bb65573e552420195547cce87c86dbfbffd704eb9f6ca146a9d796b58"
+    },
+    {
+      "path": "platform-kernels/aarch64-recovery/linker.ld",
+      "category": "architecture-recovery-and-proof",
+      "bytes": 480,
+      "lines": 32,
+      "sha256": "f0700284a35032d97560e0b800d09dc551b479fbd6e0af75de45112b94a0bbe4"
+    },
+    {
+      "path": "platform-kernels/aarch64-recovery/src/arm64_gui.rs",
+      "category": "architecture-recovery-and-proof",
+      "bytes": 12568,
+      "lines": 457,
+      "sha256": "fb78a49362ca84226f2a41c05d2a2a5b83175963cc95a5778f98c716b8248762"
+    },
+    {
+      "path": "platform-kernels/aarch64-recovery/src/main.rs",
+      "category": "architecture-recovery-and-proof",
+      "bytes": 15821,
+      "lines": 537,
+      "sha256": "79ff9eba3932647eb3bc859b0b7689f34eec7d64ef9b24471845eca22660c20e"
+    },
+    {
+      "path": "platform-kernels/aarch64-recovery/src/sandbox_runtime.rs",
+      "category": "architecture-recovery-and-proof",
+      "bytes": 290661,
+      "lines": 7608,
+      "sha256": "b0d6f257c3ac25e5971d75802e4a973876465d5b5af9de22acaa577630881276"
+    },
+    {
+      "path": "platform-kernels/README.md",
+      "category": "project-document",
+      "bytes": 838,
+      "lines": 36,
+      "sha256": "270c14e93ba3b5e93898ba8ee64e928e2f9ed68ceee4ce98f5e618cb1aba5b76"
+    },
+    {
+      "path": "platforms/openrhiza-platforms.json",
+      "category": "build-platform-or-project-metadata",
+      "bytes": 2989,
+      "lines": 57,
+      "sha256": "7e385881f79eccf3a487f378fdd0b306faf596a93389936db67dc241c1abca12"
+    },
+    {
+      "path": "PROGRAM_COMPATIBILITY_GOALS.md",
+      "category": "project-document",
+      "bytes": 4696,
+      "lines": 150,
+      "sha256": "2da770c3afaa8065f4ea88cafe9ffce3d993d00a9b81143783c3f13900d57c59"
+    },
+    {
+      "path": "PROTOCOL.md",
+      "category": "project-document",
+      "bytes": 2967,
+      "lines": 91,
+      "sha256": "b75fcf35bc23c0532304e5739a09cb002cd7f6c13b14d059e2695ac76a01479e"
+    },
+    {
+      "path": "PUBLIC_ALPHA_CHECKLIST.md",
+      "category": "project-document",
+      "bytes": 4981,
+      "lines": 95,
+      "sha256": "4d489eb3a1a1748fa2a1759658913b27520eed81d725d805adc557ed4cc0bdcb"
+    },
+    {
+      "path": "PUBLIC_READINESS.md",
+      "category": "project-document",
+      "bytes": 2015,
+      "lines": 56,
+      "sha256": "0e10acfb2292e70219f388f766dbc5293d4903dcb26277e585cea3735b3a9e3e"
+    },
+    {
+      "path": "QEMU_DRIVER_SET.md",
+      "category": "project-document",
+      "bytes": 2149,
+      "lines": 45,
+      "sha256": "b49b3b0ffe7ea20a70a6ba28e49b5b84719fc8d5a4fb22f8370e4e8cf4d903c9"
+    },
+    {
+      "path": "README.md",
+      "category": "project-document",
+      "bytes": 11104,
+      "lines": 179,
+      "sha256": "5d3cc18c0a9e0fb4d2afcfa5314f41b4a179ef997c7eca688981467795b3a5f8"
+    },
+    {
+      "path": "register_nic_drivers.py",
+      "category": "host-build-and-verification-tool",
+      "bytes": 12864,
+      "lines": 363,
+      "sha256": "4638453056bd742760091b96f8c6e3815408786a90c31978f071a8613f83bce9"
+    },
+    {
+      "path": "ROADMAP.md",
+      "category": "project-document",
+      "bytes": 9067,
+      "lines": 143,
+      "sha256": "f0a7c98e111603482e3470cbf9d04f8fbb42f95499785f951b27544fbabb1496"
+    },
+    {
+      "path": "run_qemu_arm64.ps1",
+      "category": "host-build-and-verification-tool",
+      "bytes": 3715,
+      "lines": 113,
+      "sha256": "72eef4985f12dda8462cc4faac82f0e23677a1cc17d40b353a64eb44ce2352c5"
+    },
+    {
+      "path": "run_qemu.ps1",
+      "category": "host-build-and-verification-tool",
+      "bytes": 17950,
+      "lines": 434,
+      "sha256": "c8e580b8d32dea1f9cf34e701a04c1da9bfa280f36cd2cdbaee81d3120251b18"
+    },
+    {
+      "path": "SANDBOX_EXECUTION_ACCELERATION.md",
+      "category": "project-document",
+      "bytes": 5003,
+      "lines": 106,
+      "sha256": "738006c9030a7a5063641cdc415b719b35c41a79d38a5ece20c544a79c56becb"
+    },
+    {
+      "path": "SANDBOX_INPUT_DRIVER.md",
+      "category": "project-document",
+      "bytes": 3846,
+      "lines": 123,
+      "sha256": "78f7a7b13eab3f13b6b3565d7a474e38d2908496f41459510e4dbfe05f48416b"
+    },
+    {
+      "path": "SANDBOX_MIGRATION_STATUS.md",
+      "category": "project-document",
+      "bytes": 31190,
+      "lines": 98,
+      "sha256": "71bcc704e5a65ce8676db57ae38466769ff1e6728a282e7a742c3b44d700a93b"
+    },
+    {
+      "path": "sandbox-input-drivers/keyboard_bootstrap/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 183,
+      "lines": 13,
+      "sha256": "9f62805603a66f64c53cc8c9c74c64570803ca530192d55e4a659d2966ea3856"
+    },
+    {
+      "path": "sandbox-input-drivers/keyboard_bootstrap/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 8498,
+      "lines": 308,
+      "sha256": "e1463339498b08a27a71700dc003b3e7cac45ac189004e53ea6a10f240373e4e"
+    },
+    {
+      "path": "sandbox-input-drivers/mouse_bootstrap/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 180,
+      "lines": 13,
+      "sha256": "33872e438a8f1a09f003036f6efcd5f27e6350b3e3c77e9275cfd38da2337a8c"
+    },
+    {
+      "path": "sandbox-input-drivers/mouse_bootstrap/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 2337,
+      "lines": 79,
+      "sha256": "c98fe20708328abe41019fac29e3a1162d0236d3804d319af29a2ad92b1af1dc"
+    },
+    {
+      "path": "sandbox-skills/arm64_virtio_gpu_payload_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 195,
+      "lines": 13,
+      "sha256": "397c810bf8c927b8de08b61f7fd17c2368c0e2a3559b16118e76da5274d4cfae"
+    },
+    {
+      "path": "sandbox-skills/arm64_virtio_gpu_payload_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 11729,
+      "lines": 313,
+      "sha256": "96a903cddff817c3bd1a910a21324a92471d732a9588947b8ddab242df915b7e"
+    },
+    {
+      "path": "sandbox-skills/arm64_wasm_log_probe_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 191,
+      "lines": 13,
+      "sha256": "57f56f62c104b1a9ae333a4e12d79ae1f12663203ba375b9ed4cb82d79cd2d70"
+    },
+    {
+      "path": "sandbox-skills/arm64_wasm_log_probe_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 421,
+      "lines": 22,
+      "sha256": "621eb682aa853af54a6e0aea91e776da24ac509f5a09c2ff3f9d255e185661c3"
+    },
+    {
+      "path": "sandbox-skills/desktop_compositor_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 292,
+      "lines": 17,
+      "sha256": "8315cf91b58b8ae9324ad80316eeff61efb3a4c39ca1df43fcc841c0ce279fef"
+    },
+    {
+      "path": "sandbox-skills/desktop_compositor_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 11848,
+      "lines": 439,
+      "sha256": "66c6169322767770c53d68d74a7160f97eec5390121d47ce1c5a962c84340a59"
+    },
+    {
+      "path": "sandbox-skills/display_console_bootstrap/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 175,
+      "lines": 12,
+      "sha256": "66944b75c54ee3bf9d23579cec1c441b6fc0d710f0437750ef17c92180ed250e"
+    },
+    {
+      "path": "sandbox-skills/display_console_bootstrap/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 3249,
+      "lines": 74,
+      "sha256": "7425e4e87643bbbd7f5c02833070f4b6220176ea72fe56d3023eedfda3446148"
+    },
+    {
+      "path": "sandbox-skills/display_framebuffer_mode/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 174,
+      "lines": 12,
+      "sha256": "99f1e9f5c7d3dd51f53e48142fa28b9b637b35f6e6b18ef98bd8cdcc11d8c252"
+    },
+    {
+      "path": "sandbox-skills/display_framebuffer_mode/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 3167,
+      "lines": 72,
+      "sha256": "6c5fc48c2311e66a9270a3d6b0dfc868d6f67c022a5905e08d6908c7c7501bbf"
+    },
+    {
+      "path": "sandbox-skills/doom_port_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 243,
+      "lines": 14,
+      "sha256": "d53095ca2086198ce6f654525cf0f4178e853b367615bb89831515bf3596f342"
+    },
+    {
+      "path": "sandbox-skills/doom_port_seed/OPENRHIZA_DOOM_PORT.md",
+      "category": "project-document",
+      "bytes": 2543,
+      "lines": 70,
+      "sha256": "725d2d3286bf037f82e936086e4caa47db4995e190adb11863ccc3d9805864da"
+    },
+    {
+      "path": "sandbox-skills/doom_port_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 34008,
+      "lines": 1145,
+      "sha256": "5bb04faccb2c4584f71b69a2577a7fe8df40c17e498c75955b7ea0f98f2f2f4d"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/build.ps1",
+      "category": "sandbox-prototype",
+      "bytes": 3348,
+      "lines": 97,
+      "sha256": "90f81da5b579406affb7e273c36b8b870f7379f13ac3031d4f611d6c2a19be60"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/shim/include/assert.h",
+      "category": "sandbox-prototype",
+      "bytes": 75,
+      "lines": 4,
+      "sha256": "d4a64c9623caa96adde3238834683cdc9e1630d014af5a6fb98feae54b6979d2"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/shim/include/ctype.h",
+      "category": "sandbox-prototype",
+      "bytes": 165,
+      "lines": 9,
+      "sha256": "94642de35b9ee78974b9e635795097557cd703779101b272e5cb7063fed0de01"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/shim/include/errno.h",
+      "category": "sandbox-prototype",
+      "bytes": 81,
+      "lines": 5,
+      "sha256": "2ea4f509120b9e56c74c70c5ecc87e7e05e8a62558f797c08bb529746a1e7c68"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/shim/include/fcntl.h",
+      "category": "sandbox-prototype",
+      "bytes": 100,
+      "lines": 6,
+      "sha256": "9469b68076483042808c1fb58c50df0c3bc79ae0d9026abdf3d2a92c41e48856"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/shim/include/inttypes.h",
+      "category": "sandbox-prototype",
+      "bytes": 71,
+      "lines": 4,
+      "sha256": "3158a800a2f7144c122907f14365355680601424d87d83ea3d92744342d7c42e"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/shim/include/limits.h",
+      "category": "sandbox-prototype",
+      "bytes": 205,
+      "lines": 9,
+      "sha256": "7fac9f1a4c78baf76f4fe99f6277cc88de60a4d52c5e4a79628407ada0f16876"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/shim/include/math.h",
+      "category": "sandbox-prototype",
+      "bytes": 89,
+      "lines": 5,
+      "sha256": "5814e2bb5a3286910713e29a896bfe16aa93ca8066f6030014da8b50ebb32233"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/shim/include/stdarg.h",
+      "category": "sandbox-prototype",
+      "bytes": 284,
+      "lines": 8,
+      "sha256": "91e0ca3cb922324bf84d80f5bbc9ad30afad7b2900bc259b3bbde691d94545df"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/shim/include/stdbool.h",
+      "category": "sandbox-prototype",
+      "bytes": 69,
+      "lines": 4,
+      "sha256": "cf07b4d01c0f8a93f38dd5e655ff6169e51568714fb92e9317325fb2e65eddc5"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/shim/include/stddef.h",
+      "category": "sandbox-prototype",
+      "bytes": 151,
+      "lines": 6,
+      "sha256": "d2fc8d7d6e5bedaf5a4b9a6dd9c8a114784b601d92e65f91e9c823a3f6416e4c"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/shim/include/stdint.h",
+      "category": "sandbox-prototype",
+      "bytes": 444,
+      "lines": 16,
+      "sha256": "dbdd893f1cd2f4f9859f5b134eb30df008975a305bbb46832532e86c91ce4312"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/shim/include/stdio.h",
+      "category": "sandbox-prototype",
+      "bytes": 1064,
+      "lines": 32,
+      "sha256": "30db01a23d44a07175975954d2afad76bfdeb40120ab19e968320076bcde4b10"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/shim/include/stdlib.h",
+      "category": "sandbox-prototype",
+      "bytes": 431,
+      "lines": 15,
+      "sha256": "ff112faa7a83e15381a60ad83a8b40e183635fdff1a04abaeb0b89c5f105d016"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/shim/include/string.h",
+      "category": "sandbox-prototype",
+      "bytes": 686,
+      "lines": 18,
+      "sha256": "b1e61a4c0fbd5be60d25b93d469f004505c97e7aa79588fe1a7eef004e4117b8"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/shim/include/strings.h",
+      "category": "sandbox-prototype",
+      "bytes": 172,
+      "lines": 6,
+      "sha256": "e5a68de4a75565a932c279950609bd7815b1926662e711d1c897c86de074fda9"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/shim/include/sys/stat.h",
+      "category": "sandbox-prototype",
+      "bytes": 129,
+      "lines": 5,
+      "sha256": "6b3f4a2e81ace65debe9639c1c3b8ac82f6b22254fbdef0bf58d2de4de583c93"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/shim/include/sys/types.h",
+      "category": "sandbox-prototype",
+      "bytes": 102,
+      "lines": 5,
+      "sha256": "251c94eb920be04218a857ddf68a2c2b765ff1fd4bcd592438716d963a1c9052"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/shim/include/time.h",
+      "category": "sandbox-prototype",
+      "bytes": 90,
+      "lines": 5,
+      "sha256": "01cd4e12d5fee2aa0ced666e50d9d9bda179990a5b71c8d54a6dbd1960499e26"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/shim/include/unistd.h",
+      "category": "sandbox-prototype",
+      "bytes": 214,
+      "lines": 7,
+      "sha256": "1626cf59de1fb42a7f35c6b28b0b2095456d0e0c569648d44db66b1dd69abe88"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/src/doomgeneric_openrhiza.c",
+      "category": "sandbox-prototype",
+      "bytes": 19842,
+      "lines": 575,
+      "sha256": "51c67248203a7fcff1c3a88260629d0ee83af3bae5b6ab9358b6cc67fca6c821"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/src/libc_shim.c",
+      "category": "sandbox-prototype",
+      "bytes": 11429,
+      "lines": 232,
+      "sha256": "c32c5670e9678961d82cbc5e5c532313c17c8be15be205a2b853c6ba6e30d7e5"
+    },
+    {
+      "path": "sandbox-skills/doomgeneric_openrhiza_seed/src/w_file_openrhiza.c",
+      "category": "sandbox-prototype",
+      "bytes": 2264,
+      "lines": 67,
+      "sha256": "6ee72be2a89eab63e92cd23cb3f7993529e2cad7a6202cabbe4a6b7a9671f0a4"
+    },
+    {
+      "path": "sandbox-skills/driver_nexus_client_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 298,
+      "lines": 17,
+      "sha256": "e1afb2daf9eccf04794181dc07ec678b81f21013666e9f676c867d2b615782b6"
+    },
+    {
+      "path": "sandbox-skills/driver_nexus_client_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 22523,
+      "lines": 567,
+      "sha256": "861c106be1e2b81cbea3a4d81abba173fbe211ccb3709425049837aad54b2f41"
+    },
+    {
+      "path": "sandbox-skills/e1000_sandbox_probe_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 190,
+      "lines": 13,
+      "sha256": "55c01d73880498427155b4ecaf0eadc46f47af34b9f2b7aaa711d11fcf73535b"
+    },
+    {
+      "path": "sandbox-skills/e1000_sandbox_probe_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 21458,
+      "lines": 658,
+      "sha256": "eef5f1c2d35c2a3d8efba12e4f23234e2e8fa09824102b1a65148b711b2e5eef"
+    },
+    {
+      "path": "sandbox-skills/fs_image_probe_bootstrap/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 190,
+      "lines": 13,
+      "sha256": "32a4479288ec71f3b125e7a39d4d8b5bcc159775661d0ed8475f71e715ff3485"
+    },
+    {
+      "path": "sandbox-skills/fs_image_probe_bootstrap/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 6423,
+      "lines": 168,
+      "sha256": "726508486128fe207fe242302f453acc37e42e1a0dc1efacad05e959c7f9d576"
+    },
+    {
+      "path": "sandbox-skills/gui_app_store_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 285,
+      "lines": 17,
+      "sha256": "140be08017add7afdddb8046032561fed25ea9e8881c36e89288f2cc7096a673"
+    },
+    {
+      "path": "sandbox-skills/gui_app_store_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 17770,
+      "lines": 442,
+      "sha256": "10b1d596951284b8857e2a52664f57c54469a14a207dc7c6229d9128df272bd3"
+    },
+    {
+      "path": "sandbox-skills/gui_compositor_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 169,
+      "lines": 12,
+      "sha256": "dde448b7e446ed5e67feb841335a5bf0e149c1b4043aa339814d658ad170803d"
+    },
+    {
+      "path": "sandbox-skills/gui_compositor_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 3013,
+      "lines": 76,
+      "sha256": "b8c608bb1b4cdbe389f33f3c7cf04c93bb11dea2662944e7b930a4f4d0443817"
+    },
+    {
+      "path": "sandbox-skills/gui_modern_shell_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 171,
+      "lines": 12,
+      "sha256": "7b850447e75a375e9042fff7fecd74f489e6bd199a3dcc00e411f4b791c2bbd0"
+    },
+    {
+      "path": "sandbox-skills/gui_modern_shell_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 7470,
+      "lines": 175,
+      "sha256": "681c469421ab18ea9745f71ca5d5a37f035bc798d035a222dbc9a294771218d3"
+    },
+    {
+      "path": "sandbox-skills/gui_scene_mutator_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 172,
+      "lines": 12,
+      "sha256": "b1a0429052c4a7f33f5c46b703c2b754e5119a4e63215234840366b7f4484c47"
+    },
+    {
+      "path": "sandbox-skills/gui_scene_mutator_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 2242,
+      "lines": 66,
+      "sha256": "02aa7df0aecf475b5fdac646d7bcc5c0acd79e0e14e1a02408810fb94be65632"
+    },
+    {
+      "path": "sandbox-skills/gui_session_bootstrap/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 171,
+      "lines": 12,
+      "sha256": "1d28b2e3d88b75ad03b835bed1bd985f570f4089d331fe629f0c4b5b3d1c0e95"
+    },
+    {
+      "path": "sandbox-skills/gui_session_bootstrap/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 3171,
+      "lines": 78,
+      "sha256": "64bee0f830bc512ef87b62aa64baa5831e67f4b7935feb7a7f6d904684343ccf"
+    },
+    {
+      "path": "sandbox-skills/gui_web_browser_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 184,
+      "lines": 14,
+      "sha256": "635b0b11c56ad4de269e3de0f972642a4ac869cc0c4b2a6c8e2e81912ff68010"
+    },
+    {
+      "path": "sandbox-skills/gui_web_browser_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 21854,
+      "lines": 594,
+      "sha256": "3fc87a65998ef044ed6dbbdd2a0068d7534a70d5956391a343ae3bdf67d3aa7b"
+    },
+    {
+      "path": "sandbox-skills/memory_forensics_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 291,
+      "lines": 17,
+      "sha256": "f48b6c1430451f29ea99f49cbaa5ef0ef84d7952016738949e66726eab53b0f0"
+    },
+    {
+      "path": "sandbox-skills/memory_forensics_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 17637,
+      "lines": 497,
+      "sha256": "63c6bd0d10304b02ccd1e1251710da66309a9c5402c90a15c3804637436f7d69"
+    },
+    {
+      "path": "sandbox-skills/network_diagnostics_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 310,
+      "lines": 17,
+      "sha256": "808660fce87cace722dffeeed13f596cede77507f08ed11faf900d1d3080146f"
+    },
+    {
+      "path": "sandbox-skills/network_diagnostics_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 16738,
+      "lines": 458,
+      "sha256": "e5906872bf92027ac2913df1e350cf5598930a5a6804ae7299f96a7d5b6c5312"
+    },
+    {
+      "path": "sandbox-skills/openrhiza_sandbox_analysis.md",
+      "category": "project-document",
+      "bytes": 5906,
+      "lines": 49,
+      "sha256": "1a3ab924b3c437297ebb58cd89b66a311d8c2fcddcc5bd5e9ef425badfebf35b"
+    },
+    {
+      "path": "sandbox-skills/piix_ide_sandbox_probe_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 193,
+      "lines": 13,
+      "sha256": "78fb75d48f561f975179f1fef29d7288acee4eefdc44583893b19bdc7318f9b4"
+    },
+    {
+      "path": "sandbox-skills/piix_ide_sandbox_probe_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 14406,
+      "lines": 475,
+      "sha256": "20a3b0f2f99fce8cd32770f7bc609e9ab32d48b7622a055b05b2ac0468b069da"
+    },
+    {
+      "path": "sandbox-skills/qemu_driver_pack_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 171,
+      "lines": 12,
+      "sha256": "0de8c4832848058edc0c18457f3201c0266f70350b65f20ffafe4dea27880d5d"
+    },
+    {
+      "path": "sandbox-skills/qemu_driver_pack_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 3492,
+      "lines": 110,
+      "sha256": "aee202f1cf6b23fa69d6509dfeafe72cb1f8a2c79c8ec74bd743f99d431a0dd5"
+    },
+    {
+      "path": "sandbox-skills/registry_lookup_bootstrap/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 191,
+      "lines": 13,
+      "sha256": "0bde19c3c532228a5da6acae58a7bbe2c73f1d6998d121979ba31cbaf6a095a3"
+    },
+    {
+      "path": "sandbox-skills/registry_lookup_bootstrap/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 688,
+      "lines": 33,
+      "sha256": "ddd84ef08da9d37f0f2b7d80964b3f36d95cb1f1d7070ff5c476915b5011a671"
+    },
+    {
+      "path": "sandbox-skills/rhiza_compiler_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 293,
+      "lines": 17,
+      "sha256": "c84469a76215296de9db70c905c046e9e1e145885243637110ef7d69c009a2d9"
+    },
+    {
+      "path": "sandbox-skills/rhiza_compiler_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 33223,
+      "lines": 897,
+      "sha256": "c3ad6613933694931715fada4bad205f4b4d253d26642f52b036b2fcad984ec0"
+    },
+    {
+      "path": "sandbox-skills/security_firewall_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 307,
+      "lines": 17,
+      "sha256": "fcb07a8b25a03249749fb7a55785185e385efd29ff38073f3853b842dcb751e5"
+    },
+    {
+      "path": "sandbox-skills/security_firewall_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 17111,
+      "lines": 487,
+      "sha256": "c0396a15977916060d24269147286c960eff5dd61db71b4223733b469c3eb2f3"
+    },
+    {
+      "path": "sandbox-skills/storage_host_probe_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 189,
+      "lines": 13,
+      "sha256": "a895e1b63af3799d1c059367cb2e15ea17c056436657a4a282d157d7b82c332d"
+    },
+    {
+      "path": "sandbox-skills/storage_host_probe_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 7484,
+      "lines": 210,
+      "sha256": "a30e8cb9f6c297ef45653f75cbb7089ff75d6943fb10bb4c6712373aa0f25dfe"
+    },
+    {
+      "path": "sandbox-skills/system_monitor_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 291,
+      "lines": 17,
+      "sha256": "507643ab617ee7ff695fcf00283bed2faa260baf9802c8ac2d3ec108c2c794d4"
+    },
+    {
+      "path": "sandbox-skills/system_monitor_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 22482,
+      "lines": 571,
+      "sha256": "d291727542eae0dfa56c843d4b33f613321e58fd2a7ddc7f0f67931501cd9237"
+    },
+    {
+      "path": "sandbox-skills/text_web_browser_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 185,
+      "lines": 14,
+      "sha256": "9029ed5289a7e53adeebe9b9c7c60a4137fae6965dcdff832326aed2aa91f9f3"
+    },
+    {
+      "path": "sandbox-skills/text_web_browser_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 16177,
+      "lines": 462,
+      "sha256": "a238b37fb360196740959d52ed016a14500f6de447e14bbf1cfb1f3105e9c318"
+    },
+    {
+      "path": "sandbox-skills/vfs_explorer_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 290,
+      "lines": 17,
+      "sha256": "5d182775ae57f99e61470c5f7ca700b76b7d2298fdd31bd380536fe5d86779fc"
+    },
+    {
+      "path": "sandbox-skills/vfs_explorer_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 22359,
+      "lines": 617,
+      "sha256": "040d40b6a87e3da0440cabd69d6b2827a8ab170ede2676a5adfdf5c1e43dee90"
+    },
+    {
+      "path": "sandbox-skills/virtio_block_driver_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 309,
+      "lines": 15,
+      "sha256": "c6133133c75969f2288a3a9ffdfcac275e77ac0d5d21cff1de6b7e8c3acdad3f"
+    },
+    {
+      "path": "sandbox-skills/virtio_block_driver_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 2515,
+      "lines": 80,
+      "sha256": "240e320f321b7f4d2c7356dda6412a7005fdf1a0fc804c17d42aa3b3f9fc281c"
+    },
+    {
+      "path": "sandbox-skills/virtio_gpu_driver_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 305,
+      "lines": 15,
+      "sha256": "884e1e21cd68f923afa9a834ccc9c6d9ce0d6f40851ab3c2d551139b93a1768f"
+    },
+    {
+      "path": "sandbox-skills/virtio_gpu_driver_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 2500,
+      "lines": 80,
+      "sha256": "e9b14c5e2ca2815da73796678fbd771c7eb5b257c2194ca5e15e9c8ae9f05dda"
+    },
+    {
+      "path": "sandbox-skills/virtio_input_driver_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 309,
+      "lines": 15,
+      "sha256": "a4c0d13bc8d50bdebaae1258c497ad6ab8c383b5cbd5b4c5e0fe10382275c105"
+    },
+    {
+      "path": "sandbox-skills/virtio_input_driver_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 19959,
+      "lines": 629,
+      "sha256": "57dcc5fb21bd6a0ebc7d696c97edd79918d3ec925bce77763b8a980f52446c32"
+    },
+    {
+      "path": "sandbox-skills/virtio_mmio_probe_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 297,
+      "lines": 15,
+      "sha256": "4cb19b842fbb0beed9a8c413c1e1c4ac82d82219efef1359c28f91169c4fda0e"
+    },
+    {
+      "path": "sandbox-skills/virtio_mmio_probe_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 4629,
+      "lines": 146,
+      "sha256": "90b79d49dcc983d7345c6813285b0020e709a1debce5452982d6f963c8e730ea"
+    },
+    {
+      "path": "sandbox-skills/virtio_net_driver_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 305,
+      "lines": 15,
+      "sha256": "bb53eae7ceec4b34cf1be8bbd64d9f29e116579a7ecff0c89eca51cf0adec714"
+    },
+    {
+      "path": "sandbox-skills/virtio_net_driver_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 2506,
+      "lines": 80,
+      "sha256": "99f07c06ebfad8ed6bba40c4d77ee64f9630c38f3fe6968701f0a9f0f4e31c8b"
+    },
+    {
+      "path": "sandbox-skills/virtio_probe_common.in",
+      "category": "sandbox-prototype",
+      "bytes": 27839,
+      "lines": 738,
+      "sha256": "b2f17291212b765d876fdcb4e6306202d9cdec3066cf3ac43f1ef4efb56f90bc"
+    },
+    {
+      "path": "sandbox-skills/voice_capture_bridge_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 192,
+      "lines": 14,
+      "sha256": "77e51aefac83fe01ef671b8d93956e9de23f5cd0096a58929927acc762ce55fa"
+    },
+    {
+      "path": "sandbox-skills/voice_capture_bridge_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 789,
+      "lines": 34,
+      "sha256": "24218a6bbc8b4a38eb95dde8401fda74f7c6c1b4dfdc5143785b7bd345c2a408"
+    },
+    {
+      "path": "sandbox-skills/xhci_sandbox_probe_seed/Cargo.toml",
+      "category": "sandbox-prototype",
+      "bytes": 189,
+      "lines": 13,
+      "sha256": "c54d04ebd1e420b480e3f54c86c40baae36792a4451f3f95eb04c0af790d0c3d"
+    },
+    {
+      "path": "sandbox-skills/xhci_sandbox_probe_seed/src/lib.rs",
+      "category": "sandbox-prototype",
+      "bytes": 12495,
+      "lines": 376,
+      "sha256": "3dffab1f1b8d8d8d41477950eb7ba6b7eae9dc2dd55e7067e8192d09f9e87edf"
+    },
+    {
+      "path": "SECURITY.md",
+      "category": "project-document",
+      "bytes": 3015,
+      "lines": 41,
+      "sha256": "67971526116c97b9130d9d808ff7944c154f57786e21c24fe602616f6c38f98c"
+    },
+    {
+      "path": "SEMANTIC_GRAPH_LAYER.md",
+      "category": "project-document",
+      "bytes": 5885,
+      "lines": 187,
+      "sha256": "eefface0999eeeb4516e8dc6c31079809b6d5ce1563effea3ac2930ed40541b7"
+    },
+    {
+      "path": "semantic-graph/README.md",
+      "category": "project-document",
+      "bytes": 539,
+      "lines": 14,
+      "sha256": "31ca06bd0748fc6ae0df427d18dd1e2d5465c7476238b27f54afcc95cf670e08"
+    },
+    {
+      "path": "semantic-graph/skill_semantic_index_v1.md",
+      "category": "project-document",
+      "bytes": 823,
+      "lines": 38,
+      "sha256": "16867ff4518b9587e514135d311f13aae267a608699350f368c60b2787a693a6"
+    },
+    {
+      "path": "SKILL_FS_BRIDGE.md",
+      "category": "project-document",
+      "bytes": 2974,
+      "lines": 111,
+      "sha256": "7746ae135cfdc2879bd931df7ca9ead634f1300946d6ed4f580679c156498349"
+    },
+    {
+      "path": "src/allocator.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 483,
+      "lines": 16,
+      "sha256": "ca6edbecd9453bdc8f808138bc70c3c0ac171f3d0570c6e7c94189d8f938f0d2"
+    },
+    {
+      "path": "src/api_v1.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 29271,
+      "lines": 879,
+      "sha256": "4bf8face2c7d51529c29b4e9f2c230b7206e79963c59e840f57415355b41a194"
+    },
+    {
+      "path": "src/arch/aarch64/entry.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 1059,
+      "lines": 37,
+      "sha256": "1ecced6560e908687f8d6a725cbf6fcc85d0efd18dea54c0815a3246503d47b0"
+    },
+    {
+      "path": "src/arch/aarch64/gic.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 565,
+      "lines": 22,
+      "sha256": "59904d7e134fce064ca05dea67cde939ec9d2d2ec5f768edd749114ea8dcf70f"
+    },
+    {
+      "path": "src/arch/aarch64/memory.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 691,
+      "lines": 19,
+      "sha256": "f3b79524a50a54279be298d65ee9d932e7f1592ed168ff539c4a76af1de5e9f5"
+    },
+    {
+      "path": "src/arch/aarch64/mod.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 589,
+      "lines": 18,
+      "sha256": "627168b8ecbfc9c20fe3df84d093b1a18daaab2a4cb030be383e090669d09930"
+    },
+    {
+      "path": "src/arch/aarch64/serial.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 651,
+      "lines": 22,
+      "sha256": "09501e7b28d92f48d7ae70c6e59a23b86c8f90af05f1dc39c4d2dff48d583c02"
+    },
+    {
+      "path": "src/arch/core_logic/mod.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 13,
+      "lines": 1,
+      "sha256": "7c8f2402185dad02c40c5e3dfbeb4070c363312f57b542dcc9f36fc0ed8bdf97"
+    },
+    {
+      "path": "src/arch/core_logic/seed.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 1808,
+      "lines": 55,
+      "sha256": "e72b91ca077d6f8775f00f56090a3b733ca65eb7f7f4049849307c58f2e50cdc"
+    },
+    {
+      "path": "src/arch/discovery.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 874,
+      "lines": 33,
+      "sha256": "0b5d684a89b3f078f3187ac750ecb6f475c5c6617426bdca73a3bb485f7d3f80"
+    },
+    {
+      "path": "src/arch/mod.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 39,
+      "lines": 2,
+      "sha256": "cfee5b0c2fc422e51d8f36245e7ab84e04b0e8a28270c987ee796acfe3b19ae2"
+    },
+    {
+      "path": "src/arch/x86_64/apic.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 2983,
+      "lines": 89,
+      "sha256": "3e9d4d75403e8031afb413bcbd36b59468c605402f4242d6a3af6fc4624d95a6"
+    },
+    {
+      "path": "src/arch/x86_64/discovery.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 9312,
+      "lines": 288,
+      "sha256": "600701b700bdd39638770b702ca590d58aa796b31c662cf831592aa02fe24397"
+    },
+    {
+      "path": "src/arch/x86_64/interrupts.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 3518,
+      "lines": 101,
+      "sha256": "0a74ef6dc80a538ccd671a8995e7980b9ca468a3dd16361658c19848277a9153"
+    },
+    {
+      "path": "src/arch/x86_64/linker.ld",
+      "category": "legacy-kernel-and-services",
+      "bytes": 500,
+      "lines": 31,
+      "sha256": "ae29a400587c17a9f2dd757fbb4db323024913f4381bdfbff2677a2688e6cac8"
+    },
+    {
+      "path": "src/arch/x86_64/port.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 1207,
+      "lines": 38,
+      "sha256": "0cbb3d8f42b11a98edc5b1f8dc8d8971476685c1b4f99873e1e4dfd3dc966086"
+    },
+    {
+      "path": "src/arch/x86_64/serial.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 1613,
+      "lines": 49,
+      "sha256": "ead40605d57dc31430e2ca08bf001dc40784cad82437d5e27d76f9906938e27c"
+    },
+    {
+      "path": "src/arch/x86_64/usb.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 63180,
+      "lines": 1545,
+      "sha256": "13ab6c5873be76d41f493f621c6a3c8e9c95c691a5d03376415920d0ca03649e"
+    },
+    {
+      "path": "src/autonomy.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 24296,
+      "lines": 715,
+      "sha256": "dca063e16865a2284f9d3db6a7121154ade8b534e64a18d7c51d17eefe5aee8c"
+    },
+    {
+      "path": "src/boot_automation.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 8142,
+      "lines": 256,
+      "sha256": "934ed2f4e900b3876fabe3c5d0a6dc6fdb6aa279da44ae84f8718d5ddf5191ab"
+    },
+    {
+      "path": "src/capability_cache.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 2966,
+      "lines": 96,
+      "sha256": "d549579af51b92b0323c4158424009637023328bf4bdd90b708f33531430fe75"
+    },
+    {
+      "path": "src/component_runtime.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 5094,
+      "lines": 153,
+      "sha256": "4fd2db1149e95218f66bce003bc93bb7a8e86786273e1aede5e84fe93e7c053c"
+    },
+    {
+      "path": "src/core/seed.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 98139,
+      "lines": 2565,
+      "sha256": "a7c7501c40f2b5d547388f6f323fe93328306a1a0b8d674af36513030307f32e"
+    },
+    {
+      "path": "src/crypto/aes.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 9731,
+      "lines": 280,
+      "sha256": "255ef76fb6d79527717dd0f70a9748694fc797f7bb6cf3046d7121df3583980f"
+    },
+    {
+      "path": "src/crypto/bignum.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 7569,
+      "lines": 254,
+      "sha256": "305b480d4d1affb75e249ba8fe61b316ea4cfaa0847f744ac970724d2b1cf970"
+    },
+    {
+      "path": "src/crypto/mod.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 306,
+      "lines": 10,
+      "sha256": "e3d54a584e7baab4e499d9c12134a9f3d360013be4990594f42261a12a3857e0"
+    },
+    {
+      "path": "src/crypto/p256.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 1271,
+      "lines": 35,
+      "sha256": "cd812bada48697811a6be89236a518180381aa252448846869b30ac153090cf7"
+    },
+    {
+      "path": "src/crypto/random.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 1958,
+      "lines": 69,
+      "sha256": "965d7ec4b9149bf1b1123fca151e9df0caf971fc09dd404a578b6cd6fa4001e5"
+    },
+    {
+      "path": "src/crypto/sha256.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 7718,
+      "lines": 242,
+      "sha256": "e17da15275625b367645b1a4a25db6054f0101c4f0e5f68f94082369ebb03c2d"
+    },
+    {
+      "path": "src/display.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 151455,
+      "lines": 4994,
+      "sha256": "e6d96d581d7b8ac981667999901406699d801d6ee6c2087afd001c49600e28a4"
+    },
+    {
+      "path": "src/dns.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 7521,
+      "lines": 228,
+      "sha256": "c511bb010c2076b3c76c13b14451ac6f23a83e522c1503a756505356a68e3e93"
+    },
+    {
+      "path": "src/driver_cache.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 4376,
+      "lines": 149,
+      "sha256": "24d856c6945acc950f7e77f6c1705e2196e3ed103c8819ba4c597470a703900a"
+    },
+    {
+      "path": "src/driver_host.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 29992,
+      "lines": 962,
+      "sha256": "b9006981037df15402c2e775ffc89b8bc3fa27b4b57727763ed4edb01a8795dd"
+    },
+    {
+      "path": "src/driver_runtime.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 7359,
+      "lines": 213,
+      "sha256": "6224087f383cc4324ef9293ce06722b5ff54eeb2da576ad172158ee2751cc62c"
+    },
+    {
+      "path": "src/e1000.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 13007,
+      "lines": 369,
+      "sha256": "ddc471c8ad6d4487f0c5d4fa96cecbf0e0c7d3bdf2ce57d417775ab434403489"
+    },
+    {
+      "path": "src/firmware.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 3587,
+      "lines": 89,
+      "sha256": "bf274c74f0353ef14a749d7e0c171cde7148a8e6788492fc738fd6981066fa39"
+    },
+    {
+      "path": "src/gui_contract.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 2915,
+      "lines": 134,
+      "sha256": "e15b2ebe8b6154135deea7dd84113374cc633d58b1fb6e76be305d6800aabf86"
+    },
+    {
+      "path": "src/gui_font.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 2302,
+      "lines": 76,
+      "sha256": "9003971903a51a42e445c250c22318f2e636b04ecf5d59ce8be75174116a6464"
+    },
+    {
+      "path": "src/gui_lvgl_bridge.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 3046,
+      "lines": 70,
+      "sha256": "6b298455c81d98697ea01c8835a6e6bb836cc0360623d5460c2ea72cec3c7ad7"
+    },
+    {
+      "path": "src/hangul.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 11372,
+      "lines": 357,
+      "sha256": "69bd4f8dfc37a49fa9a6d59e39bbcdde9e133b7e92ed60950bd03f9d3b909f5b"
+    },
+    {
+      "path": "src/https.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 24129,
+      "lines": 654,
+      "sha256": "bb5ca563bcf6bb01927c2da53606293ab9cca28a881bc36440a4000812757ec6"
+    },
+    {
+      "path": "src/identity.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 9464,
+      "lines": 310,
+      "sha256": "bcbaea658321a96aa17a69284b2c6184edc8a0a798e94a37b2793d072935ea50"
+    },
+    {
+      "path": "src/input_handoff.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 13254,
+      "lines": 391,
+      "sha256": "a6d56a5f3181939963c598c2d31ded0ece7f0c6bf5456d050a2edf5dce782d6a"
+    },
+    {
+      "path": "src/input_runtime.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 15313,
+      "lines": 418,
+      "sha256": "e603cedc0e590619dd489db4eda2f4670e080b72cf97554624e1bd26d45f2689"
+    },
+    {
+      "path": "src/keyboard.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 12543,
+      "lines": 303,
+      "sha256": "4177f25505acff55eff6fe18981c74b49dd72ed475c05ebd028e73d4c480a2e3"
+    },
+    {
+      "path": "src/main.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 179096,
+      "lines": 4097,
+      "sha256": "8f704e2b050e66fe080156c3bf8bd2413c02eade3bfde3e804b219177665be4d"
+    },
+    {
+      "path": "src/net.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 15908,
+      "lines": 477,
+      "sha256": "634b44ba05ef568a75d3648e86f4c572ceceec7c7693492fd4a347babeb057d0"
+    },
+    {
+      "path": "src/orchestration.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 4332,
+      "lines": 143,
+      "sha256": "4ff18373327702a525f2d6ce3ff8649cef877ac1d7ff6e9fe50de3b4ae70e211"
+    },
+    {
+      "path": "src/platform.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 2947,
+      "lines": 85,
+      "sha256": "0b74dc648ff0092cc7ab747d11529d7f96f510911da433c9954da6c26546f2c6"
+    },
+    {
+      "path": "src/prompt_orchestrator.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 11717,
+      "lines": 377,
+      "sha256": "bcc6f33d1ed189ef475027f5d0691a611e9ca5b7a5b96e7530833f6d5db90e8f"
+    },
+    {
+      "path": "src/rng.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 1031,
+      "lines": 44,
+      "sha256": "85e903869dc16e6daabe1819fdd2d7288081f65be810b40b1339ba7b789c2cf1"
+    },
+    {
+      "path": "src/runtime_bindings.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 3989,
+      "lines": 121,
+      "sha256": "da5601d4d552a69cac76f9857db341b9c9e0549fa6bc4824a3edbc724a36c1f8"
+    },
+    {
+      "path": "src/sandbox_lifecycle.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 4373,
+      "lines": 137,
+      "sha256": "3eb51f1466b1a52833a16abef4eb0391fbff641b13e6c56cc25c19aaf30d5a15"
+    },
+    {
+      "path": "src/security.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 852,
+      "lines": 26,
+      "sha256": "c0fd7486e5632848fe2ee607f3b4e78669fde4c583f7030df784b2eda35990e6"
+    },
+    {
+      "path": "src/semantic_graph.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 1736,
+      "lines": 46,
+      "sha256": "4a2ed8fde94fe056f4d72bd0a5eb745ce8b3e3799eace4ccf461f6905efb021f"
+    },
+    {
+      "path": "src/skill_cache.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 15526,
+      "lines": 475,
+      "sha256": "2355f049202bfafa074522dd7cfdacd017111892e0fcaf730ff39add18a04edc"
+    },
+    {
+      "path": "src/skill_runtime.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 19903,
+      "lines": 611,
+      "sha256": "91d5ee02dd7d4617624acc4fe61b231d0ea2146a0cd96aef35871b02e130b5e1"
+    },
+    {
+      "path": "src/smp.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 2760,
+      "lines": 74,
+      "sha256": "7918bbae1360b2b792cc61c31b02358deb7f44c0d0fbc8fb3c2cdf0f52525800"
+    },
+    {
+      "path": "src/storage_host.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 21997,
+      "lines": 626,
+      "sha256": "275cacc5bed60f81c808ed019053df274d031f5ee6e04eb7b148fa68611d8c11"
+    },
+    {
+      "path": "src/storage.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 20418,
+      "lines": 655,
+      "sha256": "aa9ccad286ddf1e176f48699b8962b96301e9cd882356222be68cc7c7e4219f5"
+    },
+    {
+      "path": "src/task/executor.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 6427,
+      "lines": 194,
+      "sha256": "5eefb0a8bb6dc19dcb38c0646b1ff606f9d0f869702fc91ef6e492645b28dc0b"
+    },
+    {
+      "path": "src/task/keyboard.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 79804,
+      "lines": 2056,
+      "sha256": "7a5a962f0cc60a95542e779617c49ce609d421316af6d37d806021a190d856d3"
+    },
+    {
+      "path": "src/task/mod.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 851,
+      "lines": 36,
+      "sha256": "f10adfd072c4de3bb28c0f16927d849a466d00a413995f78523244ea82f7c619"
+    },
+    {
+      "path": "src/task/timer.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 1616,
+      "lines": 58,
+      "sha256": "02cee6bba1a5831d69e3d3c7375ab519a8819589fa18b5dc1f0806807e83603f"
+    },
+    {
+      "path": "src/tls.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 27161,
+      "lines": 730,
+      "sha256": "098e1fd665256b105f2a07311c701a6b5e31fae848a69b5d92d771237ff699e5"
+    },
+    {
+      "path": "src/vga.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 36528,
+      "lines": 1064,
+      "sha256": "064d7ac847a0a35ed9929e604c6e81fa4c379eabd1378bcf67b312e05c5db096"
+    },
+    {
+      "path": "src/voice.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 10803,
+      "lines": 341,
+      "sha256": "0a770ffd34cafad8cda6ff8e5b6301a7741458ca8f1bd9da38b823954adae794"
+    },
+    {
+      "path": "src/wifi_mac.rs",
+      "category": "legacy-kernel-and-services",
+      "bytes": 7062,
+      "lines": 200,
+      "sha256": "646c15e41ffe5baf1eae2f1b2c738d77bdf7b84455f69cd39152c47240732ece"
+    },
+    {
+      "path": "STORAGE_HOST_ABI.md",
+      "category": "project-document",
+      "bytes": 6800,
+      "lines": 164,
+      "sha256": "24e7047116bc09cb534dae0fe633bfaaed105391248471ad1b07988e55a1af8b"
+    },
+    {
+      "path": "STORAGE_IMAGE_HARNESS.md",
+      "category": "project-document",
+      "bytes": 1589,
+      "lines": 52,
+      "sha256": "3241983d8b474dfd7645e7b6370d388145cef4a3e59a3876faf95f3053d5afb0"
+    },
+    {
+      "path": "tools/arm64_cli_tcp_smoke.ps1",
+      "category": "host-build-and-verification-tool",
+      "bytes": 3546,
+      "lines": 117,
+      "sha256": "c3a90bbeee30cde61b93af08dbdf6cec5772d39f9938420e2a7a38a963ed4de2"
+    },
+    {
+      "path": "tools/arm64_gui_tcp_smoke.ps1",
+      "category": "host-build-and-verification-tool",
+      "bytes": 3356,
+      "lines": 113,
+      "sha256": "66584e40cc2ed363f29d06a6f67d5d00bfc9d8df963daa24cc475569095856a6"
+    },
+    {
+      "path": "tools/build_fs_harness.py",
+      "category": "host-build-and-verification-tool",
+      "bytes": 2712,
+      "lines": 73,
+      "sha256": "44e86365ccb3684fed5e663878ae9d1c7f4fa99ff0186eacd58d431a877aa5e0"
+    },
+    {
+      "path": "tools/font_import_skill.py",
+      "category": "host-build-and-verification-tool",
+      "bytes": 5268,
+      "lines": 166,
+      "sha256": "7f1a4b86c69f1d321b59e9f4d4ee2df7395f6d4df36e7c82147bebe0a75c6432"
+    },
+    {
+      "path": "tools/generate_gui_font.py",
+      "category": "host-build-and-verification-tool",
+      "bytes": 891,
+      "lines": 37,
+      "sha256": "e91c23c1355a61bedc85d6bdec103b4e1ae6c114c15230c724983cf7d469a71c"
+    },
+    {
+      "path": "tools/gui_public_alpha_regression.py",
+      "category": "host-build-and-verification-tool",
+      "bytes": 6811,
+      "lines": 199,
+      "sha256": "5e9a6d23e2630fbca7d0369e496fe1d12f506b899fda628952fd7325e19935f7"
+    },
+    {
+      "path": "tools/launch_arm64_gui.ps1",
+      "category": "host-build-and-verification-tool",
+      "bytes": 3293,
+      "lines": 105,
+      "sha256": "e61f01427edc08eec598d57be9e94a5e07ce6f27a7d0fb68e2ed1e41410c046e"
+    },
+    {
+      "path": "tools/platform_matrix.py",
+      "category": "host-build-and-verification-tool",
+      "bytes": 3311,
+      "lines": 106,
+      "sha256": "60c2b7057628f8b851f99ed6e5fcb5199097a59863f7c4d6a024ab096c34a467"
+    },
+    {
+      "path": "tools/run_arm64_production_runtime_demo.ps1",
+      "category": "host-build-and-verification-tool",
+      "bytes": 2355,
+      "lines": 68,
+      "sha256": "8dbe691907e508184783f2229d24a026a536cb3704eb2571fa6de037e9cd0be8"
+    },
+    {
+      "path": "tools/run_arm64_virtio_gate.ps1",
+      "category": "host-build-and-verification-tool",
+      "bytes": 46301,
+      "lines": 632,
+      "sha256": "c7cab1564d65b8139b3ba1795beec927d100459b32062159c2bf564d9fc5205a"
+    },
+    {
+      "path": "tools/run_doom_skill.ps1",
+      "category": "host-build-and-verification-tool",
+      "bytes": 20277,
+      "lines": 552,
+      "sha256": "4a587595c82162e79f6cfd1ed8255c24d286da8d6f70c2ed4b23dd0dd33322ee"
+    },
+    {
+      "path": "tools/run_gap_closure_validation.ps1",
+      "category": "host-build-and-verification-tool",
+      "bytes": 2067,
+      "lines": 76,
+      "sha256": "18294a2f8b18f4416ab00f597545d345b359e1a22ae0da3ce3bfec33cb7185f5"
+    },
+    {
+      "path": "tools/semantic_graph_layer.py",
+      "category": "host-build-and-verification-tool",
+      "bytes": 12633,
+      "lines": 368,
+      "sha256": "6335f834390f7586801b08bd0354b8f72725593eb575757cfbd82a11bae9cba1"
+    },
+    {
+      "path": "tools/serial_log_server.ps1",
+      "category": "host-build-and-verification-tool",
+      "bytes": 4860,
+      "lines": 160,
+      "sha256": "4fc821460c61f69a42e88c099ef229bd8e7d69afc0c80a0d58ce15e16457387f"
+    },
+    {
+      "path": "tools/serial_log_server.py",
+      "category": "host-build-and-verification-tool",
+      "bytes": 5349,
+      "lines": 167,
+      "sha256": "437a547155c09909b385d906ffa3b027da6622321254cdcfcae88c349f470a3f"
+    },
+    {
+      "path": "tools/smoke_arm64_recovery.py",
+      "category": "host-build-and-verification-tool",
+      "bytes": 194172,
+      "lines": 3508,
+      "sha256": "150ec37ac657f8dc8ed79bf857569cc9e1a5c6ca29195bbe6f2fc52709e70e82"
+    },
+    {
+      "path": "tools/storage_fs_skill_lab.py",
+      "category": "host-build-and-verification-tool",
+      "bytes": 12710,
+      "lines": 390,
+      "sha256": "f3539f6d51af4fed552a01a7256cfbcf64daab455112b0b97218a6a9ba375312"
+    },
+    {
+      "path": "tools/strip_wasm_custom_sections.py",
+      "category": "host-build-and-verification-tool",
+      "bytes": 1694,
+      "lines": 62,
+      "sha256": "f53d7316c554c2b27a7f2b5baef0d8aec5134cac2560e39ea834e4f1065141fd"
+    },
+    {
+      "path": "tools/sync_openrhiza_registry.ps1",
+      "category": "host-build-and-verification-tool",
+      "bytes": 16821,
+      "lines": 232,
+      "sha256": "dd28dda291a14c060fc4f9f7e5a419180ada485c75ff4f4480276de2d20f4fb5"
+    },
+    {
+      "path": "tools/validate_doom_frame_rate.ps1",
+      "category": "host-build-and-verification-tool",
+      "bytes": 3057,
+      "lines": 80,
+      "sha256": "097ae7534479a95bff4c9d17c5f7f31e62b075416b8c11df6ff4a6df98a66039"
+    },
+    {
+      "path": "tools/voice_prompt_bridge.py",
+      "category": "host-build-and-verification-tool",
+      "bytes": 7239,
+      "lines": 220,
+      "sha256": "d4f14355a0be60c865776019907a64ee0aaaa40d0851f4ddf8034f99661070f9"
+    },
+    {
+      "path": "tools/x86_cli_command_smoke.ps1",
+      "category": "host-build-and-verification-tool",
+      "bytes": 5936,
+      "lines": 178,
+      "sha256": "9f5b5bf7b9577c849adc3f0c805bb1e813ef2767b6f59e6e9c3018bed0c8f73d"
+    },
+    {
+      "path": "tools/x86_gui_dynamic_tcp_smoke.ps1",
+      "category": "host-build-and-verification-tool",
+      "bytes": 10057,
+      "lines": 293,
+      "sha256": "6cca46571ecb87e48fadff8b53b8362a459b8f9dde9459aa797d1ff327440754"
+    },
+    {
+      "path": "USB_HID_HANDOFF.md",
+      "category": "project-document",
+      "bytes": 4404,
+      "lines": 157,
+      "sha256": "608b7b3bbbe14c069afcf6593104e054f2b6bf7aac64de9a3f820e5dca842c5e"
+    },
+    {
+      "path": "VALIDATION_MATRIX.md",
+      "category": "project-document",
+      "bytes": 32982,
+      "lines": 121,
+      "sha256": "76e3069459cfdfba85dd972200c0002fb7d61eb5a12723d24362b8755394e791"
+    },
+    {
+      "path": "VISION.md",
+      "category": "project-document",
+      "bytes": 4610,
+      "lines": 129,
+      "sha256": "5373a21d9382f08a22f9ad005765ef4d1094e589ad17d564194f407478fcb620"
+    },
+    {
+      "path": "VOICE_INPUT.md",
+      "category": "project-document",
+      "bytes": 8988,
+      "lines": 254,
+      "sha256": "64f3a40c8886f9a95c925399d24b00a23c3df6d1292bd49974597d75080e0bc6"
+    },
+    {
+      "path": "WINDOW_PROTOCOL.md",
+      "category": "project-document",
+      "bytes": 2274,
+      "lines": 71,
+      "sha256": "f3841ebbe5282d0bd5ddcd7e1f9766421528a4f90200e502dda6d636a79ce01e"
+    }
+  ]
+}
