@@ -1,7 +1,8 @@
 # OpenRhiza New Development Baseline
 
 OpenRhiza is restarting from a new implementation, not migrating the old kernel.
-The existing repository outside `next/` is preserved as reference material.
+The earlier implementation is preserved on `codex/legacy-snapshot-20261003`,
+separate from this development branch. See [archive notes](../ARCHIVE.md).
 This directory currently contains the new product/architecture decisions,
 requirements, evidence review, development sequence, and an inventory tool.
 It does not yet contain a bootable kernel or a completed operating system.
@@ -36,19 +37,24 @@ The next task is Stage 1.1 in `docs/ROADMAP.md`. Use the explicitly requested
 Implementation includes iterative build/fault-test/repair work; model choice is
 not evidence that the first implementation is correct.
 
-Regenerate the reference inventory from this directory:
+Check the baseline from this directory:
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/inventory-legacy.ps1
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/verify-baseline.ps1
+pwsh -NoProfile -File tools/verify-baseline.ps1
+git fetch --no-tags origin codex/legacy-snapshot-20261003
+pwsh -NoProfile -File tools/verify-baseline.ps1 -LegacyRef FETCH_HEAD
 ```
 
-These commands inventory and verify documentation/source metadata only. They do
-not build or boot the new OS, invoke an LLM, upload data, or alter legacy source.
+These commands verify documents and, with -LegacyRef, the pinned archive's actual
+source bytes. Fetch downloads the public archive; nothing is uploaded. The frozen
+inventory is not regenerated from this branch. To make a separate inventory, use
+`tools/inventory-legacy.ps1 -LegacyRoot <legacy-checkout> -OutputPath <new-file.json>`.
+These tools do not build or boot the new OS, invoke an LLM, or alter legacy source.
 
 New source, when introduced, will have its own workspace, pinned toolchain,
 target configuration, initial module image, SDK, build output and QEMU harness.
-Root Cargo settings/build scripts are legacy; do not inherit them accidentally.
+Old root Cargo settings/build scripts exist only in the archive; do not import
+them or accidentally inherit configuration from a parent directory.
 
 No prior milestone is carried forward. Report new OS tests, legacy reference
 tests, host tests, emulator/device tests and physical-hardware tests separately.

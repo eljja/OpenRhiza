@@ -3,7 +3,8 @@
 [영문 원문](README.md)
 
 OpenRhiza는 새 구현으로 다시 시작합니다. 기존 커널을 점진적으로 옮기는 작업이 아닙니다.
-`next/` 밖의 기존 저장소는 참고 자료로 보존합니다. 현재 이 디렉터리에는 제품·아키텍처 결정,
+기존 구현은 이 개발 브랜치와 분리된 `codex/legacy-snapshot-20261003`에 보존합니다.
+[기록 안내](../ARCHIVE.md)를 참고하세요. 현재 이 디렉터리에는 제품·아키텍처 결정,
 요구사항, 근거 검토, 개발 순서, 조사 목록 도구가 있습니다. 부팅 가능한 새 커널이나 완성된 OS는 아직 없습니다.
 
 다음 순서로 읽습니다.
@@ -32,19 +33,22 @@ OpenRhiza는 새 구현으로 다시 시작합니다. 기존 커널을 점진적
 사용자가 지정한 `gpt-6-astra` 모델을 사용합니다. 구현에는 빌드·장애 시험·수정의 반복이 포함됩니다.
 모델 선택 자체는 첫 구현이 정확하다는 근거가 아닙니다.
 
-이 디렉터리에서 참고 자료 목록을 다시 생성하고 검증합니다.
+이 디렉터리에서 개발 기준을 검증합니다.
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/inventory-legacy.ps1
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File tools/verify-baseline.ps1
+pwsh -NoProfile -File tools/verify-baseline.ps1
+git fetch --no-tags origin codex/legacy-snapshot-20261003
+pwsh -NoProfile -File tools/verify-baseline.ps1 -LegacyRef FETCH_HEAD
 ```
 
-이 명령은 문서·소스의 메타데이터만 조사·검증합니다. 새 OS를 빌드·부팅하거나 LLM을 호출하거나,
-데이터를 업로드하거나 기존 소스를 바꾸지 않습니다.
+이 명령은 문서를 검증하고, -LegacyRef 지정 시 고정 보존 커밋의 실제 소스 바이트도 확인합니다.
+fetch는 공개 보존 자료를 내려받으며 업로드하지 않습니다. 고정 조사 목록은 이 브랜치에서 다시 생성하지 않습니다.
+별도 목록은 `tools/inventory-legacy.ps1 -LegacyRoot <보존-체크아웃> -OutputPath <새-파일.json>`으로 생성합니다.
+이 도구는 새 OS를 빌드·부팅하거나 LLM을 호출하거나 기존 소스를 바꾸지 않습니다.
 
 새 소스를 추가할 때는 별도 워크스페이스, 고정 도구체인, 타깃 설정, 초기 모듈 이미지, SDK,
-빌드 산출물, QEMU 시험 도구를 갖춥니다. 루트 Cargo 설정과 빌드 스크립트는 기존 구현용이므로
-의도치 않게 상속하면 안 됩니다.
+빌드 산출물, QEMU 시험 도구를 갖춥니다. 기존 루트 Cargo 설정·빌드 스크립트는 보존 브랜치에만 있습니다.
+이를 가져오거나 상위 디렉터리의 설정을 의도치 않게 상속하면 안 됩니다.
 
 과거 이정표의 완료 상태를 승계하지 않습니다. 새 OS 시험, 기존 구현 참고 시험, 호스트 시험,
 에뮬레이터·장치 시험, 실제 하드웨어 시험을 구분해서 보고합니다.

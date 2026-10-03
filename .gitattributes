@@ -1,0 +1,11 @@
+/*.md text eol=lf
+/.gitignore text eol=lf
+/.gitattributes text eol=lf
+/.github/**/*.yml text eol=lf
+/next/README*.md text eol=lf
+/next/tools/*.ps1 text eol=lf
+/next/docs/legacy-reference.json text eol=lf
+
+# Historical evidence retains its original bytes and recorded hashes.
+/next/docs/*.md -text
+/next/docs/legacy-inventory.json -text

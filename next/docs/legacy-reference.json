@@ -1,0 +1,9 @@
+{
+  "schema": "openrhiza.legacy.reference.v1",
+  "repository": "https://github.com/eljja/OpenRhiza",
+  "branch": "codex/legacy-snapshot-20261003",
+  "commit": "ee92a44ed321a3ae94947891059ac79f9dcfd9da",
+  "snapshot_file_count": 479,
+  "inventory_sha256": "c7cf8c37f2c4427af25d3cf801bd50a61348b3f78c46d5747647d4b06c0d8e30",
+  "purpose": "Pinned source snapshot for historical inventory verification, not a new runtime or security certification."
+}

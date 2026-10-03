@@ -1,9 +1,15 @@
-param()
+param(
+    [Parameter(Mandatory = $true)][string]$LegacyRoot,
+    [Parameter(Mandatory = $true)][string]$OutputPath
+)
 
 $ErrorActionPreference = "Stop"
 $nextRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
-$repoRoot = [IO.Path]::GetFullPath((Join-Path $nextRoot ".."))
-$output = Join-Path $nextRoot "docs\legacy-inventory.json"
+$repoRoot = (Resolve-Path -LiteralPath $LegacyRoot -ErrorAction Stop).Path
+$output = [IO.Path]::GetFullPath($OutputPath)
+$frozenInventory = [IO.Path]::GetFullPath((Join-Path $nextRoot "docs/legacy-inventory.json"))
+if ($output -eq $frozenInventory) { throw "The historical inventory is frozen; choose a separate output path." }
+if (-not (Test-Path -LiteralPath (Join-Path $repoRoot "src/main.rs"))) { throw "LegacyRoot must be a legacy source checkout." }
 $sourceRoots = @(
     "src/", "tools/", "sandbox-skills/", "sandbox-input-drivers/",
     "nic_drivers/", "platform-kernels/", "platforms/", "targets/",

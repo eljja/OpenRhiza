@@ -1,0 +1,27 @@
+name: Baseline documents
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the new baseline
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Verify documents and rejection cases
+        shell: pwsh
+        run: |
+          ./next/tools/verify-baseline.ps1
+          ./next/tools/test-baseline.ps1
+      - name: Fetch the historical source snapshot
+        run: git fetch --no-tags origin codex/legacy-snapshot-20261003
+      - name: Verify pinned historical content
+        shell: pwsh
+        run: ./next/tools/verify-baseline.ps1 -LegacyRef FETCH_HEAD
