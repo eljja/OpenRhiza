@@ -1,0 +1,17 @@
+[package]
+name = "gui_app_store_seed"
+version = "0.1.0"
+edition = "2021"
+authors = ["OpenRhiza Project"]
+description = "Human-Friendly GUI App Store Wasm Sandbox"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+
+[profile.release]
+panic = "abort"
+lto = true
+opt-level = "s"
+strip = true

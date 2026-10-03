@@ -1,0 +1,21 @@
+[package]
+name = "openrhiza-aarch64-recovery"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+arm64-proof-harness = ["dep:wasmi"]
+
+[dependencies]
+wasmi = { version = "2.0.0-beta.2", default-features = false, features = ["stable", "indirect-dispatch"], optional = true }
+
+[profile.dev]
+panic = "abort"
+opt-level = 2
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+lto = true
+codegen-units = 1

@@ -1,0 +1,37 @@
+[package]
+name = "OpenRhiza"
+version = "0.1.0"
+edition = "2021"
+build = "build.rs"
+
+[dependencies]
+bootloader = { version = "0.9.34", features = ["map_physical_memory"] }
+x86_64 = "0.14.2"  # Crate for hardware exception handling (IDT) and I/O port access
+lazy_static = { version = "1.4.0", features = ["spin_no_std"] } # Crate for lazy static initialization
+pic8259 = "0.10.1" # PIC remapping for hardware interrupts such as the keyboard
+spin = "0.9.8"     # Mutex/lock crate for global state in no_std
+uart_16550 = "0.2.0" # Serial communication over COM1
+linked_list_allocator = "0.10.5" # Simple heap allocator
+wasmi = { version = "0.31.0", default-features = false } # Bare-metal WebAssembly sandbox runtime
+smoltcp = { version = "0.11", default-features = false, features = ["alloc", "medium-ethernet", "proto-ipv4", "socket-icmp", "socket-tcp", "socket-udp"] }
+embedded-io = "0.7.1"
+crossbeam-queue = { version = "0.3.11", default-features = false, features = ["alloc"] }
+ed25519-compact = { version = "2.2.0", default-features = false }
+x2apic = { version = "0.5.0", default-features = false }
+xhci = "0.9.2"
+p256 = { version = "0.13.2", default-features = false, features = ["ecdh", "arithmetic"] }
+font8x8 = { version = "0.3.1", default-features = false, features = ["unicode"] }
+
+# Bare-metal (`no_std`) profile settings for OS development.
+[profile.dev]
+panic = "abort"
+opt-level = 3
+
+[profile.release]
+panic = "abort"
+
+# Command and path used by `bootimage` when launching QEMU.
+[package.metadata.bootimage]
+run-command = ["C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe", "-ExecutionPolicy", "Bypass", "-File", "run_qemu.ps1", "{}"]
+[patch.crates-io]
+bootloader = { path = "bootloader-patched" }

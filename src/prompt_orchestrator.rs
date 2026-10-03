@@ -1,0 +1,377 @@
+use alloc::format;
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RegistryQueryPhase {
+    Driver,
+    Software,
+    Skill,
+    Workflow,
+    Policy,
+    Evaluation,
+}
+
+pub type PromptRegistryStep = RegistryQueryPhase;
+
+#[derive(Clone, Debug)]
+pub struct PromptOrchestrationPlan {
+    pub phases: Vec<RegistryQueryPhase>,
+    pub next_index: usize,
+    pub local_context_block: String,
+    pub summary: String,
+    pub auto_apply_drivers: bool,
+    pub display_intent: bool,
+}
+
+pub fn build_plan(prompt: &str) -> PromptOrchestrationPlan {
+    let prompt_lower = prompt.to_ascii_lowercase();
+    let explicit_driver_intent = prompt_has_any(
+        prompt_lower.as_str(),
+        &[
+            "driver",
+            "device",
+            "hardware",
+            "pci",
+            "usb",
+            "xhci",
+            "keyboard",
+            "mouse",
+            "network",
+            "nic",
+            "storage",
+            "disk",
+            "filesystem",
+            "ata",
+            "e1000",
+        ],
+    );
+    let software_intent = prompt_has_any(
+        prompt_lower.as_str(),
+        &[
+            "program",
+            "software",
+            "tool",
+            "app",
+            "application",
+            "package",
+            "install",
+            "download",
+            "run",
+        ],
+    );
+    let skill_intent = prompt_has_any(
+        prompt_lower.as_str(),
+        &[
+            "skill",
+            "search",
+            "python",
+            "test",
+            "benchmark",
+            "validate",
+            "workflow",
+            "policy",
+            "plan",
+        ],
+    );
+    let execution_intent = prompt_has_any(
+        prompt_lower.as_str(),
+        &[
+            "setup",
+            "set up",
+            "install",
+            "activate",
+            "enable",
+            "configure",
+            "load",
+            "apply",
+            "use",
+            "make",
+            "bring up",
+            "fix",
+            "prepare",
+        ],
+    );
+    let environment_setup_intent = execution_intent
+        && prompt_has_any(
+            prompt_lower.as_str(),
+            &[
+                "qemu",
+                "vm",
+                "virtual machine",
+                "virtio",
+                "guest",
+                "this machine",
+                "this vm",
+                "fully usable",
+            ],
+        );
+    let driver_intent = explicit_driver_intent || environment_setup_intent;
+    let evaluation_intent = prompt_has_any(
+        prompt_lower.as_str(),
+        &[
+            "evaluate",
+            "evaluation",
+            "score",
+            "stable",
+            "stability",
+            "performance",
+            "reliable",
+            "quality",
+            "vote",
+            "comment",
+            "improvement",
+        ],
+    ) || driver_intent
+        || software_intent
+        || skill_intent;
+    let display_intent = prompt_has_any(
+        prompt_lower.as_str(),
+        &[
+            "display",
+            "console",
+            "framebuffer",
+            "gui",
+            "compositor",
+            "window",
+            "resolution",
+            "1080p",
+            "1920x1080",
+            "screen",
+        ],
+    );
+    let auto_apply_drivers = driver_intent && execution_intent;
+
+    let mut phases = vec![];
+    if driver_intent {
+        phases.push(RegistryQueryPhase::Driver);
+    }
+    if software_intent {
+        phases.push(RegistryQueryPhase::Software);
+    }
+    phases.push(RegistryQueryPhase::Skill);
+    if skill_intent || driver_intent || software_intent {
+        phases.push(RegistryQueryPhase::Workflow);
+    }
+    if display_intent
+        && !phases
+            .iter()
+            .any(|phase| matches!(phase, RegistryQueryPhase::Workflow))
+    {
+        phases.push(RegistryQueryPhase::Workflow);
+    }
+    phases.push(RegistryQueryPhase::Policy);
+    if evaluation_intent {
+        phases.push(RegistryQueryPhase::Evaluation);
+    }
+
+    let local_context_block = build_local_context_block(prompt, display_intent);
+    let summary = build_summary(
+        driver_intent,
+        software_intent,
+        skill_intent,
+        evaluation_intent,
+        display_intent,
+    );
+
+    PromptOrchestrationPlan {
+        phases,
+        next_index: 0,
+        local_context_block,
+        summary,
+        auto_apply_drivers,
+        display_intent,
+    }
+}
+
+pub fn build_prompt_orchestration_plan(prompt: &str) -> PromptOrchestrationPlan {
+    build_plan(prompt)
+}
+
+pub fn build_enriched_prompt(prompt: &str, plan: &PromptOrchestrationPlan) -> String {
+    if prompt.to_ascii_lowercase().contains("[gui-selftest]") {
+        return format!(
+            "OpenRhiza GUI self-test.\nOnly emit compact JSON action objects, one per line, with no prose and no markdown.\nAllowed actions:\n{{\"action\":\"gui_select_session\",\"session\":\"openrhiza|sandbox|wide|recovery\"}}\n{{\"action\":\"gui_focus\",\"target\":\"conversation|composer|none\"}}\n{{\"action\":\"gui_set_label\",\"handle\":120,\"text\":\"...\"}}\n{{\"action\":\"gui_set_style\",\"handle\":120,\"style\":\"sidebar-idle|sidebar-active|composer|conversation|plain|accent\"}}\n{{\"action\":\"gui_set_bounds\",\"handle\":120,\"x\":304,\"y\":64,\"width\":180,\"height\":28}}\n{{\"action\":\"gui_set_interaction\",\"handle\":120,\"interaction\":\"idle|hovered|focused|active|disabled\"}}\n{{\"action\":\"gui_reset\",\"handle\":0}}\nDynamic GUI labels/chips should use handles 120..159. Product shell behavior must stay in skills or JSON actions, not renderer branches.\n\nCurrent GUI:\n{}\n\nTask:\n{}",
+            plan.local_context_block.trim(),
+            prompt.trim()
+        );
+    }
+
+    format!(
+        "OpenRhiza prompt orchestration summary: {}\n\n{}\n\nSupported machine actions:\n- {{\"action\":\"load_driver\",\"driver_name\":\"drv_example_v1\"}}\n- {{\"action\":\"gui_select_session\",\"session\":\"openrhiza|sandbox|wide|recovery\"}}\n- {{\"action\":\"gui_focus\",\"target\":\"conversation|composer|none\"}}\n- {{\"action\":\"gui_set_label\",\"handle\":120,\"text\":\"...\"}}\n- {{\"action\":\"gui_set_style\",\"handle\":120,\"style\":\"sidebar-idle|sidebar-active|composer|conversation|plain|accent\"}}\n- {{\"action\":\"gui_set_bounds\",\"handle\":120,\"x\":304,\"y\":64,\"width\":180,\"height\":28}}\n- {{\"action\":\"gui_set_interaction\",\"handle\":120,\"interaction\":\"idle|hovered|focused|active|disabled\"}}\n- {{\"action\":\"gui_reset\",\"handle\":0}}\n\nUser request:\n{}",
+        plan.summary,
+        plan.local_context_block.trim(),
+        prompt.trim()
+    )
+}
+
+pub fn build_prompt_execution_context(prompt: &str) -> Option<String> {
+    let plan = build_plan(prompt);
+    if plan.local_context_block.trim().is_empty() {
+        None
+    } else {
+        Some(plan.local_context_block)
+    }
+}
+
+fn build_summary(
+    driver_intent: bool,
+    software_intent: bool,
+    skill_intent: bool,
+    evaluation_intent: bool,
+    display_intent: bool,
+) -> String {
+    let mut labels = Vec::new();
+    if driver_intent {
+        labels.push("driver");
+    }
+    if software_intent {
+        labels.push("software");
+    }
+    if skill_intent {
+        labels.push("skill");
+    }
+    if evaluation_intent {
+        labels.push("evaluation");
+    }
+    if display_intent {
+        labels.push("display");
+    }
+
+    if labels.is_empty() {
+        return String::from("generic prompt");
+    }
+
+    let mut out = String::from("intent:");
+    for (index, label) in labels.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        out.push_str(label);
+    }
+    out
+}
+
+fn build_local_context_block(prompt: &str, display_intent: bool) -> String {
+    let gui_selftest = prompt.to_ascii_lowercase().contains("[gui-selftest]");
+    if gui_selftest {
+        let mut out = String::from("OpenRhiza GUI self-test context:\n");
+        out.push_str(crate::display::status_block().trim());
+        out.push('\n');
+        out.push('\n');
+        out.push_str(crate::display::gui_capability_report().trim());
+        out.push('\n');
+        out.push('\n');
+        out.push_str(crate::display::gui_scene_report().trim());
+        out.push('\n');
+        out.push('\n');
+        out.push_str(crate::display::gui_mutation_report().trim());
+        out.push('\n');
+        return out;
+    }
+
+    let mut out = String::from("Local machine context:\n");
+    out.push_str("- prompt: ");
+    out.push_str(prompt.trim());
+    out.push('\n');
+
+    if let Some(driver_map) = crate::driver_cache::load_active_driver_map_text() {
+        out.push_str("Local preferred driver map:\n");
+        for line in driver_map.lines().take(12) {
+            out.push_str("- ");
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+
+    if let Some(local_cache) = crate::capability_cache::current_local_registry_context_block() {
+        out.push('\n');
+        out.push_str(local_cache.trim());
+        out.push('\n');
+    }
+
+    if let Some(skill_block) = crate::skill_runtime::local_skill_context_block() {
+        out.push('\n');
+        out.push_str(skill_block.trim());
+        out.push('\n');
+    }
+
+    out.push('\n');
+    out.push_str(crate::display::status_block().trim());
+    out.push('\n');
+
+    if display_intent
+        || matches!(
+            crate::display::session_target(),
+            crate::display::DisplaySessionTarget::GuiSession
+        )
+    {
+        out.push('\n');
+        out.push_str(crate::display::gui_capability_report().trim());
+        out.push('\n');
+        out.push('\n');
+        out.push_str(crate::display::gui_scene_report().trim());
+        out.push('\n');
+        out.push('\n');
+        out.push_str(crate::display::gui_mutation_report().trim());
+        out.push('\n');
+    }
+
+    if let Some(driver_runtime) = crate::driver_runtime::context_block() {
+        out.push('\n');
+        out.push_str(driver_runtime.trim());
+        out.push('\n');
+    }
+
+    let bindings = crate::runtime_bindings::snapshot();
+    if !bindings.is_empty() {
+        out.push_str("Live driver bindings:\n");
+        for binding in bindings.iter().take(12) {
+            out.push_str("- ");
+            out.push_str(binding.match_key.as_str());
+            out.push('=');
+            out.push_str(binding.driver_id.as_str());
+            out.push_str(" [");
+            out.push_str(binding.source.as_str());
+            out.push_str("]\n");
+        }
+    }
+
+    let input_states = crate::input_runtime::snapshot();
+    out.push_str("Input runtime state:\n");
+    for state in input_states {
+        out.push_str("- ");
+        out.push_str(crate::input_runtime::kind_label(state.kind));
+        out.push_str(" stage=");
+        out.push_str(match state.component.stage {
+            crate::input_runtime::InputDriverStage::Bootstrap => "bootstrap",
+            crate::input_runtime::InputDriverStage::Cached => "cached",
+            crate::input_runtime::InputDriverStage::Testing => "testing",
+            crate::input_runtime::InputDriverStage::Active => "active",
+        });
+        out.push_str(" current=");
+        out.push_str(
+            state
+                .component
+                .current_artifact_id
+                .as_deref()
+                .unwrap_or("none"),
+        );
+        out.push_str(" persisted=");
+        out.push_str(
+            state
+                .component
+                .persisted_artifact_id
+                .as_deref()
+                .unwrap_or("none"),
+        );
+        out.push('\n');
+    }
+
+    out
+}
+
+fn prompt_has_any(prompt_lower: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|needle| prompt_lower.contains(needle))
+}

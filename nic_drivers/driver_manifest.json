@@ -1,0 +1,647 @@
+{
+  "version": "1",
+  "generated_at": "2026-04-22",
+  "generated_by": "OpenRhiza NIC driver pipeline",
+  "drivers": [
+    {
+      "driver_id": "drv_rtl8139_native_v1",
+      "display_name": "Realtek RTL8139 Native Driver",
+      "match_key": "pci:10ec:8139",
+      "hardware": "Realtek RTL8139 Fast Ethernet (PCI 10EC:8139)",
+      "source_file": "rtl8139.rs",
+      "pci_vendor": "10EC",
+      "pci_devices": [
+        "8139",
+        "8138",
+        "8136"
+      ],
+      "speed": "100 Mbps",
+      "interface": "PCI I/O port",
+      "dma_model": "flat_ring_tx4_rxring",
+      "stability_score": 80,
+      "performance_score": 65,
+      "status": "proposed",
+      "summary": "RTL8139 native driver for QEMU and older real hardware. Uses I/O port access with 4 TX descriptors and a flat 8K RX ring buffer.",
+      "improvements": [
+        "Validate RX wraparound behavior at ring boundary.",
+        "Add jumbo frame flag detection and early reject.",
+        "Test with QEMU -device rtl8139 under sustained packet rates.",
+        "Confirm I/O port vs MMIO BAR selection on real hardware variants."
+      ],
+      "test_scenarios": [
+        "init_reset_sequence",
+        "mac_read_from_io",
+        "tx_ring_full_reject",
+        "rx_ring_boundary_wrap",
+        "loopback_packet_roundtrip"
+      ]
+    },
+    {
+      "driver_id": "drv_virtio_net_v1",
+      "display_name": "Virtio-net Legacy Driver",
+      "match_key": "pci:1af4:1000",
+      "hardware": "Virtio Network Device (PCI 1AF4:1000/1041)",
+      "source_file": "virtio_net.rs",
+      "pci_vendor": "1AF4",
+      "pci_devices": [
+        "1000",
+        "1041"
+      ],
+      "speed": "10 Gbps (virtual, host-dependent)",
+      "interface": "PCI I/O port (legacy) / MMIO (modern v1)",
+      "dma_model": "virtqueues_split_ring",
+      "stability_score": 88,
+      "performance_score": 92,
+      "status": "proposed",
+      "summary": "Virtio-net legacy driver for QEMU, KVM, and all major cloud providers (AWS, GCP, Azure, Hetzner). Implements split virtqueue with feature negotiation limited to VIRTIO_NET_F_MAC.",
+      "improvements": [
+        "Add VIRTIO_NET_F_MRG_RXBUF for jumbo frame support.",
+        "Implement event suppression (VIRTIO_F_RING_EVENT_IDX) to reduce interrupt frequency.",
+        "Test under sustained TCP bidirectional traffic within QEMU.",
+        "Add modern (v1) MMIO path for newer QEMU versions."
+      ],
+      "test_scenarios": [
+        "feature_negotiate_mac_only",
+        "rx_queue_fill_and_drain",
+        "tx_queue_full_backpressure",
+        "virtqueue_ring_wraparound",
+        "loopback_packet_roundtrip"
+      ]
+    },
+    {
+      "driver_id": "drv_rtl8169_native_v1",
+      "display_name": "Realtek RTL8169/8168 Gigabit Driver",
+      "match_key": "pci:10ec:8168",
+      "hardware": "Realtek RTL8169/8168 Gigabit Ethernet (PCI 10EC:8168/8169)",
+      "source_file": "rtl8169.rs",
+      "pci_vendor": "10EC",
+      "pci_devices": [
+        "8169",
+        "8168",
+        "8167",
+        "8136",
+        "8161"
+      ],
+      "speed": "1 Gbps",
+      "interface": "PCI MMIO via BAR2",
+      "dma_model": "descriptor_ring_rx64_tx16",
+      "stability_score": 82,
+      "performance_score": 78,
+      "status": "proposed",
+      "summary": "RTL8169/8111 GbE native driver. MMIO-mapped with 64-entry RX and 16-entry TX descriptor rings. Covers a broad range of mid-range desktop motherboards from 2005-2020.",
+      "improvements": [
+        "Validate BAR index selection (BAR2 vs BAR1 depending on variant).",
+        "Confirm EOR descriptor placement on ring restart.",
+        "Test with RTL8111H variant on modern boards (may need firmware blob).",
+        "Add VLAN offload support for future smoltcp integration."
+      ],
+      "test_scenarios": [
+        "init_reset_sequence",
+        "mac_read_mmio",
+        "rx_ring_eor_boundary",
+        "tx_ring_full_reject",
+        "loopback_packet_roundtrip"
+      ]
+    },
+    {
+      "driver_id": "drv_intel_i219_v1",
+      "display_name": "Intel I219-V/LM Native Driver",
+      "match_key": "pci:8086:15b8",
+      "hardware": "Intel I219-V/LM GbE (PCI 8086:15B7-15BC, 0D4E-0D53, etc.)",
+      "source_file": "intel_i219.rs",
+      "pci_vendor": "8086",
+      "pci_devices": [
+        "15A3",
+        "15B7",
+        "15B8",
+        "15BC",
+        "15D6",
+        "15D7",
+        "15D8",
+        "15E3",
+        "0D4E",
+        "0D4F",
+        "0D53",
+        "0DC6",
+        "1A1E",
+        "1A1F"
+      ],
+      "speed": "1 Gbps",
+      "interface": "PCIe MMIO BAR0",
+      "dma_model": "descriptor_ring_rx32_tx8",
+      "stability_score": 85,
+      "performance_score": 85,
+      "status": "proposed",
+      "summary": "Intel i219-V/LM native driver based on e1000e register compatibility. Covers Intel 8th generation (Coffee Lake) through 14th generation (Raptor Lake) desktop and laptop onboard NICs. Requires PHY-safe reset sequence distinct from legacy e1000.",
+      "improvements": [
+        "Validate post-reset PHY stabilization delay on real hardware.",
+        "Test FEXTNVM6 unlock sequence on different chipset generations.",
+        "Add Energy Efficient Ethernet (EEE) register configuration.",
+        "Confirm i219 does not expose a readable EERD and always uses RAL/RAH for MAC.",
+        "Add PCI device ID auto-dispatch table for all 14 known i219 variants."
+      ],
+      "test_scenarios": [
+        "init_reset_phy_stable",
+        "mac_read_from_ral_rah",
+        "rx_ring_rx32_entries",
+        "tx_ring_tx8_entries",
+        "loopback_packet_roundtrip"
+      ]
+    },
+    {
+      "driver_id": "drv_rtl8125_native_v1",
+      "display_name": "Realtek RTL8125 2.5GbE Driver",
+      "match_key": "pci:10ec:8125",
+      "hardware": "Realtek RTL8125/8125B 2.5GbE (PCI 10EC:8125/8162/8126)",
+      "source_file": "rtl8125.rs",
+      "pci_vendor": "10EC",
+      "pci_devices": [
+        "8125",
+        "8162",
+        "8126"
+      ],
+      "speed": "2.5 Gbps",
+      "interface": "PCIe MMIO BAR2",
+      "dma_model": "extended_descriptor_rx64_tx16",
+      "stability_score": 72,
+      "performance_score": 80,
+      "status": "proposed",
+      "summary": "RTL8125 2.5GbE native driver for modern AMD (500/600 series) and Intel (12th gen+) motherboards. Uses extended 32-byte descriptors and PHY auto-negotiation for 2.5G/1G speeds.",
+      "improvements": [
+        "Validate extended descriptor (32-byte) ring alignment on bare metal.",
+        "Implement full Clause 45 MMD register write for 2.5G advertisement.",
+        "Test with RTL8125B variant (may differ in ERI/ERIAR register usage).",
+        "Add RTL8126 5GbE support as a superset driver.",
+        "Measure DMA descriptor cache coherency behavior at 2.5G line rate."
+      ],
+      "test_scenarios": [
+        "init_reset_sequence",
+        "mac_read_mmio",
+        "phy_write_2500_advertisement",
+        "extended_descriptor_ring_rx64",
+        "loopback_packet_roundtrip"
+      ]
+    },
+    {
+      "driver_id": "drv_vmxnet3_v1",
+      "display_name": "VMware VMXNET3 Paravirtual Driver",
+      "match_key": "pci:15ad:07b0",
+      "hardware": "VMware VMXNET3 Ethernet Controller (PCI 15AD:07B0)",
+      "source_file": "vmxnet3.rs",
+      "pci_vendor": "15AD",
+      "pci_devices": [
+        "07B0"
+      ],
+      "speed": "10 Gbps (virtual, host-dependent)",
+      "interface": "PCIe MMIO BAR0 + Shared Memory DMA",
+      "dma_model": "paravirtual_gen_bit_tx_rx_rings",
+      "stability_score": 88,
+      "performance_score": 90,
+      "status": "proposed",
+      "summary": "VMware VMXNET3 paravirtual NIC driver. Covers VMware Workstation, VMware Player, VMware Fusion (macOS), and VMware ESXi. Uses generation-bit TX/RX completion rings and a driver-shared-memory region to communicate ring layout to the device.",
+      "improvements": [
+        "Implement proper TLV-based DrvShared memory layout for multi-queue support.",
+        "Add MSI-X interrupt path (BAR1) instead of legacy INTx for better performance.",
+        "Validate RX and TX generation bit toggling at ring boundary in production.",
+        "Test with VMware Workstation 17 + Windows QEMU host configuration."
+      ],
+      "test_scenarios": [
+        "init_reset_sequence",
+        "init_activate_device",
+        "shared_mem_magic_written",
+        "tx_gen_bit_toggles_on_wrap",
+        "rx_receive_packet"
+      ]
+    },
+    {
+      "driver_id": "drv_vmxnet2_v1",
+      "display_name": "VMware VMXNET2 / Flexible Adapter Driver",
+      "match_key": "pci:15ad:0720",
+      "hardware": "VMware VMXNET2 Flexible Adapter (PCI 15AD:0720, 0730)",
+      "source_file": "vmxnet2.rs",
+      "test_module_override": "vmxnet3",
+      "pci_vendor": "15AD",
+      "pci_devices": [
+        "0720",
+        "0730"
+      ],
+      "speed": "1 Gbps (virtual)",
+      "interface": "PCI I/O port (BAR0)",
+      "dma_model": "simple_desc_ring_tx64_rx64",
+      "stability_score": 82,
+      "performance_score": 75,
+      "status": "proposed",
+      "summary": "VMware VMXNET2 (Flexible) legacy paravirtual NIC. Targets older VMware Workstation 4-6 and GSX/ESX 2.x VMs. Uses simple 8-byte descriptors with OWN/SOP/EOP flags \u2014 similar architecture to e1000/RTL8139.",
+      "improvements": [
+        "Verify I/O port base detection from PCI BAR0 on VMware Workstation vs Fusion.",
+        "Test CMD_INIT + CMD_ENABLE race condition on older VMware versions.",
+        "Evaluate whether vmxnet2 is still used in any modern VMware product lineup.",
+        "Consider merging with vmxnet3 via a capability probe at init time."
+      ],
+      "test_scenarios": [
+        "init_reset_sequence",
+        "mac_read_from_io",
+        "tx_normal_packet",
+        "rx_receive_packet",
+        "tx_ring_full_reject"
+      ]
+    },
+    {
+      "driver_id": "drv_wifi_rtl8192_v1",
+      "display_name": "Realtek RTL8192/8821 PCIe Wi-Fi Driver",
+      "match_key": "pci:10ec:8192",
+      "hardware": "Realtek RTL8192CE/EE/8723BE/8821CE PCIe Wi-Fi",
+      "source_file": "wifi_rtl8192.rs",
+      "test_module_override": "wifi",
+      "pci_vendor": "10EC",
+      "pci_devices": [
+        "8192",
+        "8191",
+        "8723",
+        "B723",
+        "818B",
+        "C821"
+      ],
+      "speed": "300 Mbps (802.11n) / 433 Mbps (802.11ac, C821)",
+      "interface": "PCIe MMIO BAR0",
+      "dma_model": "fw_mcu_tx4queue_rx_ring",
+      "stability_score": 65,
+      "performance_score": 70,
+      "firmware_required": true,
+      "firmware_source": "linux-firmware/rtlwifi/",
+      "status": "proposed",
+      "summary": "Realtek PCIe Wi-Fi driver candidate. Covers RTL8192CE (common budget laptops 2012-2018), RTL8723BE (common in HP/Lenovo budget lines), and RTL8821CE (modern 802.11ac). Requires firmware blob from linux-firmware. TX/RX guarded by firmware-loaded and 802.11 association state.",
+      "improvements": [
+        "Integrate linux-firmware blob fetching from OpenRhiza Nexus.",
+        "Implement 802.11 MAC authentication + association state machine.",
+        "Add WPA2/WPA3 key handshake support via hostapd-compatible interface.",
+        "Handle RF kill switch detection and GPIO interrupt.",
+        "RTL8821CE requires additional PHU/LCK calibration sequence before TX."
+      ],
+      "test_scenarios": [
+        "rtl8192_init_sequence",
+        "rtl8192_firmware_load_success",
+        "rtl8192_tx_blocked_without_association",
+        "rtl8192_tx_allowed_after_association",
+        "rtl8192_no_fw_blocks_all_traffic"
+      ]
+    },
+    {
+      "driver_id": "drv_wifi_intel_ax200_v1",
+      "display_name": "Intel Wi-Fi 6/6E/7 AX200/AX210/AX211 Driver",
+      "match_key": "pci:8086:2723",
+      "hardware": "Intel Wi-Fi 6 AX200/AX201/AX210/AX211/BE200 (PCIe + CNVio2)",
+      "source_file": "wifi_intel_ax200.rs",
+      "test_module_override": "wifi",
+      "pci_vendor": "8086",
+      "pci_devices": [
+        "2723",
+        "272B",
+        "A0F0",
+        "2725",
+        "2726",
+        "7A70",
+        "51F0",
+        "54F0",
+        "7360"
+      ],
+      "speed": "2400 Mbps (Wi-Fi 6 AX) / 6000 Mbps (Wi-Fi 7 BE)",
+      "interface": "PCIe MMIO BAR0 / CNVio2 (Integrated RF)",
+      "dma_model": "iwlwifi_hcmd_rx_bd_tx_bd",
+      "stability_score": 60,
+      "performance_score": 75,
+      "firmware_required": true,
+      "firmware_source": "linux-firmware/iwlwifi-cc-a0-*.ucode (AX200), iwlwifi-ty-a0-*.ucode (AX210)",
+      "status": "proposed",
+      "summary": "Intel iwlwifi-compatible Wi-Fi driver for AX200/AX210/AX211/BE200 series. Covers all modern Intel 10th-13th gen laptops and desktops with integrated Wi-Fi. Requires .ucode firmware blob; once loaded, sends ALIVE notification. TX/RX gated by firmware and 802.11 association state.",
+      "improvements": [
+        "Implement TLV-based .ucode firmware parser (INST/DATA/INFO sections).",
+        "Add proper iwlwifi command (HCMD) interface for scan/auth/assoc.",
+        "Handle RF kill switch (hardware toggle) gracefully at the OS level.",
+        "Implement CNVio2 vs standard PCIe detection (AX211 vs AX200).",
+        "Support multiple firmware revision detection for forward compatibility."
+      ],
+      "test_scenarios": [
+        "ax200_init_sequence",
+        "ax200_fw_bad_magic_rejected",
+        "ax200_firmware_alive_received",
+        "ax200_tx_blocked_without_association",
+        "ax200_tx_allowed_after_association"
+      ]
+    },
+    {
+      "driver_id": "drv_intel_i225_v1",
+      "display_name": "Intel I225-V/I226-V 2.5GbE Driver",
+      "match_key": "pci:8086:15f3",
+      "hardware": "Intel I225-V/I226-V 2.5GbE (Z490/B560/Z590/Z690/Z790/B760/H770 onboard)",
+      "source_file": "intel_i225.rs",
+      "pci_vendor": "8086",
+      "pci_devices": [
+        "15F3",
+        "15F2",
+        "15F0",
+        "125B",
+        "125C",
+        "125D",
+        "125F",
+        "0DC5",
+        "0DC7"
+      ],
+      "speed": "2.5 Gbps",
+      "category": "wired",
+      "requires_firmware": false,
+      "notes": "I225 A0/A1 silicon errata requires GCR/GCR3 fix. Supports 2.5GBASE-T auto-negotiation via MDIO Clause 45. Covers 60-70% of Intel 10th-14th gen desktop/laptop boards.",
+      "stability_score": 83,
+      "performance_score": 89,
+      "capabilities": [
+        "2.5GbE",
+        "mac_offload",
+        "checksum_offload",
+        "vlan"
+      ],
+      "test_cases": [
+        "i225_gcr_errata_bit31_set",
+        "i225_gcr3_errata_bit1_set",
+        "i225_2500base_t_advertised",
+        "i225_mac_read",
+        "i225_rctl_tctl_enabled",
+        "i225_rx_ring_size_correct",
+        "i225_tx_send",
+        "i225_rx_receive",
+        "i225_tx_oversized_reject",
+        "i225_link_speed_2500"
+      ]
+    },
+    {
+      "driver_id": "drv_intel_i211_v1",
+      "display_name": "Intel I211-AT / I210-AT GbE Driver",
+      "match_key": "pci:8086:1539",
+      "hardware": "Intel I211-AT GbE (ASUS ROG/TUF, Gigabyte Aorus, MSI MEG/MAG, Intel NUC)",
+      "source_file": "intel_i211.rs",
+      "pci_vendor": "8086",
+      "pci_devices": [
+        "1539",
+        "157B",
+        "157C",
+        "1533",
+        "1536",
+        "1538"
+      ],
+      "speed": "1 Gbps",
+      "category": "wired",
+      "requires_firmware": false,
+      "notes": "Standalone PCIe chip (not integrated like i219). MAC stored in dedicated NVM \u2014 read via EERD interface. Common on gaming/HEDT boards and pfSense appliances.",
+      "stability_score": 90,
+      "performance_score": 85,
+      "capabilities": [
+        "1GbE",
+        "mac_offload",
+        "rss",
+        "msi_x"
+      ],
+      "test_cases": [
+        "i211_reset",
+        "i211_mac_from_nvm",
+        "i211_nvm_eerd_read_used",
+        "i211_rdlen_correct",
+        "i211_tx_send",
+        "i211_rx_receive",
+        "i211_tx_oversized_reject",
+        "i211_link_up"
+      ]
+    },
+    {
+      "driver_id": "drv_aws_ena_v1",
+      "display_name": "Amazon ENA (Elastic Network Adapter) Driver",
+      "match_key": "pci:1d0f:ec20",
+      "hardware": "Amazon ENA VF (AWS EC2 Nitro \u2014 m5/c5/r5/m6i/c6i/t3/g4dn and all Nitro instances)",
+      "source_file": "aws_ena.rs",
+      "test_module_override": "aws_ena",
+      "pci_vendor": "1D0F",
+      "pci_devices": [
+        "EC20",
+        "EC21"
+      ],
+      "speed": "25 Gbps (instance-dependent, up to 100G on c5n.18xlarge)",
+      "category": "cloud",
+      "requires_firmware": false,
+      "notes": "Completely custom register interface (not e1000e-compatible). Uses Admin Queue protocol for device management and IO Queue pairs for data. Essential for AWS EC2 Nitro instances (90%+ of EC2 fleet).",
+      "stability_score": 82,
+      "performance_score": 90,
+      "capabilities": [
+        "25GbE",
+        "llq",
+        "rss",
+        "tso",
+        "cso",
+        "scatter_gather"
+      ],
+      "test_cases": [
+        "ena_reset_done",
+        "ena_aq_base_registered",
+        "ena_aq_restarted",
+        "ena_mac_from_aq",
+        "ena_tx_send",
+        "ena_tx_oversized_reject",
+        "ena_tx_ring_kick"
+      ]
+    },
+    {
+      "driver_id": "drv_mt7921_wifi_v1",
+      "display_name": "MediaTek MT7921/MT7922 PCIe Wi-Fi Driver",
+      "match_key": "pci:14c3:7961",
+      "hardware": "MediaTek MT7921 Wi-Fi 6 / MT7922 Wi-Fi 6E (AMD RZ608/RZ616 \u2014 AMD Ryzen 5000/6000/7000 laptops)",
+      "source_file": "wifi_mt7921.rs",
+      "test_module_override": "aws_ena",
+      "pci_vendor": "14C3",
+      "pci_devices": [
+        "7961",
+        "7922",
+        "0616",
+        "0608",
+        "0901"
+      ],
+      "speed": "600 Mbps (Wi-Fi 6 AX) / 2400 Mbps (Wi-Fi 6E AX tri-band, MT7922)",
+      "category": "wireless",
+      "requires_firmware": true,
+      "firmware_files": [
+        "mediatek/WIFI_MT7961_patch_mcu_1_2_hdr.bin",
+        "mediatek/WIFI_RAM_CODE_MT7961_1.bin"
+      ],
+      "notes": "Uses WPDMA (Wireless-PCIe DMA) engine. Requires 2-stage firmware: MCU patch + RAM code. MAC address only valid after firmware loads (from eFUSE). AMD laptops: also branded as AMD RZ608 (MT7921) and RZ616 (MT7922).",
+      "stability_score": 78,
+      "performance_score": 82,
+      "capabilities": [
+        "wifi6",
+        "wifi6e_mt7922",
+        "firmware_required",
+        "2.4GHz",
+        "5GHz",
+        "6GHz_mt7922"
+      ],
+      "test_cases": [
+        "mt7921_hif_reset",
+        "mt7921_wpdma_started",
+        "mt7921_fw_load",
+        "mt7921_fw_remap_set",
+        "mt7921_tx_blocked_before_assoc",
+        "mt7921_tx_after_assoc",
+        "mt7921_no_fw_blocks"
+      ]
+    },
+    {
+      "driver_id": "drv_nvme_v1",
+      "display_name": "NVMe PCIe Controller Driver",
+      "match_key": "pci:01:08:02",
+      "hardware": "PCIe NVMe Storage Controller",
+      "source_file": "nvme.rs",
+      "pci_vendor": "ANY",
+      "pci_devices": [
+        "ANY"
+      ],
+      "speed": "n/a",
+      "interface": "PCIe MMIO",
+      "dma_model": "nvme_sq_cq",
+      "stability_score": 90,
+      "performance_score": 95,
+      "status": "proposed",
+      "summary": "Standalone NVMe driver for OpenRhiza.",
+      "improvements": [],
+      "test_scenarios": [
+        "nvme_init"
+      ]
+    },
+    {
+      "driver_id": "drv_ahci_v1",
+      "display_name": "AHCI SATA Controller Driver",
+      "match_key": "pci:01:06:01",
+      "hardware": "Serial ATA AHCI Controller",
+      "source_file": "ahci.rs",
+      "pci_vendor": "ANY",
+      "pci_devices": [
+        "ANY"
+      ],
+      "speed": "n/a",
+      "interface": "PCIe MMIO",
+      "dma_model": "ahci_dma",
+      "stability_score": 88,
+      "performance_score": 85,
+      "status": "proposed",
+      "summary": "Standalone AHCI driver for OpenRhiza.",
+      "improvements": [],
+      "test_scenarios": [
+        "ahci_init"
+      ]
+    },
+    {
+      "driver_id": "drv_virtio_blk_v1",
+      "display_name": "Virtio Block Device Driver",
+      "match_key": "pci:1af4:1001",
+      "hardware": "Virtio Block Device",
+      "source_file": "storage_virtio.rs",
+      "pci_vendor": "1af4",
+      "pci_devices": [
+        "1001"
+      ],
+      "speed": "n/a",
+      "interface": "PCIe MMIO",
+      "dma_model": "virtqueue",
+      "stability_score": 90,
+      "performance_score": 90,
+      "status": "proposed",
+      "summary": "Standalone Virtio-Blk driver for OpenRhiza.",
+      "improvements": [],
+      "test_scenarios": [
+        "virtio_blk_init"
+      ]
+    },
+    {
+      "driver_id": "drv_virtio_gpu_v1",
+      "display_name": "Virtio GPU Controller Driver",
+      "match_key": "pci:1af4:1050",
+      "hardware": "Virtio GPU Device",
+      "source_file": "virtio_gpu.rs",
+      "pci_vendor": "1af4",
+      "pci_devices": [
+        "1050"
+      ],
+      "speed": "n/a",
+      "interface": "PCIe MMIO",
+      "dma_model": "virtqueue",
+      "stability_score": 85,
+      "performance_score": 80,
+      "status": "proposed",
+      "summary": "Standalone Virtio-GPU driver for OpenRhiza.",
+      "improvements": [],
+      "test_scenarios": [
+        "virtio_gpu_init"
+      ]
+    },
+    {
+      "driver_id": "drv_virtio_input_v1",
+      "display_name": "Virtio Input Device Driver",
+      "match_key": "pci:1af4:1052",
+      "hardware": "Virtio Input Device",
+      "source_file": "virtio_input.rs",
+      "pci_vendor": "1af4",
+      "pci_devices": [
+        "1052"
+      ],
+      "speed": "n/a",
+      "interface": "PCIe MMIO",
+      "dma_model": "virtqueue",
+      "stability_score": 85,
+      "performance_score": 80,
+      "status": "proposed",
+      "summary": "Standalone Virtio-Input driver for OpenRhiza.",
+      "improvements": [],
+      "test_scenarios": [
+        "virtio_input_init"
+      ]
+    },
+    {
+      "driver_id": "drv_intel_hda_v1",
+      "display_name": "Intel HDA Audio Controller Driver",
+      "match_key": "pci:8086:2668",
+      "hardware": "Intel High Definition Audio",
+      "source_file": "intel_hda.rs",
+      "pci_vendor": "8086",
+      "pci_devices": [
+        "2668"
+      ],
+      "speed": "n/a",
+      "interface": "PCIe MMIO",
+      "dma_model": "corb_rirb",
+      "stability_score": 80,
+      "performance_score": 75,
+      "status": "proposed",
+      "summary": "Standalone Intel HDA driver for OpenRhiza.",
+      "improvements": [],
+      "test_scenarios": [
+        "intel_hda_init"
+      ]
+    },
+    {
+      "driver_id": "drv_ps2_v1",
+      "display_name": "PS/2 Legacy Controller Driver",
+      "match_key": "acpi:PNP0303",
+      "hardware": "i8042 Keyboard Controller",
+      "source_file": "ps2.rs",
+      "pci_vendor": "n/a",
+      "pci_devices": [
+        "n/a"
+      ],
+      "speed": "n/a",
+      "interface": "Port IO",
+      "dma_model": "none",
+      "stability_score": 99,
+      "performance_score": 99,
+      "status": "proposed",
+      "summary": "Standalone PS/2 driver for OpenRhiza.",
+      "improvements": [],
+      "test_scenarios": [
+        "ps2_init"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+[package]
+name = "system_monitor_seed"
+version = "0.1.0"
+edition = "2021"
+authors = ["OpenRhiza Project"]
+description = "System Monitor (Task Manager) GUI Wasm Sandbox"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+
+[profile.release]
+panic = "abort"
+lto = true
+opt-level = "s"
+strip = true

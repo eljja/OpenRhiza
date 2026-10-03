@@ -1,0 +1,17 @@
+[package]
+name = "vfs_explorer_seed"
+version = "0.1.0"
+edition = "2021"
+authors = ["OpenRhiza Project"]
+description = "Virtual File System Explorer & IDE Wasm Sandbox"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+
+[profile.release]
+panic = "abort"
+lto = true
+opt-level = "s"
+strip = true

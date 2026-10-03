@@ -1,0 +1,15 @@
+[package]
+name = "virtio_gpu_driver_seed"
+version = "0.1.0"
+edition = "2021"
+authors = ["OpenRhiza Project"]
+description = "Sandbox virtio-gpu driver candidate over bounded virtio-mmio host handles"
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+panic = "abort"
+lto = true
+opt-level = "s"
+strip = true

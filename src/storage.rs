@@ -1,0 +1,655 @@
+// src/storage.rs
+use crate::arch::x86_64::port::{read_port_u16, read_port_u8, write_port_u16, write_port_u8};
+use alloc::string::String;
+use alloc::vec::Vec;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SecondaryAtaDevice {
+    Master,
+    Slave,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct AtaIdentifyInfo {
+    pub sector_count: u32,
+}
+
+fn secondary_drive_head(device: SecondaryAtaDevice, lba: u32) -> u8 {
+    let drive_bit = match device {
+        SecondaryAtaDevice::Master => 0x00,
+        SecondaryAtaDevice::Slave => 0x10,
+    };
+    0xE0 | drive_bit | ((lba >> 24) & 0x0F) as u8
+}
+
+fn wait_secondary_ready(port_base: u16) -> bool {
+    for _ in 0..100_000 {
+        let status = read_port_u8(port_base + 7);
+        if (status & 0x80) == 0 && (status & 0x08) != 0 {
+            return true;
+        }
+    }
+    false
+}
+
+fn wait_secondary_idle(port_base: u16) -> bool {
+    for _ in 0..100_000 {
+        let status = read_port_u8(port_base + 7);
+        if (status & 0x80) == 0 {
+            return (status & 0x01) == 0;
+        }
+    }
+    false
+}
+
+fn secondary_io_delay(port_base: u16) {
+    for _ in 0..4 {
+        let _ = read_port_u8(port_base + 7);
+    }
+}
+
+pub fn read_sector_ata_secondary_device(
+    device: SecondaryAtaDevice,
+    lba: u32,
+    buffer: &mut [u8; 512],
+) {
+    let port_base = 0x170; // Secondary IDE Bus
+
+    if !wait_secondary_idle(port_base) {
+        buffer.fill(0);
+        return;
+    }
+
+    write_port_u8(port_base + 6, secondary_drive_head(device, lba));
+    secondary_io_delay(port_base);
+    write_port_u8(port_base + 2, 1); // Sector Count: 1
+    write_port_u8(port_base + 3, (lba & 0xFF) as u8); // LBA Low
+    write_port_u8(port_base + 4, ((lba >> 8) & 0xFF) as u8); // LBA Mid
+    write_port_u8(port_base + 5, ((lba >> 16) & 0xFF) as u8); // LBA High
+    write_port_u8(port_base + 7, 0x20); // Command: Read Sector with Retry
+
+    if !wait_secondary_ready(port_base) {
+        buffer.fill(0);
+        return;
+    }
+
+    for i in 0..256 {
+        let word = read_port_u16(port_base);
+        buffer[i * 2] = (word & 0xFF) as u8;
+        buffer[i * 2 + 1] = (word >> 8) as u8;
+    }
+
+    let _ = wait_secondary_idle(port_base);
+}
+
+// Simple polling ATA PIO mode driver for Secondary Master (Port 0x170)
+pub fn read_sector_ata_secondary(lba: u32, buffer: &mut [u8; 512]) {
+    read_sector_ata_secondary_device(SecondaryAtaDevice::Master, lba, buffer);
+}
+
+pub fn write_sector_ata_secondary_device(
+    device: SecondaryAtaDevice,
+    lba: u32,
+    buffer: &[u8; 512],
+) -> bool {
+    let port_base = 0x170; // Secondary IDE Bus
+
+    if !wait_secondary_idle(port_base) {
+        return false;
+    }
+
+    write_port_u8(port_base + 6, secondary_drive_head(device, lba));
+    secondary_io_delay(port_base);
+    write_port_u8(port_base + 2, 1);
+    write_port_u8(port_base + 3, (lba & 0xFF) as u8);
+    write_port_u8(port_base + 4, ((lba >> 8) & 0xFF) as u8);
+    write_port_u8(port_base + 5, ((lba >> 16) & 0xFF) as u8);
+    write_port_u8(port_base + 7, 0x30); // Write Sector
+
+    if !wait_secondary_ready(port_base) {
+        return false;
+    }
+
+    for i in 0..256 {
+        let lo = buffer[i * 2] as u16;
+        let hi = (buffer[i * 2 + 1] as u16) << 8;
+        write_port_u16(port_base, lo | hi);
+    }
+
+    wait_secondary_idle(port_base)
+}
+
+pub fn write_sector_ata_secondary(lba: u32, buffer: &[u8; 512]) -> bool {
+    write_sector_ata_secondary_device(SecondaryAtaDevice::Master, lba, buffer)
+}
+
+fn write_sector_verified_secondary(lba: u32, buffer: &[u8; 512]) -> bool {
+    for _ in 0..3 {
+        if !write_sector_ata_secondary(lba, buffer) {
+            continue;
+        }
+
+        let mut verify = [0u8; 512];
+        read_sector_ata_secondary(lba, &mut verify);
+        if verify == *buffer {
+            return true;
+        }
+    }
+
+    false
+}
+
+pub fn flush_secondary_ata_device(device: SecondaryAtaDevice) -> bool {
+    let port_base = 0x170; // Secondary IDE Bus
+    write_port_u8(port_base + 6, secondary_drive_head(device, 0));
+    write_port_u8(port_base + 7, 0xE7); // CACHE FLUSH
+    wait_secondary_idle(port_base)
+}
+
+pub fn identify_secondary_ata_device(device: SecondaryAtaDevice) -> Option<AtaIdentifyInfo> {
+    let port_base = 0x170; // Secondary IDE Bus
+    write_port_u8(port_base + 6, secondary_drive_head(device, 0));
+    write_port_u8(port_base + 2, 0);
+    write_port_u8(port_base + 3, 0);
+    write_port_u8(port_base + 4, 0);
+    write_port_u8(port_base + 5, 0);
+    write_port_u8(port_base + 7, 0xEC); // IDENTIFY DEVICE
+
+    let initial_status = read_port_u8(port_base + 7);
+    if initial_status == 0 {
+        return None;
+    }
+
+    for _ in 0..100_000 {
+        let status = read_port_u8(port_base + 7);
+        let lba_mid = read_port_u8(port_base + 4);
+        let lba_high = read_port_u8(port_base + 5);
+        if lba_mid != 0 || lba_high != 0 {
+            return None;
+        }
+        if (status & 0x01) != 0 {
+            return None;
+        }
+        if (status & 0x80) == 0 && (status & 0x08) != 0 {
+            break;
+        }
+    }
+
+    let mut words = [0u16; 256];
+    for word in &mut words {
+        *word = read_port_u16(port_base);
+    }
+
+    let lba28_count = (words[60] as u32) | ((words[61] as u32) << 16);
+    let lba48_low32 = (words[100] as u32) | ((words[101] as u32) << 16);
+    let sector_count = if lba48_low32 != 0 {
+        lba48_low32
+    } else {
+        lba28_count
+    };
+
+    if sector_count == 0 {
+        None
+    } else {
+        Some(AtaIdentifyInfo { sector_count })
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct Fat16Layout {
+    pub partition_lba: u32,
+    pub sectors_per_cluster: u16,
+    pub fat_lba: u32,
+    pub sectors_per_fat: u16,
+    pub root_dir_lba: u32,
+    pub data_region_lba: u32,
+}
+
+#[derive(Clone, Debug)]
+struct Fat16FileLocation {
+    dir_sector_lba: u32,
+    dir_entry_offset: usize,
+    file_size: usize,
+    cluster_chain: Vec<u16>,
+}
+
+pub fn probe_secondary_bootstrap_disk() -> bool {
+    let mut boot = [0u8; 512];
+    read_sector_ata_secondary(0, &mut boot);
+
+    boot[510] == 0x55 && boot[511] == 0xAA
+}
+
+fn load_fat16_layout() -> Option<Fat16Layout> {
+    let mut boot = [0u8; 512];
+    read_sector_ata_secondary(0, &mut boot);
+
+    if boot[510] != 0x55 || boot[511] != 0xAA {
+        return None;
+    }
+
+    let mut partition_lba = 0;
+
+    // Distinguish MBR vs VBR
+    if boot[11] == 0 && boot[12] == 0 {
+        partition_lba = u32::from_le_bytes([boot[0x1C6], boot[0x1C7], boot[0x1C8], boot[0x1C9]]);
+        read_sector_ata_secondary(partition_lba, &mut boot); // Load actual FAT Boot Sector
+    }
+
+    let sectors_per_cluster = boot[13] as u16;
+    let reserved_sectors = u16::from_le_bytes([boot[14], boot[15]]);
+    let num_fats = boot[16] as u16;
+    let max_root_entries = u16::from_le_bytes([boot[17], boot[18]]);
+    let sectors_per_fat = u16::from_le_bytes([boot[22], boot[23]]);
+
+    if sectors_per_cluster == 0 || sectors_per_fat == 0 || max_root_entries == 0 {
+        return None;
+    }
+
+    let root_dir_lba =
+        partition_lba + (reserved_sectors as u32) + ((num_fats * sectors_per_fat) as u32);
+    let root_dir_sectors = (max_root_entries * 32 + 511) / 512;
+    let data_region_lba = root_dir_lba + (root_dir_sectors as u32);
+
+    Some(Fat16Layout {
+        partition_lba,
+        sectors_per_cluster,
+        fat_lba: partition_lba + reserved_sectors as u32,
+        sectors_per_fat,
+        root_dir_lba,
+        data_region_lba,
+    })
+}
+
+fn fat16_next_cluster(layout: &Fat16Layout, cluster: u16) -> Option<u16> {
+    let fat_offset = cluster as u32 * 2;
+    let fat_sector_lba = layout.fat_lba + (fat_offset / 512);
+    let fat_index = (fat_offset % 512) as usize;
+    let mut sector = [0u8; 512];
+    read_sector_ata_secondary(fat_sector_lba, &mut sector);
+    Some(u16::from_le_bytes([
+        sector[fat_index],
+        sector[fat_index + 1],
+    ]))
+}
+
+fn fat16_cluster_chain(layout: &Fat16Layout, starting_cluster: u16, file_size: usize) -> Vec<u16> {
+    let mut chain = Vec::new();
+    let mut current = starting_cluster;
+    let cluster_bytes = layout.sectors_per_cluster as usize * 512;
+    let needed_clusters = if cluster_bytes == 0 || file_size == 0 {
+        1
+    } else {
+        file_size.div_ceil(cluster_bytes)
+    };
+    let max_clusters = needed_clusters.saturating_add(1).min(65_525);
+
+    for _ in 0..max_clusters {
+        if current < 2 {
+            break;
+        }
+        chain.push(current);
+        let Some(next) = fat16_next_cluster(layout, current) else {
+            break;
+        };
+        if next >= 0xFFF8 {
+            break;
+        }
+        if next == 0xFFF7 {
+            break;
+        }
+        if next == 0x0000 {
+            if chain.len() < needed_clusters {
+                current = current.saturating_add(1);
+                continue;
+            }
+            break;
+        }
+        current = next;
+    }
+
+    chain
+}
+
+fn read_u32_leb_from_bytes(data: &[u8], offset: &mut usize) -> Option<u32> {
+    let mut result = 0u32;
+    let mut shift = 0u32;
+
+    for _ in 0..5 {
+        let byte = *data.get(*offset)?;
+        *offset += 1;
+        result |= ((byte & 0x7F) as u32) << shift;
+        if (byte & 0x80) == 0 {
+            return Some(result);
+        }
+        shift += 7;
+    }
+
+    None
+}
+
+fn truncate_wasm_padding_if_present(data: &mut Vec<u8>) {
+    if data.len() < 8 || &data[..4] != b"\0asm" {
+        return;
+    }
+
+    let mut offset = 8usize;
+    let mut module_end = 8usize;
+
+    while offset < data.len() {
+        let section_start = offset;
+        let _section_id = data[offset];
+        offset += 1;
+        let Some(payload_len) = read_u32_leb_from_bytes(data.as_slice(), &mut offset) else {
+            break;
+        };
+        if _section_id == 0
+            && payload_len == 0
+            && data[section_start..].iter().all(|byte| *byte == 0)
+        {
+            break;
+        }
+        let payload_end = offset.saturating_add(payload_len as usize);
+        if payload_end > data.len() {
+            break;
+        }
+        module_end = payload_end;
+        offset = payload_end;
+    }
+
+    if module_end > 8 && module_end < data.len() {
+        data.truncate(module_end);
+    }
+}
+
+fn find_named_file_in_secondary_fat16(
+    target_names: &[[u8; 11]],
+) -> Option<(Fat16Layout, Fat16FileLocation)> {
+    let layout = load_fat16_layout()?;
+    let mut boot = [0u8; 512];
+    read_sector_ata_secondary(layout.partition_lba, &mut boot);
+
+    let max_root_entries = u16::from_le_bytes([boot[17], boot[18]]) as usize;
+    let root_dir_sectors = (max_root_entries * 32).div_ceil(512);
+    let mut root_sector = [0u8; 512];
+
+    for sector_index in 0..root_dir_sectors {
+        let dir_sector_lba = layout.root_dir_lba + sector_index as u32;
+        read_sector_ata_secondary(dir_sector_lba, &mut root_sector);
+
+        for i in 0..(512 / 32) {
+            let entry_offset = i * 32;
+            let entry = &root_sector[entry_offset..entry_offset + 32];
+            if entry[0] == 0x00 {
+                continue;
+            }
+            if entry[0] == 0xE5 || entry[11] == 0x0F {
+                continue;
+            }
+
+            let name = &entry[0..11];
+            if !target_names.iter().any(|candidate| name == candidate) {
+                continue;
+            }
+
+            let starting_cluster = u16::from_le_bytes([entry[26], entry[27]]);
+            let file_size =
+                u32::from_le_bytes([entry[28], entry[29], entry[30], entry[31]]) as usize;
+            if starting_cluster < 2 {
+                continue;
+            }
+
+            let cluster_chain = fat16_cluster_chain(&layout, starting_cluster, file_size);
+            return Some((
+                layout,
+                Fat16FileLocation {
+                    dir_sector_lba,
+                    dir_entry_offset: entry_offset,
+                    file_size,
+                    cluster_chain,
+                },
+            ));
+        }
+    }
+
+    None
+}
+
+pub fn file_size_from_secondary_fat16(target_names: &[[u8; 11]]) -> Option<usize> {
+    let (_, file) = find_named_file_in_secondary_fat16(target_names)?;
+    Some(file.file_size)
+}
+
+pub fn read_named_file_range_from_secondary_fat16(
+    target_names: &[[u8; 11]],
+    offset: usize,
+    out: &mut [u8],
+) -> Option<usize> {
+    let (layout, file) = find_named_file_in_secondary_fat16(target_names)?;
+    if out.is_empty() {
+        return Some(0);
+    }
+    if offset >= file.file_size {
+        return Some(0);
+    }
+
+    let total_capacity = file.cluster_chain.len() * layout.sectors_per_cluster as usize * 512;
+    let readable_size = file.file_size.min(total_capacity);
+    if offset >= readable_size {
+        return Some(0);
+    }
+
+    let end = offset.saturating_add(out.len()).min(readable_size);
+    let mut copied = 0usize;
+    let mut cluster_file_offset = 0usize;
+    let cluster_bytes = layout.sectors_per_cluster as usize * 512;
+
+    for &cluster in &file.cluster_chain {
+        let cluster_end = cluster_file_offset.saturating_add(cluster_bytes);
+        if cluster_end <= offset {
+            cluster_file_offset = cluster_end;
+            continue;
+        }
+        if cluster_file_offset >= end {
+            break;
+        }
+
+        let cluster_lba =
+            layout.data_region_lba + ((cluster as u32 - 2) * layout.sectors_per_cluster as u32);
+        for sector_offset in 0..layout.sectors_per_cluster as u32 {
+            let sector_file_offset = cluster_file_offset + sector_offset as usize * 512;
+            let sector_end = sector_file_offset + 512;
+            if sector_end <= offset {
+                continue;
+            }
+            if sector_file_offset >= end {
+                break;
+            }
+
+            let copy_start = offset.max(sector_file_offset);
+            let copy_end = end.min(sector_end);
+            let sector_start = copy_start - sector_file_offset;
+            let sector_len = copy_end - copy_start;
+
+            let mut sector = [0u8; 512];
+            read_sector_ata_secondary(cluster_lba + sector_offset, &mut sector);
+            out[copied..copied + sector_len]
+                .copy_from_slice(&sector[sector_start..sector_start + sector_len]);
+            copied += sector_len;
+            if copied >= end - offset {
+                return Some(copied);
+            }
+        }
+
+        cluster_file_offset = cluster_end;
+    }
+
+    Some(copied)
+}
+
+pub fn read_named_file_from_secondary_fat16(target_names: &[[u8; 11]]) -> Option<Vec<u8>> {
+    let (layout, file) = find_named_file_in_secondary_fat16(target_names)?;
+    if file.file_size == 0 {
+        return None;
+    }
+
+    let total_capacity = file.cluster_chain.len() * layout.sectors_per_cluster as usize * 512;
+    let bytes_to_read = file.file_size.min(total_capacity);
+    let mut file_data = Vec::with_capacity(bytes_to_read);
+
+    for &cluster in &file.cluster_chain {
+        let cluster_lba =
+            layout.data_region_lba + ((cluster as u32 - 2) * layout.sectors_per_cluster as u32);
+        for sector_offset in 0..layout.sectors_per_cluster as u32 {
+            let mut sector = [0u8; 512];
+            read_sector_ata_secondary(cluster_lba + sector_offset, &mut sector);
+
+            let remaining = bytes_to_read.saturating_sub(file_data.len());
+            if remaining == 0 {
+                return Some(file_data);
+            }
+            let bytes = remaining.min(512);
+            file_data.extend_from_slice(&sector[..bytes]);
+        }
+    }
+
+    truncate_wasm_padding_if_present(&mut file_data);
+    Some(file_data)
+}
+
+pub fn read_text_file_from_secondary_fat16(target_names: &[[u8; 11]]) -> Option<String> {
+    let mut data = read_named_file_from_secondary_fat16(target_names)?;
+    if let Some(first_nul) = data.iter().position(|byte| *byte == 0) {
+        data.truncate(first_nul);
+    }
+    while matches!(data.last(), Some(b' ' | b'\r' | b'\n' | b'\t')) {
+        data.pop();
+    }
+    String::from_utf8(data).ok()
+}
+
+pub fn write_named_file_to_secondary_fat16_existing(
+    target_names: &[[u8; 11]],
+    data: &[u8],
+) -> Result<(), &'static str> {
+    write_named_file_to_secondary_fat16_internal(target_names, data, true)
+}
+
+pub fn write_named_file_to_secondary_fat16_preserve_size(
+    target_names: &[[u8; 11]],
+    data: &[u8],
+) -> Result<(), &'static str> {
+    write_named_file_to_secondary_fat16_internal(target_names, data, false)
+}
+
+fn write_named_file_to_secondary_fat16_internal(
+    target_names: &[[u8; 11]],
+    data: &[u8],
+    update_directory_size: bool,
+) -> Result<(), &'static str> {
+    let (layout, file) = find_named_file_in_secondary_fat16(target_names)
+        .ok_or("Target file not found in FAT16 root directory")?;
+
+    let total_capacity = file.cluster_chain.len() * layout.sectors_per_cluster as usize * 512;
+    if data.len() > total_capacity {
+        return Err("Data exceeds preallocated FAT16 file capacity");
+    }
+
+    let mut written = 0usize;
+    for &cluster in &file.cluster_chain {
+        let cluster_lba =
+            layout.data_region_lba + ((cluster as u32 - 2) * layout.sectors_per_cluster as u32);
+        for sector_offset in 0..layout.sectors_per_cluster as u32 {
+            let mut sector = [0u8; 512];
+            let remaining = data.len().saturating_sub(written);
+            if remaining > 0 {
+                let bytes = remaining.min(512);
+                sector[..bytes].copy_from_slice(&data[written..written + bytes]);
+                written += bytes;
+            }
+
+            if !write_sector_verified_secondary(cluster_lba + sector_offset, &sector) {
+                return Err("ATA sector write failed");
+            }
+        }
+    }
+
+    if !flush_secondary_ata_device(SecondaryAtaDevice::Master) {
+        return Err("ATA cache flush failed after data write");
+    }
+
+    if !update_directory_size {
+        return Ok(());
+    }
+
+    let mut dir_sector = [0u8; 512];
+    read_sector_ata_secondary(file.dir_sector_lba, &mut dir_sector);
+    let size_bytes = (data.len() as u32).to_le_bytes();
+    let size_offset = file.dir_entry_offset + 28;
+    dir_sector[size_offset..size_offset + 4].copy_from_slice(&size_bytes);
+
+    if !write_sector_verified_secondary(file.dir_sector_lba, &dir_sector) {
+        return Err("Failed to update FAT16 directory entry");
+    }
+
+    if !flush_secondary_ata_device(SecondaryAtaDevice::Master) {
+        return Err("ATA cache flush failed after directory update");
+    }
+
+    Ok(())
+}
+
+// Native FAT16 Payload Extractor (Zero External Dependencies)
+pub fn extract_payload() -> Option<Vec<u8>> {
+    let mut boot = [0u8; 512];
+    read_sector_ata_secondary(0, &mut boot);
+
+    crate::println!("[Storage] Sector 0 Hex Dump:");
+    for i in 0..4 {
+        crate::println!("[Storage] {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X} {:02X}", 
+            boot[i*16], boot[i*16+1], boot[i*16+2], boot[i*16+3], boot[i*16+4], boot[i*16+5], boot[i*16+6], boot[i*16+7],
+            boot[i*16+8], boot[i*16+9], boot[i*16+10], boot[i*16+11], boot[i*16+12], boot[i*16+13], boot[i*16+14], boot[i*16+15]);
+    }
+
+    let layout = load_fat16_layout()?;
+    read_sector_ata_secondary(layout.partition_lba, &mut boot);
+    let reserved_sectors = u16::from_le_bytes([boot[14], boot[15]]);
+    let num_fats = boot[16] as u16;
+    let max_root_entries = u16::from_le_bytes([boot[17], boot[18]]);
+    let sectors_per_fat = u16::from_le_bytes([boot[22], boot[23]]);
+
+    crate::println!(
+        "[Storage] FAT Partition starts at LBA {}",
+        layout.partition_lba
+    );
+    crate::println!(
+        "[Storage] FAT Layout: Resv={}, NumFAT={}, Sec/FAT={}, MaxRoot={}, RootLBA={}",
+        reserved_sectors,
+        num_fats,
+        sectors_per_fat,
+        max_root_entries,
+        layout.root_dir_lba
+    );
+
+    // Scan Root Directory Table
+    let mut root_sector = [0u8; 512];
+    read_sector_ata_secondary(layout.root_dir_lba as u32, &mut root_sector);
+
+    for i in 0..(512 / 32) {
+        let entry = &root_sector[i * 32..(i + 1) * 32];
+        if entry[0] == 0x00 {
+            break;
+        } // End of directory entries
+        if entry[0] == 0xE5 {
+            continue;
+        } // Deleted entry
+
+        let name = &entry[0..11];
+
+        if let Ok(file_name) = core::str::from_utf8(name) {
+            crate::println!("[Storage] Root Dir Entry: '{}'", file_name);
+        }
+    }
+
+    read_named_file_from_secondary_fat16(&[*b"E1000   BIN", *b"E1000   WAS"])
+}

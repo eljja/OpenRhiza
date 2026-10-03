@@ -1,0 +1,15 @@
+[package]
+name = "virtio_block_driver_seed"
+version = "0.1.0"
+edition = "2021"
+authors = ["OpenRhiza Project"]
+description = "Sandbox virtio-block driver candidate over bounded virtio-mmio host handles"
+
+[lib]
+crate-type = ["cdylib"]
+
+[profile.release]
+panic = "abort"
+lto = true
+opt-level = "s"
+strip = true
